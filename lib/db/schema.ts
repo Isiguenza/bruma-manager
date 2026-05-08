@@ -66,6 +66,19 @@ export const reservationStatusEnum = pgEnum("reservation_status", [
   "cancelled",
   "no_show",
 ]);
+export const deliveryPlatformEnum = pgEnum("delivery_platform", [
+  "uber_eats",
+  "rappi",
+  "didi_food",
+]);
+export const deliveryOrderStatusEnum = pgEnum("delivery_order_status", [
+  "pending",
+  "accepted",
+  "preparing",
+  "ready",
+  "completed",
+  "cancelled",
+]);
 export const tableShapeEnum = pgEnum("table_shape", ["square", "round"]);
 export const promotionTypeEnum = pgEnum("promotion_type", [
   "buy_x_get_y",
@@ -257,6 +270,8 @@ export const orders = pgTable("orders", {
   discountId: uuid("discount_id").references(() => discounts.id),
   discountName: varchar("discount_name", { length: 255 }),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
+  source: varchar("source", { length: 50 }).default("pos"), // "pos", "uber_eats", "rappi", etc.
+  deliveryOrderId: uuid("delivery_order_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -680,6 +695,42 @@ export const salesHistory = pgTable("sales_history", {
   splitBillData: text("split_bill_data"),
   createdAt: timestamp("created_at").notNull(), // Fecha original de la orden
   paidAt: timestamp("paid_at").defaultNow().notNull(), // Fecha en que se pagó
+});
+
+// Delivery Orders
+export const deliveryOrders = pgTable("delivery_orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  platform: deliveryPlatformEnum("platform").notNull(),
+  externalId: varchar("external_id", { length: 255 }).notNull().unique(),
+  status: deliveryOrderStatusEnum("status").notNull().default("pending"),
+  
+  // Customer info
+  customerName: varchar("customer_name", { length: 255 }).notNull(),
+  customerPhone: varchar("customer_phone", { length: 50 }),
+  deliveryAddress: text("delivery_address"),
+  deliveryInstructions: text("delivery_instructions"),
+  
+  // Order details
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+  deliveryFee: decimal("delivery_fee", { precision: 10, scale: 2 }).default("0"),
+  platformFee: decimal("platform_fee", { precision: 10, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+  
+  // Timing
+  estimatedPickupTime: timestamp("estimated_pickup_time"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  readyAt: timestamp("ready_at"),
+  completedAt: timestamp("completed_at"),
+  cancelledAt: timestamp("cancelled_at"),
+  
+  // Related order
+  orderId: uuid("order_id").references(() => orders.id),
+  
+  // Raw data
+  rawData: text("raw_data"), // JSON string
+  
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // User profiles relations

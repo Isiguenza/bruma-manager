@@ -24,7 +24,7 @@ struct ContentView: View {
                         .tint(.white)
                         .foregroundColor(.white)
                 } else {
-                    TableSelectionView(vm: vm)
+                    MainTabView(vm: vm)
                 }
                 
             case .pos:

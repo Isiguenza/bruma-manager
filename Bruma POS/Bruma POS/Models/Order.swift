@@ -10,10 +10,15 @@ struct Order: Codable, Identifiable {
     let customerName: String?
     let tableId: String?
     let tableName: String?
+    let tableNumber: String?
     let employeeName: String?
     let createdAt: String?
     let items: [OrderItem]?
     let splitBillData: String?
+    let paymentMethod: String?
+    let tip: String?
+    let discountAmount: String?
+    let discountName: String?
     
     var displayName: String {
         if let name = customerName, !name.isEmpty {

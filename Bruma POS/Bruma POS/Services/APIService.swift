@@ -21,8 +21,13 @@ enum APIError: LocalizedError {
 class APIService {
     static let shared = APIService()
     
-    var baseURL: String = "http://192.168.0.109:3000"
-    var printServerURL: String = "http://192.168.0.109:3001"
+    var baseURL: String {
+        AppEnvironment.current.baseURL
+    }
+    
+    var printServerURL: String {
+        AppEnvironment.current.printServerURL
+    }
     
     private init() {}
     
@@ -288,5 +293,61 @@ class APIService {
     func cancelReservation(id: String) async throws {
         let url = URL(string: "\(baseURL)/api/reservations/\(id)")!
         let _: Reservation = try await request(url, method: "PATCH", body: ["status": "cancelled"])
+    }
+    
+    // MARK: - Cash Register
+    
+    func fetchCurrentCashRegister() async throws -> CashRegister? {
+        let url = URL(string: "\(baseURL)/api/cash-register/current")!
+        do {
+            return try await request(url)
+        } catch {
+            if case APIError.notFound = error {
+                return nil
+            }
+            throw error
+        }
+    }
+    
+    func openCashRegister(initialCash: Double, employeeId: String) async throws -> CashRegister {
+        let url = URL(string: "\(baseURL)/api/cash-register")!
+        return try await request(url, method: "POST", body: [
+            "initialCash": initialCash,
+            "employeeId": employeeId
+        ])
+    }
+    
+    func closeCashRegister(registerId: String, body: [String: Any]) async throws {
+        let url = URL(string: "\(baseURL)/api/cash-register/\(registerId)/close")!
+        let (_, _) = try await requestRaw(url, method: "POST", body: body)
+    }
+    
+    func depositToCashRegister(registerId: String, amount: Double, userId: String, description: String) async throws {
+        let url = URL(string: "\(baseURL)/api/cash-register/\(registerId)/deposit")!
+        let (_, _) = try await requestRaw(url, method: "POST", body: [
+            "amount": amount,
+            "userId": userId,
+            "description": description
+        ])
+    }
+    
+    func withdrawFromCashRegister(registerId: String, amount: Double, userId: String, description: String) async throws {
+        let url = URL(string: "\(baseURL)/api/cash-register/\(registerId)/withdraw")!
+        let (_, _) = try await requestRaw(url, method: "POST", body: [
+            "amount": amount,
+            "userId": userId,
+            "description": description
+        ])
+    }
+    
+    func fetchCashRegisterReport(registerId: String) async throws -> [String: Any] {
+        let url = URL(string: "\(baseURL)/api/cash-register/\(registerId)/report")!
+        let (data, _) = try await requestRaw(url)
+        return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+    }
+    
+    func fetchOrdersHistory(registerId: String) async throws -> [Order] {
+        let url = URL(string: "\(baseURL)/api/orders/history?registerId=\(registerId)")!
+        return try await request(url)
     }
 }
