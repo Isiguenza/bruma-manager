@@ -34,9 +34,6 @@ class POSViewModel: ObservableObject {
     @Published var platformDeliveryOrders: [Order] = []
     @Published var customerName = ""
     @Published var showCustomerNameDialog = false
-    @Published var isPlatformDelivery = false
-    @Published var deliveryPlatform = ""
-    @Published var platformOrderDigits = ""
     
     // MARK: - Products & Categories
     @Published var products: [Product] = []
@@ -87,6 +84,13 @@ class POSViewModel: ObservableObject {
     // MARK: - Transfer Table
     @Published var showTransferTableDialog = false
     @Published var showingReleaseConfirmation = false
+    
+    // MARK: - Delivery
+    @Published var showDeliveryDialog = false
+    @Published var isPlatformDelivery = false
+    @Published var deliveryPlatform = ""
+    @Published var platformOrderDigits = ""
+    @Published var deliveryCustomerName = ""
     
     // MARK: - Payment
     @Published var showingPayment = false
@@ -587,8 +591,15 @@ class POSViewModel: ObservableObject {
         isPlatformDelivery = false
         deliveryPlatform = ""
         platformOrderDigits = ""
+        deliveryCustomerName = ""
         customerName = ""
-        showCustomerNameDialog = true
+        selectedTable = nil
+        cart = []
+        currentOrderId = nil
+        activeCourse = 1
+        activeSeat = "C"
+        guestCount = 1
+        showDeliveryDialog = true
     }
     
     func handleNewPlatformDeliveryOrder() {
@@ -596,8 +607,15 @@ class POSViewModel: ObservableObject {
         isPlatformDelivery = true
         deliveryPlatform = ""
         platformOrderDigits = ""
+        deliveryCustomerName = ""
         customerName = ""
-        showCustomerNameDialog = true
+        selectedTable = nil
+        cart = []
+        currentOrderId = nil
+        activeCourse = 1
+        activeSeat = "C"
+        guestCount = 1
+        showDeliveryDialog = true
     }
     
     func handleConfirmCustomerName() {

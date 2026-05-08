@@ -65,6 +65,9 @@ struct MainTabView: View {
                 showPinModal = false
             })
         }
+        .sheet(isPresented: $vm.showDeliveryDialog) {
+            DeliveryInfoDialog(vm: vm)
+        }
         .task {
             // Polling global para delivery orders
             await deliveryVM.loadOrders(showLoading: false)
