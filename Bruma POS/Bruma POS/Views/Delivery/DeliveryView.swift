@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DeliveryView: View {
-    @StateObject private var vm = DeliveryViewModel()
+    @ObservedObject var vm: DeliveryViewModel
     
     var body: some View {
         ZStack {
@@ -127,7 +127,14 @@ struct DeliveryView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .task { await vm.loadOrders() }
+        .task {
+            await vm.loadOrders(showLoading: true)
+            // Poll for new orders every 10 seconds (sin loading)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                await vm.loadOrders(showLoading: false)
+            }
+        }
     }
     
     private func filterButton(_ label: String, value: String) -> some View {

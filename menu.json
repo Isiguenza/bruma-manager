@@ -1,0 +1,281 @@
+{
+  "menus": [
+    {
+      "id": "main_menu",
+      "title": {
+        "translations": {
+          "en_us": "Menu"
+        }
+      },
+      "service_availability": [
+        {
+          "day_of_week": "monday",
+          "time_periods": [
+            {
+              "start_time": "00:00",
+              "end_time": "23:59"
+            }
+          ]
+        },
+        {
+          "day_of_week": "tuesday",
+          "time_periods": [
+            {
+              "start_time": "00:00",
+              "end_time": "23:59"
+            }
+          ]
+        },
+        {
+          "day_of_week": "wednesday",
+          "time_periods": [
+            {
+              "start_time": "00:00",
+              "end_time": "23:59"
+            }
+          ]
+        },
+        {
+          "day_of_week": "thursday",
+          "time_periods": [
+            {
+              "start_time": "00:00",
+              "end_time": "23:59"
+            }
+          ]
+        },
+        {
+          "day_of_week": "friday",
+          "time_periods": [
+            {
+              "start_time": "00:00",
+              "end_time": "23:59"
+            }
+          ]
+        },
+        {
+          "day_of_week": "saturday",
+          "time_periods": [
+            {
+              "start_time": "00:00",
+              "end_time": "23:59"
+            }
+          ]
+        },
+        {
+          "day_of_week": "sunday",
+          "time_periods": [
+            {
+              "start_time": "00:00",
+              "end_time": "23:59"
+            }
+          ]
+        }
+      ],
+      "categories": [
+        {
+          "id": "entradas",
+          "title": {
+            "translations": {
+              "en_us": "Entradas"
+            }
+          },
+          "entities": [
+            {
+              "type": "ITEM",
+              "id": "empanada_camaron"
+            },
+            {
+              "type": "ITEM",
+              "id": "empanada_pulpo"
+            },
+            {
+              "type": "ITEM",
+              "id": "quesadillas_camaron"
+            },
+            {
+              "type": "ITEM",
+              "id": "quesadilla_pulpo_ajillo"
+            },
+            {
+              "type": "ITEM",
+              "id": "tostada_pulpo"
+            }
+          ]
+        },
+        {
+          "id": "plato_fuerte",
+          "title": {
+            "translations": {
+              "en_us": "Plato Fuerte"
+            }
+          },
+          "entities": [
+            {
+              "type": "ITEM",
+              "id": "camarones_asiaticos"
+            },
+            {
+              "type": "ITEM",
+              "id": "caldo_camaron"
+            },
+            {
+              "type": "ITEM",
+              "id": "camarones_ajillo"
+            },
+            {
+              "type": "ITEM",
+              "id": "camarones_hawai"
+            },
+            {
+              "type": "ITEM",
+              "id": "aguachile_verde"
+            },
+            {
+              "type": "ITEM",
+              "id": "aguachile_amarillo"
+            }
+          ]
+        }
+      ],
+      "items": [
+        {
+          "id": "empanada_camaron",
+          "title": {
+            "translations": {
+              "en_us": "Empanada de Camarón"
+            }
+          },
+          "price_info": {
+            "price": 8500
+          }
+        },
+        {
+          "id": "empanada_pulpo",
+          "title": {
+            "translations": {
+              "en_us": "Empanada de Pulpo"
+            }
+          },
+          "price_info": {
+            "price": 9200
+          }
+        },
+        {
+          "id": "quesadillas_camaron",
+          "title": {
+            "translations": {
+              "en_us": "Quesadillas de Camarón"
+            }
+          },
+          "price_info": {
+            "price": 5400
+          }
+        },
+        {
+          "id": "quesadilla_pulpo_ajillo",
+          "title": {
+            "translations": {
+              "en_us": "Quesadilla de Pulpo al Ajillo"
+            }
+          },
+          "price_info": {
+            "price": 6000
+          }
+        },
+        {
+          "id": "tostada_pulpo",
+          "title": {
+            "translations": {
+              "en_us": "Tostada de Pulpo"
+            }
+          },
+          "price_info": {
+            "price": 11000
+          }
+        },
+        {
+          "id": "camarones_asiaticos",
+          "title": {
+            "translations": {
+              "en_us": "Camarones Asiáticos"
+            }
+          },
+          "description": {
+            "translations": {
+              "en_us": "Elige el Acompañamiento"
+            }
+          },
+          "price_info": {
+            "price": 27200
+          }
+        },
+        {
+          "id": "caldo_camaron",
+          "title": {
+            "translations": {
+              "en_us": "Caldo de Camarón"
+            }
+          },
+          "price_info": {
+            "price": 15400
+          }
+        },
+        {
+          "id": "camarones_ajillo",
+          "title": {
+            "translations": {
+              "en_us": "Camarones al Ajillo"
+            }
+          },
+          "description": {
+            "translations": {
+              "en_us": "Elige el Acompañamiento"
+            }
+          },
+          "price_info": {
+            "price": 26000
+          }
+        },
+        {
+          "id": "camarones_hawai",
+          "title": {
+            "translations": {
+              "en_us": "Camarones Hawái"
+            }
+          },
+          "description": {
+            "translations": {
+              "en_us": "Elige el Acompañamiento"
+            }
+          },
+          "price_info": {
+            "price": 27200
+          }
+        },
+        {
+          "id": "aguachile_verde",
+          "title": {
+            "translations": {
+              "en_us": "Aguachile Verde"
+            }
+          },
+          "price_info": {
+            "price": 32000
+          }
+        },
+        {
+          "id": "aguachile_amarillo",
+          "title": {
+            "translations": {
+              "en_us": "Aguachile Amarillo"
+            }
+          },
+          "price_info": {
+            "price": 32000
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -7,15 +7,25 @@ import crypto from "crypto";
 function verifyUberSignature(
   payload: string,
   signature: string,
-  secret: string
+  signingKey: string
 ): boolean {
-  const hmac = crypto.createHmac("sha256", secret);
+  const hmac = crypto.createHmac("sha256", signingKey);
   hmac.update(payload);
   const expectedSignature = hmac.digest("hex");
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
+  
+  // Compare signatures safely
+  const sigBuffer = Buffer.from(signature, "hex");
+  const expectedBuffer = Buffer.from(expectedSignature, "hex");
+  
+  if (sigBuffer.length !== expectedBuffer.length) {
+    console.log("Signature length mismatch:", {
+      received: sigBuffer.length,
+      expected: expectedBuffer.length,
+    });
+    return false;
+  }
+  
+  return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
 }
 
 export async function POST(request: NextRequest) {

@@ -135,11 +135,11 @@ struct DeliveryOrderCard: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color.red.opacity(0.2))
+                        .background(Color(white: 0.15))
                         .cornerRadius(10)
                         .overlay(
                             RoundedRectangle(cornerRadius: 10)
-                                .stroke(Color.red, lineWidth: 1)
+                                .stroke(Color(white: 0.3), lineWidth: 1)
                         )
                 }
                 
@@ -152,10 +152,10 @@ struct DeliveryOrderCard: View {
                 } label: {
                     Text(processing ? "Aceptando..." : "Aceptar")
                         .font(.subheadline.bold())
-                        .foregroundColor(.white)
+                        .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color.green)
+                        .background(Color.white)
                         .cornerRadius(10)
                 }
                 .disabled(processing)
@@ -169,14 +169,14 @@ struct DeliveryOrderCard: View {
                 }
             } label: {
                 HStack {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(systemName: "checkmark.circle")
                     Text(processing ? "Marcando..." : "Marcar Listo")
                         .font(.subheadline.bold())
                 }
-                .foregroundColor(.white)
+                .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(Color.green)
+                .background(Color.white)
                 .cornerRadius(10)
             }
             .disabled(processing)
@@ -189,14 +189,14 @@ struct DeliveryOrderCard: View {
                 }
             } label: {
                 HStack {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(systemName: "checkmark.circle")
                     Text(processing ? "Completando..." : "Completar Entrega")
                         .font(.subheadline.bold())
                 }
-                .foregroundColor(.white)
+                .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(Color.blue)
+                .background(Color.white)
                 .cornerRadius(10)
             }
             .disabled(processing)

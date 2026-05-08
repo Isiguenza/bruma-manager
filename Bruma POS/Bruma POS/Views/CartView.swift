@@ -611,5 +611,14 @@ struct CartItemRow: View {
                     .foregroundColor(.gray)
             }
         }
+        .alert("¿Liberar Mesa?", isPresented: $vm.showingReleaseConfirmation) {
+            Button("Cancelar", role: .cancel) { }
+            Button("Liberar", role: .destructive) {
+                vm.executeReleaseTable()
+            }
+        } message: {
+            let orderType = vm.selectedTable != nil ? "Mesa \(vm.selectedTable!.number)" : "Orden Para Llevar"
+            Text("¿Liberar \(orderType)?\n\nHay \(vm.cart.count) items en el carrito que se perderán.")
+        }
     }
 }

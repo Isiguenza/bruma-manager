@@ -353,15 +353,27 @@ struct DateField: View {
                             .font(.title2.bold())
                             .foregroundColor(.white)
                         Spacer()
+                        Button {
+                            show = false
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.headline)
+                                .foregroundColor(.gray)
+                                .frame(width: 32, height: 32)
+                                .background(Color.white.opacity(0.1))
+                                .clipShape(Circle())
+                        }
                     }
                     DatePicker("", selection: $date, in: Date()..., displayedComponents: .date)
                         .datePickerStyle(.graphical)
                         .colorScheme(.dark)
                         .accentColor(.blue)
+                        .onChange(of: date) { _, newDate in
+                            let f = DateFormatter()
+                            f.dateFormat = "yyyy-MM-dd"
+                            value = f.string(from: newDate)
+                        }
                     Button {
-                        let f = DateFormatter()
-                        f.dateFormat = "yyyy-MM-dd"
-                        value = f.string(from: date)
                         show = false
                     } label: {
                         Text("Confirmar")
@@ -373,6 +385,16 @@ struct DateField: View {
                 .padding(20)
             }
             .presentationDetents([.medium])
+            .onAppear {
+                // Initialize date from value if exists
+                if !value.isEmpty {
+                    let f = DateFormatter()
+                    f.dateFormat = "yyyy-MM-dd"
+                    if let d = f.date(from: value) {
+                        date = d
+                    }
+                }
+            }
         }
     }
 }

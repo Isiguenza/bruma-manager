@@ -139,6 +139,30 @@ struct ReservationRowView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color(white: 0.13), lineWidth: 1)
         )
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            // Swipe derecha → Confirmar llegada
+            if reservation.status == "pending" || reservation.status == "confirmed" {
+                Button {
+                    confirming = true
+                    Task {
+                        await vm.confirm(id: reservation.id)
+                        confirming = false
+                    }
+                } label: {
+                    Label("Llegó", systemImage: "checkmark.circle.fill")
+                }
+                .tint(.green)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            // Swipe izquierda → Editar
+            Button {
+                vm.editingReservation = reservation
+            } label: {
+                Label("Editar", systemImage: "pencil")
+            }
+            .tint(.blue)
+        }
         .confirmationDialog("¿Cancelar esta reserva?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Cancelar reserva", role: .destructive) {
                 Task { await vm.delete(id: reservation.id) }

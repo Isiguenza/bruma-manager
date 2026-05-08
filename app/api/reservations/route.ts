@@ -85,11 +85,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Log warning if capacity exceeded, but allow reservation
     if (table.capacity < guestCount) {
-      return NextResponse.json(
-        { error: `Table capacity (${table.capacity}) is less than guest count (${guestCount})` },
-        { status: 400 }
-      );
+      console.log(`⚠️ Warning: Table ${table.number} capacity (${table.capacity}) is less than guest count (${guestCount})`);
     }
 
     // Check for conflicting reservations

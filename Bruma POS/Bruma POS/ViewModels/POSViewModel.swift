@@ -86,6 +86,7 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Transfer Table
     @Published var showTransferTableDialog = false
+    @Published var showingReleaseConfirmation = false
     
     // MARK: - Payment
     @Published var showingPayment = false
@@ -1569,12 +1570,49 @@ class POSViewModel: ObservableObject {
     }
     
     func handleReleaseTable() {
-        if let table = selectedTable {
-            Task {
-                try? await APIService.shared.updateTableStatus(tableId: table.id, status: "available")
+        let orderType = selectedTable != nil ? "Mesa \(selectedTable!.number)" : "Orden Para Llevar"
+        
+        // Confirmar si hay items en el carrito
+        if !cart.isEmpty {
+            // Mostrar alerta de confirmación
+            showingReleaseConfirmation = true
+            return
+        }
+        
+        // Si no hay items, liberar directamente
+        executeReleaseTable()
+    }
+    
+    func executeReleaseTable() {
+        Task {
+            do {
+                // Si hay mesa, actualizar estado a "available"
+                if let table = selectedTable {
+                    try await APIService.shared.updateTableStatus(
+                        tableId: table.id,
+                        status: "available"
+                    )
+                }
+                
+                let orderType = selectedTable != nil ? "Mesa \(selectedTable!.number)" : "Orden"
+                showToast("\(orderType) liberada")
+                
+                // Resetear estado
+                selectedTable = nil
+                cart = []
+                activeCourse = 1
+                activeSeat = "C"
+                customerName = ""
+                currentOrderId = nil
+                
+                // Recargar mesas
+                await refreshTables()
+                
+            } catch {
+                print("❌ Error liberando mesa:", error)
+                showToast("Error liberando mesa", isError: true)
             }
         }
-        handleConfirmOrder()
     }
     
     // MARK: - Loyalty

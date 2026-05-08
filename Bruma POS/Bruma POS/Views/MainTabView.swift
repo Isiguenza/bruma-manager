@@ -3,6 +3,7 @@ import SwiftUI
 struct MainTabView: View {
     @ObservedObject var vm: POSViewModel
     @StateObject private var cashVM = CashRegisterViewModel()
+    @StateObject private var deliveryVM = DeliveryViewModel()
     
     @State private var selectedTab = 0
     @State private var showPinModal = false
@@ -33,7 +34,7 @@ struct MainTabView: View {
                     .tag(2)
                 
                 // Tab 4: Delivery
-                DeliveryView()
+                DeliveryView(vm: deliveryVM)
                     .tabItem {
                         Label("Delivery", systemImage: "box.truck.fill")
                     }
@@ -50,6 +51,10 @@ struct MainTabView: View {
                     }
                 }
             }
+            
+            // Alerta global de delivery (aparece en cualquier tab)
+            GlobalDeliveryAlert(vm: deliveryVM)
+                .zIndex(999)
         }
         .sheet(isPresented: $showPinModal) {
             CashRegisterPinModal(vm: vm, onSuccess: {
@@ -59,6 +64,14 @@ struct MainTabView: View {
             }, onCancel: {
                 showPinModal = false
             })
+        }
+        .task {
+            // Polling global para delivery orders
+            await deliveryVM.loadOrders(showLoading: false)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                await deliveryVM.loadOrders(showLoading: false)
+            }
         }
     }
     

@@ -208,36 +208,58 @@ struct DatePickerSheet: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VStack(spacing: 24) {
-                HStack {
-                    Text("Seleccionar Fecha")
-                        .font(.title2.bold())
-                        .foregroundColor(.white)
-                    Spacer()
-                }
-                DatePicker("", selection: $date, displayedComponents: .date)
-                    .datePickerStyle(.graphical)
-                    .colorScheme(.dark)
-                    .accentColor(.blue)
+            ScrollView {
+                VStack(spacing: 24) {
+                    HStack {
+                        Text("Seleccionar Fecha")
+                            .font(.title2.bold())
+                            .foregroundColor(.white)
+                        Spacer()
+                        Button {
+                            onDone()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.headline)
+                                .foregroundColor(.gray)
+                                .frame(width: 32, height: 32)
+                                .background(Color.white.opacity(0.1))
+                                .clipShape(Circle())
+                        }
+                    }
+                    DatePicker("", selection: $date, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .colorScheme(.dark)
+                        .accentColor(.blue)
+                        .onChange(of: date) { _, newDate in
+                            let formatter = DateFormatter()
+                            formatter.dateFormat = "yyyy-MM-dd"
+                            selectedDate = formatter.string(from: newDate)
+                        }
 
-                Button {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy-MM-dd"
-                    selectedDate = formatter.string(from: date)
-                    onDone()
-                } label: {
-                    Text("Confirmar")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.blue)
-                        .cornerRadius(12)
+                    Button {
+                        onDone()
+                    } label: {
+                        Text("Confirmar")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.blue)
+                            .cornerRadius(12)
+                    }
                 }
+                .padding(20)
             }
-            .padding(20)
         }
         .presentationDetents([.medium])
+        .onAppear {
+            // Initialize date from selectedDate
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            if let d = formatter.date(from: selectedDate) {
+                date = d
+            }
+        }
     }
 }
 

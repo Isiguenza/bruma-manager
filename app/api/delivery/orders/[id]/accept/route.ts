@@ -30,8 +30,8 @@ export async function POST(
       );
     }
 
-    // Aceptar en Uber Eats
-    await acceptOrderInUber(deliveryOrder.externalId);
+    // TODO: Aceptar en Uber Eats (requiere store configurado)
+    // await acceptOrderInUber(deliveryOrder.externalId);
 
     // Crear orden en el sistema
     const systemOrder = await createSystemOrder(deliveryOrder);

@@ -39,15 +39,18 @@ class ReservationsViewModel: ObservableObject {
 
     func loadData() async {
         loading = true
+        print("📅 Loading reservations for date: \(selectedDate), status: \(statusFilter)")
         async let tablesResult: [Table] = (try? APIService.shared.fetchTables()) ?? []
         async let reservationsResult: [Reservation] = (try? APIService.shared.fetchReservations(date: selectedDate == "all" ? nil : selectedDate)) ?? []
         let (t, r) = await (tablesResult, reservationsResult)
         tables = t
+        print("📊 Fetched \(r.count) reservations, \(t.count) tables")
         var filtered = r
         if statusFilter != "all" {
             filtered = filtered.filter { $0.status == statusFilter }
         }
         reservations = filtered
+        print("✅ Showing \(filtered.count) reservations after filter")
         loading = false
     }
 
@@ -88,13 +91,22 @@ class ReservationsViewModel: ObservableObject {
             let urlStr = editingId != nil
                 ? "\(APIService.shared.baseURL)/api/reservations/\(editingId!)"
                 : "\(APIService.shared.baseURL)/api/reservations"
+            print("📝 Saving reservation to: \(urlStr)")
+            print("📦 Body: \(body)")
             let url = URL(string: urlStr)!
             var req = URLRequest(url: url)
             req.httpMethod = editingId != nil ? "PATCH" : "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (_, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                print("❌ Invalid response")
+                throw APIError.serverError
+            }
+            print("📡 Response status: \(http.statusCode)")
+            if !(200...299).contains(http.statusCode) {
+                let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
+                print("❌ Error response: \(errorText)")
                 throw APIError.serverError
             }
             showToast(editingId != nil ? "Reserva actualizada" : "Reserva creada")

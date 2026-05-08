@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 import AVFoundation
+import AudioToolbox
 
 @MainActor
 class DeliveryViewModel: ObservableObject {
@@ -37,32 +38,65 @@ class DeliveryViewModel: ObservableObject {
         loadAutoAcceptSetting()
     }
     
-    func loadOrders() async {
-        loading = true
+    func loadOrders(showLoading: Bool = true) async {
+        if showLoading {
+            loading = true
+        }
         do {
             let url = URL(string: "\(APIService.shared.baseURL)/api/delivery/orders")!
             let (data, _) = try await URLSession.shared.data(from: url)
             let orders = try JSONDecoder().decode([DeliveryOrder].self, from: data)
+            
+            // Detectar nuevos pedidos pendientes
+            let newPendingOrders = orders.filter { order in
+                order.status == "pending" && !deliveryOrders.contains(where: { $0.id == order.id })
+            }
+            
             deliveryOrders = orders
+            
+            // Mostrar notificación para nuevos pedidos
+            if let firstNew = newPendingOrders.first {
+                handleNewOrder(firstNew)
+            }
         } catch {
             print("Error loading delivery orders:", error)
-            showToast("Error cargando pedidos", isError: true)
+            if showLoading {
+                showToast("Error cargando pedidos", isError: true)
+            }
         }
-        loading = false
+        if showLoading {
+            loading = false
+        }
     }
     
     func acceptOrder(id: String) async {
         do {
+            print("🔄 Accepting order:", id)
             let url = URL(string: "\(APIService.shared.baseURL)/api/delivery/orders/\(id)/accept")!
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            let (_, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
                 throw APIError.serverError
             }
-            showToast("Pedido aceptado ✓")
-            await loadOrders()
+            
+            if (200...299).contains(http.statusCode) {
+                print("✅ Order accepted successfully")
+                showToast("Pedido aceptado y enviado a cocina ✓")
+                // Cerrar notificación
+                showNewOrderNotification = false
+                newOrder = nil
+                // Recargar órdenes
+                await loadOrders(showLoading: false)
+            } else {
+                let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
+                print("❌ Error accepting order:", errorText)
+                throw APIError.serverError
+            }
         } catch {
+            print("❌ Exception accepting order:", error)
             showToast("Error aceptando pedido", isError: true)
         }
     }
@@ -227,17 +261,37 @@ class DeliveryViewModel: ObservableObject {
     }
     
     private func playNotificationSound() {
-        // Reproducir sonido de notificación
-        guard let soundURL = Bundle.main.url(forResource: "notification", withExtension: "wav") else {
-            print("Notification sound not found")
-            return
-        }
-        
         do {
-            audioPlayer = try AVAudioPlayer(contentsOf: soundURL)
-            audioPlayer?.play()
+            // Configurar sesión de audio para que NO interfiera con música
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try audioSession.setActive(true)
+            
+            // Forzar salida por speaker del iPad (no Bluetooth)
+            try audioSession.overrideOutputAudioPort(.speaker)
+            
+            // Intentar reproducir sonido personalizado
+            if let soundURL = Bundle.main.url(forResource: "delivery_sound", withExtension: "wav") {
+                audioPlayer = try AVAudioPlayer(contentsOf: soundURL)
+                audioPlayer?.volume = 1.0
+                audioPlayer?.play()
+                print("✅ Playing custom delivery sound")
+            } else {
+                // Fallback: usar sonido del sistema
+                print("⚠️ Custom sound not found, using system sound")
+                AudioServicesPlaySystemSound(1007) // Tock sound
+                // Vibrar también
+                AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+            }
+            
+            // Restaurar configuración después de reproducir
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+            }
         } catch {
-            print("Error playing notification sound:", error)
+            print("❌ Error playing notification sound:", error)
+            // Último recurso: solo vibrar
+            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
         }
     }
     
@@ -277,5 +331,12 @@ struct DeliveryOrder: Codable, Identifiable {
     let completedAt: String?
     let cancelledAt: String?
     let orderId: String?
-    let rawData: String?
+    
+    // rawData can be either String or ignored
+    enum CodingKeys: String, CodingKey {
+        case id, platform, externalId, status
+        case customerName, customerPhone, deliveryAddress, deliveryInstructions
+        case subtotal, deliveryFee, platformFee, total
+        case estimatedPickupTime, createdAt, acceptedAt, readyAt, completedAt, cancelledAt, orderId
+    }
 }
