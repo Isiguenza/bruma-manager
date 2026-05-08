@@ -5,11 +5,8 @@ enum AppEnvironment {
     case production
     
     static var current: AppEnvironment {
-        #if DEBUG
-        return .development
-        #else
+        // Cambia manualmente entre .development y .production
         return .production
-        #endif
     }
     
     var baseURL: String {
