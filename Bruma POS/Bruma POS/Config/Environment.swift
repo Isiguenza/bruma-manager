@@ -23,7 +23,7 @@ enum AppEnvironment {
         case .development:
             return "http://192.168.0.227:3001"
         case .production:
-            return "https://bruma.drinksespantapajaros.com.mx/print"
+            return "http://192.168.0.109:3001"
         }
     }
 }
