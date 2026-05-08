@@ -43,6 +43,27 @@ struct Discount: Codable, Identifiable {
     let value: Double
     let requiresAuthorization: Bool
     let active: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, type, value, requiresAuthorization, active
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        type = try container.decode(String.self, forKey: .type)
+        requiresAuthorization = try container.decode(Bool.self, forKey: .requiresAuthorization)
+        active = try container.decode(Bool.self, forKey: .active)
+        
+        // Decode value as String or Double
+        if let stringValue = try? container.decode(String.self, forKey: .value) {
+            value = Double(stringValue) ?? 0
+        } else {
+            value = try container.decode(Double.self, forKey: .value)
+        }
+    }
 }
 
 struct LoyaltyCard: Codable, Identifiable {

@@ -67,20 +67,20 @@ struct Frosting: Codable, Identifiable {
     let id: String
     let name: String
     let description: String?
-    let price: String
+    let price: String?
     let active: Bool
     
-    var numericPrice: Double { Double(price) ?? 0 }
+    var numericPrice: Double { Double(price ?? "0") ?? 0 }
 }
 
 struct DryTopping: Codable, Identifiable {
     let id: String
     let name: String
     let description: String?
-    let price: String
+    let price: String?
     let active: Bool
     
-    var numericPrice: Double { Double(price) ?? 0 }
+    var numericPrice: Double { Double(price ?? "0") ?? 0 }
 }
 
 struct Extra: Codable, Identifiable {
