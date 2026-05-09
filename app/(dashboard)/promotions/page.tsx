@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -21,6 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { Tag, CheckCircle, XCircle, TrendUp } from "@phosphor-icons/react";
 import type { Promotion, Product, Category } from "@/lib/types";
 
 export default function PromotionsPage() {
@@ -223,27 +225,111 @@ export default function PromotionsPage() {
     category: "Categoría",
   };
 
+  const activePromotions = promotions.filter(p => p.active).length;
+  const inactivePromotions = promotions.filter(p => !p.active).length;
+  const buyXGetY = promotions.filter(p => p.type === 'buy_x_get_y').length;
+
   if (loading) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Promociones</h1>
-        <p>Cargando...</p>
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-2">
+          <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-muted-foreground">Cargando promociones...</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {/* Hero Section */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Promociones</h1>
-        <Button onClick={handleNewPromotion}>
-          <Plus className="h-4 w-4 mr-2" />
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Promociones</h1>
+          <p className="text-muted-foreground mt-1">
+            Gestiona ofertas y promociones especiales
+          </p>
+        </div>
+        <Button onClick={handleNewPromotion} className="gap-2">
+          <Plus className="h-4 w-4" />
           Nueva Promoción
         </Button>
       </div>
 
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-blue-500/10 p-3">
+                <Tag className="size-5 text-blue-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Promociones
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{promotions.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-green-500/10 p-3">
+                <CheckCircle className="size-5 text-green-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Activas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activePromotions}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-orange-500/10 p-3">
+                <XCircle className="size-5 text-orange-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Inactivas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{inactivePromotions}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-purple-500/10 p-3">
+                <TrendUp className="size-5 text-purple-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                2x1 / 3x2
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{buyXGetY}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t" />
+
       {/* Promotions Table */}
-      <div className="border rounded-lg">
+      <Card className="border-none shadow-sm">
+        <CardContent className="p-0">
+          <div className="rounded-lg overflow-hidden">
         <table className="w-full">
           <thead className="bg-muted">
             <tr>
@@ -328,7 +414,9 @@ export default function PromotionsPage() {
             No hay promociones creadas
           </div>
         )}
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>

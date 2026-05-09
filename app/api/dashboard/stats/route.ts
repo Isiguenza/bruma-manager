@@ -96,9 +96,9 @@ export async function GET() {
       .orderBy(sql`SUM(${orderItems.quantity}) DESC`)
       .limit(5);
 
-    // Sales by day (last 7 days)
+    // Sales by day (last 21 days - 3 weeks)
     const salesByDay = [];
-    for (let i = 6; i >= 0; i--) {
+    for (let i = 20; i >= 0; i--) {
       const dayStart = new Date(now);
       dayStart.setDate(dayStart.getDate() - i);
       dayStart.setHours(0, 0, 0, 0);
@@ -120,14 +120,19 @@ export async function GET() {
           )
         );
 
-      salesByDay.push({
-        date: dayStart.toLocaleDateString("es-MX", {
-          weekday: "short",
-          day: "numeric",
-        }),
-        sales: Number(daySales[0]?.sales ?? 0),
-        orders: Number(daySales[0]?.orders ?? 0),
-      });
+      const dayOfWeek = dayStart.getDay(); // 0 = domingo, 5 = viernes, 6 = sábado
+      
+      // Solo incluir viernes (5), sábado (6) y domingo (0)
+      if (dayOfWeek === 5 || dayOfWeek === 6 || dayOfWeek === 0) {
+        salesByDay.push({
+          date: dayStart.toLocaleDateString("es-MX", {
+            day: "numeric",
+            month: "short",
+          }),
+          sales: Number(daySales[0]?.sales ?? 0),
+          orders: Number(daySales[0]?.orders ?? 0),
+        });
+      }
     }
 
     return NextResponse.json({

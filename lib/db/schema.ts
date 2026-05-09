@@ -14,7 +14,15 @@ import {
 import { relations } from "drizzle-orm";
 
 // Enums
-export const userRoleEnum = pgEnum("user_role", ["admin", "cashier", "bartender"]);
+export const userRoleEnum = pgEnum("user_role", [
+  "admin",
+  "cashier",
+  "bartender",
+  "mesero",
+  "cajero",
+  "ayudante_general",
+  "cocinero",
+]);
 export const orderStatusEnum = pgEnum("order_status", [
   "pending",
   "preparing",
@@ -147,6 +155,7 @@ export const products = pgTable("products", {
   hasVariants: boolean("has_variants").notNull().default(false),
   variants: text("variants"), // JSON: [{ name: "Pieza", price: "50.00" }, { name: "Orden", price: "150.00" }]
   active: boolean("active").notNull().default(true),
+  deletedAt: timestamp("deleted_at"), // Soft delete - mantiene el producto en órdenes históricas
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -730,6 +739,75 @@ export const deliveryOrders = pgTable("delivery_orders", {
   // Raw data
   rawData: text("raw_data"), // JSON string
   
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Inventory Stock Products (productos contables como refrescos, empanadas crudas, etc.)
+export const inventoryProducts = pgTable("inventory_products", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  unit: varchar("unit", { length: 50 }).notNull().default("unidad"), // unidad, caja, paquete, etc.
+  currentStock: decimal("current_stock", { precision: 10, scale: 2 }).notNull().default("0"),
+  minStock: decimal("min_stock", { precision: 10, scale: 2 }).notNull().default("0"),
+  cost: decimal("cost", { precision: 10, scale: 2 }).notNull().default("0"), // costo unitario
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Recipes (recetas hechas de ingredientes, ej: Caldo de camarón)
+export const recipes = pgTable("recipes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  unit: varchar("unit", { length: 50 }).notNull().default("porción"), // porción, litro, etc.
+  currentStock: decimal("current_stock", { precision: 10, scale: 2 }).notNull().default("0"),
+  minStock: decimal("min_stock", { precision: 10, scale: 2 }).notNull().default("0"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Recipe Ingredients (ingredientes que componen una receta)
+export const recipeIngredients = pgTable("recipe_ingredients", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  recipeId: uuid("recipe_id")
+    .notNull()
+    .references(() => recipes.id, { onDelete: "cascade" }),
+  ingredientId: uuid("ingredient_id")
+    .notNull()
+    .references(() => ingredients.id, { onDelete: "cascade" }),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Product Inventory Link (vincula productos del menú con inventario o recetas)
+export const productInventoryLinks = pgTable("product_inventory_links", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  productId: uuid("product_id")
+    .notNull()
+    .references(() => products.id, { onDelete: "cascade" }),
+  // Puede ser inventario O receta (uno de los dos)
+  inventoryProductId: uuid("inventory_product_id")
+    .references(() => inventoryProducts.id, { onDelete: "cascade" }),
+  recipeId: uuid("recipe_id")
+    .references(() => recipes.id, { onDelete: "cascade" }),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull().default("1"), // cantidad que se descuenta por venta
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Product Flows (flujos de modificadores por producto - override de category flow)
+export const productFlows = pgTable("product_flows", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  productId: uuid("product_id")
+    .notNull()
+    .unique()
+    .references(() => products.id, { onDelete: "cascade" }),
+  useDefaultFlow: boolean("use_default_flow").notNull().default(true), // si true, usa el flujo de la categoría
+  steps: text("steps").notNull().default("[]"), // JSON array de ModifierStep
+  nodes: text("nodes"), // JSON para el editor visual (posiciones, conexiones)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

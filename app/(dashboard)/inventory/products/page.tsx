@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -46,7 +47,21 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, PencilSimple, Trash, MagnifyingGlass, X } from "@phosphor-icons/react";
+import { 
+  Plus, 
+  PencilSimple, 
+  Trash, 
+  MagnifyingGlass, 
+  X,
+  Package,
+  CheckCircle,
+  XCircle,
+  Star,
+  CurrencyDollar,
+  Tag,
+  Image as ImageIcon,
+  FlowArrow,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import type { Product, Category, Group } from "@/lib/types";
 
@@ -93,6 +108,7 @@ const emptyForm: ProductForm = {
 };
 
 export default function ProductsPage() {
+  const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -250,7 +266,7 @@ export default function ProductsPage() {
         const data = await res.json();
         throw new Error(data.error || "Error");
       }
-      toast.success("Producto eliminado");
+      toast.success("Producto eliminado (se mantiene en órdenes históricas)");
       fetchData();
     } catch (error: any) {
       toast.error(error.message || "Error eliminando producto");
@@ -327,10 +343,10 @@ export default function ProductsPage() {
       }
       
       if (deleted > 0) {
-        toast.success(`${deleted} productos eliminados`);
+        toast.success(`${deleted} productos eliminados (se mantienen en órdenes históricas)`);
       }
       if (failed > 0) {
-        toast.error(`${failed} productos no pudieron eliminarse (tienen órdenes asociadas)`);
+        toast.error(`${failed} productos no pudieron eliminarse`);
       }
       
       setSelectedProducts(new Set());
@@ -453,21 +469,100 @@ export default function ProductsPage() {
     return matchesSearch && matchesCategory;
   });
 
+  const activeProducts = products.filter(p => p.active).length;
+  const inactiveProducts = products.filter(p => !p.active).length;
+  const totalExtras = extras.length;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Productos y Extras</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setCatDialogOpen(true)}>
-            <Plus className="mr-1 size-4" /> Categoría
-          </Button>
-          <Button onClick={openCreateDialog}>
-            <Plus className="mr-1 size-4" /> Producto
-          </Button>
-          <Button onClick={openCreateExtraDialog} variant="outline">
-            <Plus className="mr-1 size-4" /> Extra
-          </Button>
+      {/* Hero Section */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Productos y Extras</h1>
+            <p className="text-muted-foreground mt-1">
+              Gestiona tu menú y complementos
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setCatDialogOpen(true)} className="gap-2">
+              <Plus className="size-4" /> Categoría
+            </Button>
+            <Button onClick={openCreateDialog} className="gap-2">
+              <Plus className="size-4" /> Producto
+            </Button>
+            <Button onClick={openCreateExtraDialog} variant="outline" className="gap-2">
+              <Plus className="size-4" /> Extra
+            </Button>
+          </div>
         </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-blue-500/10 p-3">
+                <Package className="size-5 text-blue-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Productos
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{products.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-green-500/10 p-3">
+                <CheckCircle className="size-5 text-green-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Activos
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activeProducts}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-orange-500/10 p-3">
+                <XCircle className="size-5 text-orange-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Inactivos
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{inactiveProducts}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-purple-500/10 p-3">
+                <Star className="size-5 text-purple-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Extras
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalExtras}</div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filtro de categorías */}
@@ -678,6 +773,14 @@ export default function ProductsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
+                              onClick={() => router.push(`/inventory/products/${product.id}/flow`)}
+                              title="Configurar flujo"
+                            >
+                              <FlowArrow className="size-4 text-blue-500" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => openEditDialog(product)}
                             >
                               <PencilSimple className="size-4" />
@@ -775,149 +878,244 @@ export default function ProductsPage() {
 
       {/* Product Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="!w-[80vw] sm:!max-w-[900px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-2xl">
               {editingId ? "Editar Producto" : "Nuevo Producto"}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Nombre *</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Ej: Mojito Clásico"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Descripción</Label>
-              <Textarea
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="Descripción del producto"
-                rows={2}
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Precio Base *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.price}
-                  onChange={(e) => setForm({ ...form, price: e.target.value })}
-                  placeholder="0.00"
-                  disabled={form.hasVariants}
-                />
-                {form.hasVariants && (
-                  <p className="text-xs text-muted-foreground">
-                    El precio se define en las variantes
-                  </p>
-                )}
+
+          <div className="space-y-6">
+            {/* Información Básica */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <Package className="size-4 text-primary" weight="duotone" />
+                </div>
+                <h3 className="font-semibold">Información Básica</h3>
               </div>
-              <div className="space-y-2">
-                <Label>Precio Plataforma 🏍️</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.platformPrice || ""}
-                  onChange={(e) => setForm({ ...form, platformPrice: e.target.value })}
-                  placeholder="Opcional"
-                  disabled={form.hasVariants}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Para Uber/Rappi/Didi
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label>Categoría</Label>
-                <Select
-                  value={form.categoryId}
-                  onValueChange={(v) => setForm({ ...form, categoryId: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sin categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="text-sm font-medium">
+                    Nombre del Producto *
+                  </Label>
+                  <Input
+                    id="name"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="Ej: Mojito Clásico"
+                    className="text-base"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description" className="text-sm font-medium">
+                    Descripción
+                  </Label>
+                  <Textarea
+                    id="description"
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    placeholder="Describe el producto, ingredientes principales, etc."
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="category" className="text-sm font-medium">
+                    Categoría
+                  </Label>
+                  <Select
+                    value={form.categoryId}
+                    onValueChange={(v) => setForm({ ...form, categoryId: v })}
+                  >
+                    <SelectTrigger id="category">
+                      <SelectValue placeholder="Selecciona una categoría" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="size-3 rounded-full"
+                              style={{ backgroundColor: cat.color || "#6B7280" }}
+                            />
+                            {cat.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
-            {/* Sección de Variantes */}
-            <div className="space-y-3 border-t pt-4">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={form.hasVariants}
-                  onCheckedChange={(v) => {
-                    setForm({ ...form, hasVariants: v, variants: v ? [{ name: "", price: "" }] : [] });
-                  }}
-                />
-                <Label>Este producto tiene variantes de precio</Label>
+            {/* Precios */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
+                <div className="rounded-lg bg-green-500/10 p-2">
+                  <CurrencyDollar className="size-4 text-green-600" weight="duotone" />
+                </div>
+                <h3 className="font-semibold">Precios</h3>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Ej: Pieza/Orden, Mediano/Grande, Individual/Familiar
-              </p>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="price" className="text-sm font-medium">
+                    Precio Base *
+                  </Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      id="price"
+                      type="number"
+                      step="0.01"
+                      value={form.price}
+                      onChange={(e) => setForm({ ...form, price: e.target.value })}
+                      placeholder="0.00"
+                      disabled={form.hasVariants}
+                      className="pl-7"
+                    />
+                  </div>
+                  {form.hasVariants && (
+                    <p className="text-xs text-muted-foreground">
+                      El precio se define en las variantes
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="platformPrice" className="text-sm font-medium flex items-center gap-1">
+                    Precio Plataforma
+                    <span className="text-xs">🏍️</span>
+                  </Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      id="platformPrice"
+                      type="number"
+                      step="0.01"
+                      value={form.platformPrice || ""}
+                      onChange={(e) => setForm({ ...form, platformPrice: e.target.value })}
+                      placeholder="Opcional"
+                      disabled={form.hasVariants}
+                      className="pl-7"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Para Uber Eats, Rappi, Didi Food
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Variantes */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b">
+                <div className="flex items-center gap-2">
+                  <div className="rounded-lg bg-blue-500/10 p-2">
+                    <Tag className="size-4 text-blue-600" weight="duotone" />
+                  </div>
+                  <h3 className="font-semibold">Variantes de Precio</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={form.hasVariants}
+                    onCheckedChange={(v) => {
+                      setForm({ ...form, hasVariants: v, variants: v ? [{ name: "", price: "" }] : [] });
+                    }}
+                  />
+                  <Label className="text-sm cursor-pointer">Activar</Label>
+                </div>
+              </div>
+
+              {!form.hasVariants && (
+                <p className="text-sm text-muted-foreground">
+                  Activa las variantes si tu producto tiene diferentes tamaños o presentaciones con precios distintos.
+                  <br />
+                  <span className="text-xs">Ej: Pieza/Orden, Mediano/Grande, Individual/Familiar</span>
+                </p>
+              )}
 
               {form.hasVariants && (
-                <div className="space-y-2">
-                  <Label>Variantes</Label>
-                  {form.variants.map((variant, index) => (
-                    <div key={index} className="flex gap-2">
-                      <Input
-                        placeholder="Nombre (ej: Pieza)"
-                        value={variant.name}
-                        onChange={(e) => {
-                          const newVariants = [...form.variants];
-                          newVariants[index].name = e.target.value;
-                          setForm({ ...form, variants: newVariants });
-                        }}
-                        className="flex-1"
-                      />
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="Precio"
-                        value={variant.price}
-                        onChange={(e) => {
-                          const newVariants = [...form.variants];
-                          newVariants[index].price = e.target.value;
-                          setForm({ ...form, variants: newVariants });
-                        }}
-                        className="w-32"
-                      />
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="Precio Plataforma"
-                        value={variant.platformPrice || ""}
-                        onChange={(e) => {
-                          const newVariants = [...form.variants];
-                          newVariants[index].platformPrice = e.target.value;
-                          setForm({ ...form, variants: newVariants });
-                        }}
-                        className="w-32"
-                        title="Precio para Uber/Rappi/Didi"
-                      />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => {
-                          const newVariants = form.variants.filter((_, i) => i !== index);
-                          setForm({ ...form, variants: newVariants });
-                        }}
-                        disabled={form.variants.length === 1}
-                      >
-                        <Trash className="size-4" />
-                      </Button>
-                    </div>
-                  ))}
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    {form.variants.map((variant, index) => (
+                      <div key={index} className="p-3 border rounded-lg bg-muted/30 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Variante {index + 1}
+                          </span>
+                          {form.variants.length > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const newVariants = form.variants.filter((_, i) => i !== index);
+                                setForm({ ...form, variants: newVariants });
+                              }}
+                              className="ml-auto h-6 px-2 text-destructive hover:text-destructive"
+                            >
+                              <Trash className="size-3 mr-1" />
+                              Eliminar
+                            </Button>
+                          )}
+                        </div>
+                        <div className="grid md:grid-cols-3 gap-2">
+                          <Input
+                            placeholder="Nombre (ej: Pieza)"
+                            value={variant.name}
+                            onChange={(e) => {
+                              const newVariants = [...form.variants];
+                              newVariants[index].name = e.target.value;
+                              setForm({ ...form, variants: newVariants });
+                            }}
+                          />
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                              $
+                            </span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Precio"
+                              value={variant.price}
+                              onChange={(e) => {
+                                const newVariants = [...form.variants];
+                                newVariants[index].price = e.target.value;
+                                setForm({ ...form, variants: newVariants });
+                              }}
+                              className="pl-7"
+                            />
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                              $
+                            </span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Precio Plataforma"
+                              value={variant.platformPrice || ""}
+                              onChange={(e) => {
+                                const newVariants = [...form.variants];
+                                newVariants[index].platformPrice = e.target.value;
+                                setForm({ ...form, variants: newVariants });
+                              }}
+                              className="pl-7"
+                              title="Precio para Uber/Rappi/Didi"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
@@ -932,50 +1130,74 @@ export default function ProductsPage() {
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              <Label>Imagen del Producto</Label>
-              <div className="flex gap-2">
-                <Input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  disabled={uploading}
-                  className="flex-1"
-                />
-                {uploading && <span className="text-sm text-muted-foreground">Subiendo...</span>}
-              </div>
-              {form.imageUrl && (
-                <div className="mt-2 relative w-32 h-32 border rounded overflow-hidden">
-                  <img
-                    src={form.imageUrl}
-                    alt="Preview"
-                    className="w-full h-full object-cover"
-                  />
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="absolute top-1 right-1"
-                    onClick={() => setForm({ ...form, imageUrl: "" })}
-                  >
-                    <Trash className="size-3" />
-                  </Button>
+
+            {/* Imagen */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
+                <div className="rounded-lg bg-purple-500/10 p-2">
+                  <ImageIcon className="size-4 text-purple-600" weight="duotone" />
                 </div>
-              )}
+                <h3 className="font-semibold">Imagen del Producto</h3>
+              </div>
+
+              <div className="space-y-3">
+                {form.imageUrl ? (
+                  <div className="relative w-full h-48 border-2 border-dashed rounded-lg overflow-hidden group">
+                    <img
+                      src={form.imageUrl}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setForm({ ...form, imageUrl: "" })}
+                      >
+                        <Trash className="size-4 mr-2" />
+                        Eliminar Imagen
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                    <ImageIcon className="size-12 mx-auto mb-3 text-muted-foreground opacity-50" weight="duotone" />
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      disabled={uploading}
+                      className="max-w-xs mx-auto"
+                    />
+                    {uploading && (
+                      <p className="text-sm text-muted-foreground mt-2">Subiendo imagen...</p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Estado */}
+            <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+              <div>
+                <Label className="text-sm font-medium">Estado del Producto</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {form.active ? "Visible en el menú" : "Oculto del menú"}
+                </p>
+              </div>
               <Switch
                 checked={form.active}
                 onCheckedChange={(v) => setForm({ ...form, active: v })}
               />
-              <Label>Activo</Label>
             </div>
           </div>
-          <DialogFooter>
+
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting}>
-              {submitting ? "Guardando..." : editingId ? "Actualizar" : "Crear"}
+            <Button onClick={handleSubmit} disabled={submitting} className="min-w-24">
+              {submitting ? "Guardando..." : editingId ? "Actualizar" : "Crear Producto"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1007,65 +1229,112 @@ export default function ProductsPage() {
 
       {/* Extra Dialog */}
       <Dialog open={extraDialogOpen} onOpenChange={setExtraDialogOpen}>
-        <DialogContent>
+        <DialogContent className="!w-[70vw] sm:!max-w-[750px]">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-2xl">
               {editingExtra ? "Editar Extra" : "Nuevo Extra"}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="extra-name">Nombre *</Label>
-              <Input
-                id="extra-name"
-                value={extraName}
-                onChange={(e) => setExtraName(e.target.value)}
-                placeholder="Crema batida, Caramelo, etc."
-              />
+          <div className="space-y-6">
+            {/* Información Básica */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <Star className="size-4 text-primary" weight="duotone" />
+                </div>
+                <h3 className="font-semibold">Información del Extra</h3>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="extra-name" className="text-sm font-medium">
+                    Nombre del Extra *
+                  </Label>
+                  <Input
+                    id="extra-name"
+                    value={extraName}
+                    onChange={(e) => setExtraName(e.target.value)}
+                    placeholder="Ej: Crema batida, Caramelo, Shot extra"
+                    className="text-base"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="extra-description" className="text-sm font-medium">
+                    Descripción
+                  </Label>
+                  <Textarea
+                    id="extra-description"
+                    value={extraDescription}
+                    onChange={(e) => setExtraDescription(e.target.value)}
+                    placeholder="Describe el extra (opcional)"
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
+              </div>
             </div>
 
-            <div>
-              <Label htmlFor="extra-description">Descripción</Label>
-              <Textarea
-                id="extra-description"
-                value={extraDescription}
-                onChange={(e) => setExtraDescription(e.target.value)}
-                placeholder="Descripción opcional del extra"
-                rows={3}
-              />
-            </div>
+            {/* Precio y Orden */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
+                <div className="rounded-lg bg-green-500/10 p-2">
+                  <CurrencyDollar className="size-4 text-green-600" weight="duotone" />
+                </div>
+                <h3 className="font-semibold">Precio y Configuración</h3>
+              </div>
 
-            <div>
-              <Label htmlFor="extra-price">Precio *</Label>
-              <Input
-                id="extra-price"
-                type="number"
-                step="0.01"
-                value={extraPrice}
-                onChange={(e) => setExtraPrice(e.target.value)}
-                placeholder="0.00"
-              />
-            </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="extra-price" className="text-sm font-medium">
+                    Precio *
+                  </Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      id="extra-price"
+                      type="number"
+                      step="0.01"
+                      value={extraPrice}
+                      onChange={(e) => setExtraPrice(e.target.value)}
+                      placeholder="0.00"
+                      className="pl-7"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Costo adicional del extra
+                  </p>
+                </div>
 
-            <div>
-              <Label htmlFor="extra-sortOrder">Orden de visualización</Label>
-              <Input
-                id="extra-sortOrder"
-                type="number"
-                value={extraSortOrder}
-                onChange={(e) => setExtraSortOrder(parseInt(e.target.value) || 0)}
-                min={0}
-              />
+                <div className="space-y-2">
+                  <Label htmlFor="extra-sortOrder" className="text-sm font-medium">
+                    Orden de Visualización
+                  </Label>
+                  <Input
+                    id="extra-sortOrder"
+                    type="number"
+                    value={extraSortOrder}
+                    onChange={(e) => setExtraSortOrder(parseInt(e.target.value) || 0)}
+                    min={0}
+                    placeholder="0"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Menor número aparece primero
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setExtraDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleExtraSubmit} disabled={submitting}>
-              {submitting ? "Guardando..." : "Guardar"}
+            <Button onClick={handleExtraSubmit} disabled={submitting} className="min-w-24">
+              {submitting ? "Guardando..." : editingExtra ? "Actualizar" : "Crear Extra"}
             </Button>
           </DialogFooter>
         </DialogContent>

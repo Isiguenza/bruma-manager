@@ -142,11 +142,8 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
-    // Update table status to reserved
-    await db
-      .update(tables)
-      .set({ status: "reserved" })
-      .where(eq(tables.id, tableId));
+    // Don't update table status - let it stay available until customer arrives
+    // The table will show "Reservada - HH:MM" in the UI but won't be blocked
 
     return NextResponse.json(reservation, { status: 201 });
   } catch (error) {

@@ -91,16 +91,38 @@ class MenuViewModel: ObservableObject {
             return
         }
         
-        // Category has custom flow → start modifier flow
-        if let flow = categoryFlow, !flow.useDefaultFlow, !flow.steps.isEmpty {
-            selectedProduct = product
-            stepSelections = [:]
-            currentStepIndex = 0
-            showModifierFlow = true
-            return
-        }
+        print("🎯 Waitress: Tapped product \(product.name) (\(product.id))")
         
-        // Simple product → show notes dialog directly
+        // Check product flow (hybrid: product-specific or inherited from category)
+        Task {
+            do {
+                print("🌐 Waitress: Fetching flow for \(product.id)")
+                let flow = try await APIService.shared.fetchProductFlow(productId: product.id)
+                print("📱 Waitress: Received flow - useDefault: \(flow.useDefaultFlow), steps: \(flow.steps.count)")
+                
+                if !flow.useDefaultFlow, !flow.steps.isEmpty {
+                    print("✅ Waitress: Showing modifier flow with \(flow.steps.count) steps")
+                    await MainActor.run {
+                        selectedProduct = product
+                        stepSelections = [:]
+                        currentStepIndex = 0
+                        categoryFlow = flow
+                        showModifierFlow = true
+                    }
+                    return
+                }
+                
+                print("⏭️ Waitress: No flow, adding directly")
+                await addProductDirectly(product, seat: seat, course: course)
+            } catch {
+                print("❌ Waitress: Error fetching flow: \(error)")
+                await addProductDirectly(product, seat: seat, course: course)
+            }
+        }
+    }
+    
+    @MainActor
+    private func addProductDirectly(_ product: Product, seat: String, course: Int) {
         let item = CartItem(
             productId: product.id,
             productName: product.name,

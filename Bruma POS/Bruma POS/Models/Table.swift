@@ -9,6 +9,7 @@ struct Table: Codable, Identifiable {
     let active: Bool
     let activeOrder: ActiveOrder?
     let guestCount: Int?
+    let nextReservation: NextReservation?
     
     var isAvailable: Bool { status == "available" }
     var isOccupied: Bool { status == "occupied" }
@@ -22,7 +23,13 @@ struct Table: Codable, Identifiable {
         case id, number, name, capacity, status, active
         case activeOrder = "active_order"
         case guestCount = "guest_count"
+        case nextReservation = "next_reservation"
     }
+}
+
+struct NextReservation: Codable {
+    let reservationTime: String
+    let customerName: String
 }
 
 struct ActiveOrder: Codable {

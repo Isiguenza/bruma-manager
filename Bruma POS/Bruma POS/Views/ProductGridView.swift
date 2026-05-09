@@ -194,7 +194,7 @@ struct ProductGridView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                case "custom":
+                case "custom", "category", "products":
                     if let options = step.options {
                         ForEach(options) { option in
                             Button {
@@ -302,6 +302,14 @@ struct ProductCardView: View {
         vm.categories.first(where: { $0.id == product.categoryId })
     }
     
+    private var isPlatform: Bool {
+        vm.isPlatformDelivery
+    }
+    
+    private var displayPrice: Double {
+        isPlatform ? product.numericPlatformPrice : product.numericPrice
+    }
+    
     var body: some View {
         Button {
             vm.handleProductClick(product)
@@ -317,9 +325,17 @@ struct ProductCardView: View {
                 Spacer()
                 
                 // Price
-                Text(vm.formatCurrency(product.numericPrice))
-                    .font(.title3.weight(.bold))
-                    .foregroundColor(.white)
+                HStack(spacing: 4) {
+                    Text(vm.formatCurrency(displayPrice))
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.white)
+                    
+                    if isPlatform && product.platformPrice != nil {
+                        Image(systemName: "motorcycle")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+                }
                 
                 // Category badge
                 if let cat = categoryObj {

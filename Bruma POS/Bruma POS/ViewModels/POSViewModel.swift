@@ -87,6 +87,7 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Delivery
     @Published var showDeliveryDialog = false
+    @Published var isCreatingPlatformDelivery = false
     @Published var isPlatformDelivery = false
     @Published var deliveryPlatform = ""
     @Published var platformOrderDigits = ""
@@ -676,22 +677,25 @@ class POSViewModel: ObservableObject {
             return
         }
         
-        // Check category flow
-        if let catId = product.categoryId {
-            Task {
-                let flow = try? await APIService.shared.fetchCategoryFlow(categoryId: catId)
-                if let flow = flow, !flow.useDefaultFlow, !flow.steps.isEmpty {
-                    categoryFlow = flow
-                    selectedProduct = product
-                    currentStepIndex = 0
-                    stepSelections = [:]
-                    return
-                }
-                // No flow — add directly with notes dialog
+        // Check product flow (hybrid: product-specific or inherited from category)
+        Task {
+            let flow = try? await APIService.shared.fetchProductFlow(productId: product.id)
+            print("🎯 Flow decision for \(product.name):")
+            print("   - Has flow: \(flow != nil)")
+            print("   - Use default: \(flow?.useDefaultFlow ?? true)")
+            print("   - Steps count: \(flow?.steps.count ?? 0)")
+            
+            if let flow = flow, !flow.useDefaultFlow, !flow.steps.isEmpty {
+                print("   ✅ Using flow with \(flow.steps.count) steps")
+                categoryFlow = flow
+                selectedProduct = product
+                currentStepIndex = 0
+                stepSelections = [:]
+            } else {
+                print("   ⏭️ Adding product directly (no flow)")
+                // No flow — add directly
                 addProductDirectly(product)
             }
-        } else {
-            addProductDirectly(product)
         }
     }
     
@@ -734,40 +738,29 @@ class POSViewModel: ObservableObject {
         let isBev = product.category?.isBeverage ?? false
         let displayName = "\(product.name) - \(variantName)"
         
-        // Check for category flow
-        if let catId = product.categoryId {
-            Task {
-                let flow = try? await APIService.shared.fetchCategoryFlow(categoryId: catId)
-                if let flow = flow, !flow.useDefaultFlow, !flow.steps.isEmpty {
-                    categoryFlow = flow
-                    selectedProduct = product
-                    currentStepIndex = 0
-                    stepSelections = [:]
-                    // Store variant info for later
-                    stepSelections["_variantName"] = variantName as Any
-                    stepSelections["_variantPrice"] = variantPrice as Any
-                    stepSelections["_displayName"] = displayName as Any
-                    return
-                }
-                
-                let newItem = CartItem(
-                    productId: product.id,
-                    productName: displayName,
-                    unitPrice: variantPrice,
-                    quantity: 1,
-                    notes: "",
-                    seat: activeSeat,
-                    course: activeCourse,
-                    sentToKitchen: false,
-                    isBeverage: isBev,
-                    deliveredToTable: false,
-                    isGuest: false
-                )
-                pendingCartItem = newItem
-                tempNotes = ""
-                showNotesDialog = true
+        // Check for product flow (hybrid: product-specific or inherited from category)
+        Task {
+            let flow = try? await APIService.shared.fetchProductFlow(productId: product.id)
+            print("🎯 Variant flow decision for \(product.name) - \(variantName):")
+            print("   - Has flow: \(flow != nil)")
+            print("   - Use default: \(flow?.useDefaultFlow ?? true)")
+            print("   - Steps count: \(flow?.steps.count ?? 0)")
+            
+            if let flow = flow, !flow.useDefaultFlow, !flow.steps.isEmpty {
+                print("   ✅ Using flow with \(flow.steps.count) steps")
+                categoryFlow = flow
+                selectedProduct = product
+                currentStepIndex = 0
+                stepSelections = [:]
+                // Store variant info for later
+                stepSelections["_variantName"] = variantName as Any
+                stepSelections["_variantPrice"] = variantPrice as Any
+                stepSelections["_displayName"] = displayName as Any
+                return
             }
-        } else {
+            
+            print("   ⏭️ Adding variant directly (no flow)")
+            
             let newItem = CartItem(
                 productId: product.id,
                 productName: displayName,
@@ -777,7 +770,7 @@ class POSViewModel: ObservableObject {
                 seat: activeSeat,
                 course: activeCourse,
                 sentToKitchen: false,
-                isBeverage: product.category?.isBeverage ?? false,
+                isBeverage: isBev,
                 deliveredToTable: false,
                 isGuest: false
             )
@@ -863,7 +856,7 @@ class POSViewModel: ObservableObject {
                             let extrasPrice = exts.reduce(0.0) { $0 + $1.numericPrice }
                             price += extrasPrice
                         }
-                    case "custom":
+                    case "custom", "category", "products":
                         if let opt = sel as? ModifierOption {
                             customModsDict[step.id] = [
                                 "stepName": step.stepName,
@@ -1164,6 +1157,29 @@ class POSViewModel: ObservableObject {
             if let f = item.frostingName { dict["frosting"] = f }
             if let t = item.dryToppingName { dict["topping"] = t }
             if let e = item.extraName { dict["extra"] = e }
+            // Include flow steps (category, products, custom) in kitchen ticket
+            if let cm = item.customModifiers,
+               let data = cm.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                var flowSelections: [[String: Any]] = []
+                for (_, value) in json {
+                    if let stepData = value as? [String: Any],
+                       let stepName = stepData["stepName"] as? String,
+                       let options = stepData["options"] as? [[String: Any]] {
+                        for opt in options {
+                            if let optName = opt["name"] as? String {
+                                flowSelections.append([
+                                    "stepName": stepName,
+                                    "name": optName
+                                ])
+                            }
+                        }
+                    }
+                }
+                if !flowSelections.isEmpty {
+                    dict["flowSteps"] = flowSelections
+                }
+            }
             dict["isBeverage"] = item.isBeverage
             return dict
         }

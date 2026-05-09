@@ -134,18 +134,36 @@ class CartViewModel: ObservableObject {
             }
             
             // Print comanda (fire and forget)
-            let printItems: [[String: Any]] = pending.map {
+            let printItems: [[String: Any]] = pending.map { item in
                 var dict: [String: Any] = [
-                    "name": $0.productName,
-                    "qty": $0.quantity,
-                    "seat": $0.seat,
-                    "course": $0.course,
-                    "isBeverage": $0.isBeverage
+                    "name": item.productName,
+                    "qty": item.quantity,
+                    "seat": item.seat,
+                    "course": item.course,
+                    "isBeverage": item.isBeverage
                 ]
-                if !$0.notes.isEmpty { dict["notes"] = $0.notes }
-                if let f = $0.frostingName { dict["frosting"] = f }
-                if let t = $0.dryToppingName { dict["topping"] = t }
-                if let e = $0.extraName { dict["extra"] = e }
+                if !item.notes.isEmpty { dict["notes"] = item.notes }
+                if let f = item.frostingName { dict["frosting"] = f }
+                if let t = item.dryToppingName { dict["topping"] = t }
+                if let e = item.extraName { dict["extra"] = e }
+                // Include flow steps (category, products, custom) in kitchen ticket
+                if let cm = item.customModifiers,
+                   let data = cm.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                    var flowSelections: [[String: Any]] = []
+                    for entry in json {
+                        if let stepId = entry["stepId"] as? String,
+                           let optionName = entry["optionName"] as? String {
+                            flowSelections.append([
+                                "stepId": stepId,
+                                "name": optionName
+                            ])
+                        }
+                    }
+                    if !flowSelections.isEmpty {
+                        dict["flowSteps"] = flowSelections
+                    }
+                }
                 return dict
             }
             await APIService.shared.printComanda(

@@ -182,15 +182,9 @@ struct TableSelectionView: View {
                 
                 VStack(spacing: 24) {
                     VStack(spacing: 8) {
-                        Text(vm.isPlatformDelivery ? "Nueva Orden Delivery" : "Nueva Orden Para Llevar")
+                        Text("Nueva Orden Para Llevar")
                             .font(.title3.weight(.semibold))
                             .foregroundColor(.white)
-                        
-                        if vm.isPlatformDelivery {
-                            Text("\(vm.deliveryPlatform) #\(vm.platformOrderDigits)")
-                                .font(.subheadline)
-                                .foregroundColor(.purple)
-                        }
                     }
                     
                     VStack(alignment: .leading, spacing: 8) {
@@ -371,6 +365,17 @@ struct TableCardView: View {
                         .foregroundColor(tableStatusColor(table))
                 }
                 
+                if let reservation = table.nextReservation {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.caption2)
+                            .foregroundColor(.purple)
+                        Text("Reservada - \(reservation.reservationTime)")
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(.purple)
+                    }
+                }
+                
                 if hasReadyItems {
                     HStack(spacing: 4) {
                         Circle()
@@ -392,9 +397,7 @@ struct TableCardView: View {
                             .stroke(tableBorderColor(table), lineWidth: 1)
                     )
             )
-            .opacity(table.isReserved ? 0.5 : 1)
         }
-        .disabled(table.isReserved)
         .buttonStyle(.plain)
     }
     

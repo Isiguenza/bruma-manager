@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { tables } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { tables, reservations } from "@/lib/db/schema";
+import { eq, and, gte } from "drizzle-orm";
 
 // GET /api/tables - Obtener todas las mesas
 export async function GET() {
@@ -12,7 +12,33 @@ export async function GET() {
       .where(eq(tables.active, true))
       .orderBy(tables.number);
 
-    return NextResponse.json(allTables);
+    // Get today's date in YYYY-MM-DD format
+    const today = new Date().toISOString().split('T')[0];
+
+    // Fetch next reservation for each table (only for today)
+    const tablesWithReservations = await Promise.all(
+      allTables.map(async (table) => {
+        const nextReservation = await db.query.reservations.findFirst({
+          where: and(
+            eq(reservations.tableId, table.id),
+            eq(reservations.reservationDate, today),
+            eq(reservations.status, 'pending')
+          ),
+          orderBy: (reservations, { asc }) => [asc(reservations.reservationTime)],
+          columns: {
+            reservationTime: true,
+            customerName: true,
+          }
+        });
+
+        return {
+          ...table,
+          next_reservation: nextReservation || null,
+        };
+      })
+    );
+
+    return NextResponse.json(tablesWithReservations);
   } catch (error) {
     console.error("Error fetching tables:", error);
     return NextResponse.json(

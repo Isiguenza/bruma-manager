@@ -142,6 +142,15 @@ struct CartView: View {
                             }
                             
                             Divider()
+                        } else {
+                            // For delivery/takeout orders
+                            Button(role: .destructive) {
+                                vm.handleReleaseTable()
+                            } label: {
+                                Label("Liberar Orden", systemImage: "trash")
+                            }
+                            
+                            Divider()
                         }
                         
                         Button {
@@ -611,7 +620,7 @@ struct CartItemRow: View {
                     .foregroundColor(.gray)
             }
         }
-        .alert("¿Liberar Mesa?", isPresented: $vm.showingReleaseConfirmation) {
+        .alert(vm.selectedTable != nil ? "¿Liberar Mesa?" : "¿Liberar Orden?", isPresented: $vm.showingReleaseConfirmation) {
             Button("Cancelar", role: .cancel) { }
             Button("Liberar", role: .destructive) {
                 vm.executeReleaseTable()

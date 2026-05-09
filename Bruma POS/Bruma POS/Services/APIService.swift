@@ -122,6 +122,20 @@ class APIService {
         let _: Table = try await request(url, method: "PUT", body: ["status": status])
     }
     
+    // MARK: - Orders
+    
+    func deleteOrder(orderId: String) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError
+        }
+    }
+    
     // MARK: - Products & Categories
     
     func fetchProducts() async throws -> [Product] {
@@ -156,6 +170,83 @@ class APIService {
         } catch {
             return CategoryFlow(categoryId: categoryId, useDefaultFlow: true, steps: [])
         }
+    }
+    
+    // Fetch product flow (hybrid: product-specific or inherited from category)
+    func fetchProductFlow(productId: String) async throws -> CategoryFlow {
+        let url = URL(string: "\(baseURL)/api/products/\(productId)/flow")!
+        print("🌐 Fetching product flow from: \(url.absoluteString)")
+        
+        do {
+            // First get raw data to see what we're receiving
+            let (data, response) = try await URLSession.shared.data(from: url)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 HTTP Status: \(httpResponse.statusCode)")
+            }
+            
+            // Print raw JSON for debugging
+            if let jsonString = String(data: data, encoding: .utf8) {
+                print("📥 Raw JSON received (first 500 chars):")
+                print(String(jsonString.prefix(500)))
+            }
+            
+            // Try to decode
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            
+            let flowResponse: ProductFlowResponse
+            do {
+                flowResponse = try decoder.decode(ProductFlowResponse.self, from: data)
+                print("✅ Successfully decoded ProductFlowResponse")
+            } catch let decodingError {
+                print("❌ Decoding error details:")
+                print("   Error: \(decodingError)")
+                if let decodingError = decodingError as? DecodingError {
+                    switch decodingError {
+                    case .keyNotFound(let key, let context):
+                        print("   Missing key: \(key.stringValue)")
+                        print("   Context: \(context.debugDescription)")
+                    case .typeMismatch(let type, let context):
+                        print("   Type mismatch for type: \(type)")
+                        print("   Context: \(context.debugDescription)")
+                    case .valueNotFound(let type, let context):
+                        print("   Value not found for type: \(type)")
+                        print("   Context: \(context.debugDescription)")
+                    case .dataCorrupted(let context):
+                        print("   Data corrupted: \(context.debugDescription)")
+                    @unknown default:
+                        print("   Unknown decoding error")
+                    }
+                }
+                throw decodingError
+            }
+            
+            print("📱 POS received flow for product \(productId):")
+            print("   - Source: \(flowResponse.source ?? "unknown")")
+            print("   - Steps: \(flowResponse.steps.count)")
+            print("   - Use default: \(flowResponse.useDefaultFlow)")
+            
+            // Convert ProductFlowResponse to CategoryFlow for compatibility
+            return CategoryFlow(
+                categoryId: flowResponse.productId,
+                useDefaultFlow: flowResponse.useDefaultFlow,
+                steps: flowResponse.steps
+            )
+        } catch {
+            print("❌ Error fetching product flow: \(error)")
+            print("   Error type: \(type(of: error))")
+            // Return empty flow on error
+            return CategoryFlow(categoryId: productId, useDefaultFlow: true, steps: [])
+        }
+    }
+    
+    // Helper struct for product flow API response
+    struct ProductFlowResponse: Codable {
+        let productId: String
+        let useDefaultFlow: Bool
+        let steps: [ModifierStep]
+        let source: String?
     }
     
     // MARK: - Orders

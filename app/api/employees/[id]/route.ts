@@ -66,18 +66,12 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    // Soft delete - just deactivate
-    const [updated] = await db
-      .update(userProfiles)
-      .set({ active: false, updatedAt: new Date() })
-      .where(eq(userProfiles.id, id))
-      .returning();
+    // Hard delete - permanently remove employee
+    await db
+      .delete(userProfiles)
+      .where(eq(userProfiles.id, id));
 
-    if (!updated) {
-      return NextResponse.json({ error: "Employee not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ message: "Employee deactivated" });
+    return NextResponse.json({ message: "Employee deleted permanently" });
   } catch (error) {
     console.error("Error deleting employee:", error);
     return NextResponse.json({ error: "Error deleting employee" }, { status: 500 });

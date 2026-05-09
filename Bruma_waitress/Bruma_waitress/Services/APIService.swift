@@ -3,9 +3,9 @@ import Foundation
 class APIService {
     static let shared = APIService()
     
-    // Change this to your server's LAN IP
-    var baseURL: String = "http://192.168.0.109:3000"
-    var printServerURL: String = "http://192.168.0.109:3001"
+    // URLs from Environment configuration
+    var baseURL: String { AppEnvironment.current.baseURL }
+    var printServerURL: String { AppEnvironment.current.printServerURL }
     
     private init() {}
     
@@ -126,6 +126,44 @@ class APIService {
             return CategoryFlow(categoryId: categoryId, useDefaultFlow: true, steps: [])
         }
         return try JSONDecoder().decode(CategoryFlow.self, from: data)
+    }
+    
+    // Fetch product flow (hybrid: product-specific or inherited from category)
+    func fetchProductFlow(productId: String) async throws -> CategoryFlow {
+        let url = URL(string: "\(baseURL)/api/products/\(productId)/flow")!
+        print("🌐 Waitress API: Fetching from \(url.absoluteString)")
+        
+        let (data, response) = try await URLSession.shared.data(from: url)
+        
+        if let http = response as? HTTPURLResponse {
+            print("📡 Waitress API: HTTP Status \(http.statusCode)")
+        }
+        
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            print("❌ Waitress API: Failed to fetch flow, returning empty")
+            return CategoryFlow(categoryId: productId, useDefaultFlow: true, steps: [])
+        }
+        
+        // Print raw JSON for debugging
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("📥 Waitress API: Raw JSON (first 300 chars): \(String(jsonString.prefix(300)))")
+        }
+        
+        // Decode product flow response and convert to CategoryFlow format
+        struct ProductFlowResponse: Codable {
+            let productId: String
+            let useDefaultFlow: Bool
+            let steps: [ModifierStep]
+        }
+        
+        let flowResponse = try JSONDecoder().decode(ProductFlowResponse.self, from: data)
+        print("✅ Waitress API: Decoded flow - productId: \(flowResponse.productId), useDefault: \(flowResponse.useDefaultFlow), steps: \(flowResponse.steps.count)")
+        
+        return CategoryFlow(
+            categoryId: flowResponse.productId,
+            useDefaultFlow: flowResponse.useDefaultFlow,
+            steps: flowResponse.steps
+        )
     }
     
     // MARK: - Orders

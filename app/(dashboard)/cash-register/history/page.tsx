@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -21,7 +23,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Eye } from "@phosphor-icons/react";
+import { 
+  Eye,
+  Receipt,
+  TrendUp,
+  TrendDown,
+  CurrencyDollar,
+} from "@phosphor-icons/react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Separator } from "@/components/ui/separator";
@@ -55,11 +63,104 @@ export default function CashRegisterHistoryPage() {
     }).format(typeof amount === "string" ? parseFloat(amount) : amount);
   };
 
+  const totalSales = registers.reduce((sum, r) => sum + parseFloat(r.totalSales || "0"), 0);
+  const totalOrders = registers.reduce((sum, r) => sum + (r.totalOrders || 0), 0);
+  const positiveCount = registers.filter(r => parseFloat(r.difference || "0") >= 0).length;
+  const negativeCount = registers.filter(r => parseFloat(r.difference || "0") < 0).length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-2">
+          <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-muted-foreground">Cargando historial...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">Historial de Cortes</h1>
+      {/* Hero Section */}
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Historial de Cortes</h1>
+        <p className="text-muted-foreground mt-1">
+          Registro de todos los cortes de caja
+        </p>
+      </div>
 
-      <Card>
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-blue-500/10 p-3">
+                <Receipt className="size-5 text-blue-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Cortes
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{registers.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-green-500/10 p-3">
+                <CurrencyDollar className="size-5 text-green-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Ventas Totales
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(totalSales)}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-green-500/10 p-3">
+                <TrendUp className="size-5 text-green-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Cuadrados
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{positiveCount}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-red-500/10 p-3">
+                <TrendDown className="size-5 text-red-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Con Diferencia
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{negativeCount}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t" />
+
+      {/* Table */}
+      <Card className="border-none shadow-sm">
         <CardContent className="p-0">
           <Table>
             <TableHeader>

@@ -4,18 +4,27 @@ import { useEffect, useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MagnifyingGlass, Eye, Receipt, ShoppingBag, Trash, Printer } from "@phosphor-icons/react";
+import { 
+  MagnifyingGlass, 
+  Eye, 
+  Receipt, 
+  ShoppingBag, 
+  Printer,
+  CurrencyDollar,
+  Clock,
+  CalendarBlank,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { format, isToday, isYesterday } from "date-fns";
 import { es } from "date-fns/locale";
 import type { Order } from "@/lib/types";
-import { ManualOrderDialog } from "@/components/manual-order-dialog";
 
 const methodLabels: Record<string, string> = {
   cash: "Efectivo",
@@ -25,69 +34,28 @@ const methodLabels: Record<string, string> = {
   platform_delivery: "Plataforma",
 };
 
-const splitMethodLabels: Record<string, string> = {
-  cash: "Efectivo",
-  transfer: "Transferencia",
-  terminal_mercadopago: "Terminal",
-};
-
 export default function OrderHistoryPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [editingPayment, setEditingPayment] = useState(false);
   const [newPaymentMethod, setNewPaymentMethod] = useState<string>("");
-  const [consolidating, setConsolidating] = useState(false);
-  const [showManualOrderDialog, setShowManualOrderDialog] = useState(false);
-  const [creatingManualOrder, setCreatingManualOrder] = useState(false);
 
   useEffect(() => {
     fetchOrders();
   }, []);
 
-  async function handleConsolidateDuplicates() {
-    if (!confirm("¿Consolidar órdenes duplicadas? Esto juntará todas las órdenes del mismo cliente/mesa en una sola orden.")) {
-      return;
-    }
-
-    setConsolidating(true);
-    try {
-      const res = await fetch("/api/orders/consolidate-duplicates", {
-        method: "POST",
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        toast.success(
-          `Órdenes consolidadas: ${data.stats.groupsConsolidated} grupos, ${data.stats.itemsMoved} items movidos, ${data.stats.ordersDeleted} órdenes eliminadas`
-        );
-        fetchOrders();
-      } else {
-        throw new Error("Error consolidando órdenes");
-      }
-    } catch (error) {
-      console.error(error);
-      toast.error("Error al consolidar órdenes duplicadas");
-    } finally {
-      setConsolidating(false);
-    }
-  }
-
   async function fetchOrders() {
     setLoading(true);
     try {
-      // Obtener SOLO órdenes PAGADAS de los últimos 30 días
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const startDate = thirtyDaysAgo.toISOString();
       
-      // Filtrar solo órdenes pagadas con caja registradora
       const res = await fetch(`/api/orders?paymentStatus=paid&startDate=${startDate}&limit=5000`);
       if (res.ok) {
         const data: Order[] = await res.json();
-        // Filtrar solo las que tienen cashRegisterId (pasaron por caja)
         setOrders(data.filter(o => o.cashRegisterId));
       }
     } catch (error) {
@@ -97,348 +65,261 @@ export default function OrderHistoryPage() {
     }
   }
 
-  async function printDaySummary(dayOrders: Order[], dateLabel: string) {
-    try {
-      // Obtener las cajas registradoras únicas de estas órdenes
-      const registerIds = [...new Set(dayOrders.map(o => o.cashRegisterId).filter(Boolean))];
-      
-      if (registerIds.length === 0) {
-        toast.error("No hay datos de caja para este día");
-        return;
-      }
-
-      // Obtener transacciones de todas las cajas de ese día
-      let allTransactions: any[] = [];
-      for (const registerId of registerIds) {
-        const res = await fetch(`/api/cash-register/${registerId}/report`);
-        if (res.ok) {
-          const data = await res.json();
-          allTransactions = allTransactions.concat(data.transactions || []);
-        }
-      }
-
-      // Filtrar solo transacciones de tipo "sale" de las órdenes del día
-      const orderIds = new Set(dayOrders.map(o => o.id));
-      const salesTransactions = allTransactions.filter(
-        t => t.type === "sale" && orderIds.has(t.orderId)
-      );
-
-      // Calcular totales por método de pago
-      const totals = {
-        cash: 0,
-        transfer: 0,
-        terminal_mercadopago: 0,
-        platform_delivery: 0,
-      };
-
-      let totalSales = 0;
-
-      for (const txn of salesTransactions) {
-        const amount = parseFloat(txn.amount || "0");
-        totalSales += amount;
-
-        const method = txn.paymentMethod as keyof typeof totals;
-        if (method && totals[method] !== undefined) {
-          totals[method] += amount;
-        }
-      }
-
-      // Calcular propinas totales de las órdenes
-      const totalTips = dayOrders.reduce((sum, order) => {
-        return sum + parseFloat((order as any).tip || "0");
-      }, 0);
-
-      const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.109:3001";
-      const res = await fetch(`${printServerUrl}/print-summary`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: new Date().toISOString(),
-          registerName: `Historial - ${dateLabel}`,
-          totalOrders: dayOrders.length,
-          totalSales: totalSales.toFixed(2),
-          cashSales: totals.cash.toFixed(2),
-          transferSales: totals.transfer.toFixed(2),
-          terminalSales: totals.terminal_mercadopago.toFixed(2),
-          platformSales: totals.platform_delivery.toFixed(2),
-          totalTips: totalTips.toFixed(2),
-        }),
-      });
-
-      if (res.ok) {
-        toast.success("Resumen enviado a impresora");
-      } else {
-        toast.error("Error al imprimir resumen");
-      }
-    } catch (error) {
-      console.error("Error printing summary:", error);
-      toast.error("Error al imprimir resumen");
-    }
-  }
-
-  async function handleDeleteOrder(orderId: string, orderNumber: number) {
-    if (!confirm(`¿Eliminar orden #${orderNumber}? Se revertirá de la caja registradora.`)) return;
-    setDeleting(true);
-    try {
-      const res = await fetch(`/api/orders/${orderId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-      setOrders(orders.filter(o => o.id !== orderId));
-      setSelectedOrder(null);
-      toast.success(`Orden #${orderNumber} eliminada y revertida de caja`);
-    } catch {
-      toast.error("Error eliminando orden");
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  async function handleUpdatePaymentMethod(orderId: string, orderNumber: number) {
-    if (!newPaymentMethod) {
-      toast.error("Selecciona un método de pago");
-      return;
-    }
+  async function handleUpdatePaymentMethod(orderId: string, orderNumber: string) {
+    if (!newPaymentMethod) return;
     
     setEditingPayment(true);
     try {
-      const res = await fetch(`/api/orders/${orderId}/payment-method`, {
+      const res = await fetch(`/api/orders/${orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paymentMethod: newPaymentMethod }),
       });
-      
-      if (!res.ok) throw new Error();
-      
-      // Actualizar la orden en el estado local
-      setOrders(orders.map(o => 
-        o.id === orderId ? { ...o, paymentMethod: newPaymentMethod as any } : o
-      ));
-      
-      if (selectedOrder?.id === orderId) {
-        setSelectedOrder({ ...selectedOrder, paymentMethod: newPaymentMethod as any });
+
+      if (res.ok) {
+        toast.success(`Método de pago actualizado para orden #${orderNumber}`);
+        setNewPaymentMethod("");
+        fetchOrders();
+        if (selectedOrder) {
+          setSelectedOrder({ ...selectedOrder, paymentMethod: newPaymentMethod as any });
+        }
+      } else {
+        throw new Error("Error updating payment method");
       }
-      
-      toast.success(`Método de pago actualizado a ${methodLabels[newPaymentMethod]}`);
-      setNewPaymentMethod("");
-    } catch {
-      toast.error("Error actualizando método de pago");
+    } catch (error) {
+      console.error(error);
+      toast.error("Error al actualizar método de pago");
     } finally {
       setEditingPayment(false);
     }
   }
 
-  const formatCurrency = (amount: string | number) =>
-    new Intl.NumberFormat("es-MX", {
+  const formatCurrency = (amount: string | number) => {
+    const num = typeof amount === "string" ? parseFloat(amount) : amount;
+    return new Intl.NumberFormat("es-MX", {
       style: "currency",
       currency: "MXN",
-    }).format(typeof amount === "string" ? parseFloat(amount) : amount);
+    }).format(num);
+  };
 
   const filteredOrders = useMemo(() => {
-    if (!search) return orders;
-    const q = search.toLowerCase();
-    return orders.filter(
-      (o) =>
-        o.orderNumber.toString().includes(q) ||
-        o.customerName?.toLowerCase().includes(q) ||
-        (o.table as any)?.number?.toString().includes(q)
-    );
+    if (!search.trim()) return orders;
+    const s = search.toLowerCase();
+    return orders.filter((o) => {
+      const orderNum = o.orderNumber?.toString() || "";
+      const customerName = o.customerName?.toLowerCase() || "";
+      const tableNum = (o as any).table?.number?.toString() || "";
+      return (
+        orderNum.includes(s) ||
+        customerName.includes(s) ||
+        tableNum.includes(s)
+      );
+    });
   }, [orders, search]);
 
-  // Agrupar por día
   const groupedByDay = useMemo(() => {
-    const groups: { label: string; dateKey: string; orders: Order[]; dayTotal: number }[] = [];
-    const map = new Map<string, Order[]>();
+    const groups: Record<string, Order[]> = {};
+    filteredOrders.forEach((order) => {
+      const date = new Date(order.createdAt);
+      const key = format(date, "yyyy-MM-dd");
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(order);
+    });
 
-    for (const order of filteredOrders) {
-      const d = new Date(order.createdAt);
-      const key = format(d, "yyyy-MM-dd");
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(order);
-    }
+    return Object.entries(groups)
+      .map(([dateKey, orders]) => {
+        // Parse date correctly to avoid timezone issues
+        const [year, month, day] = dateKey.split('-').map(Number);
+        const date = new Date(year, month - 1, day);
+        
+        let label = format(date, "EEEE d 'de' MMMM", { locale: es });
+        if (isToday(date)) label = "Hoy";
+        else if (isYesterday(date)) label = "Ayer";
 
-    // Ordenar por fecha desc
-    const sortedKeys = Array.from(map.keys()).sort((a, b) => b.localeCompare(a));
+        const dayTotal = orders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
 
-    for (const key of sortedKeys) {
-      const dayOrders = map.get(key)!;
-      const d = new Date(key + "T12:00:00");
-      let label: string;
-      if (isToday(d)) {
-        label = "Hoy";
-      } else if (isYesterday(d)) {
-        label = "Ayer";
-      } else {
-        label = format(d, "EEEE d 'de' MMMM", { locale: es });
-        label = label.charAt(0).toUpperCase() + label.slice(1);
-      }
-      const dayTotal = dayOrders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-      groups.push({ label, dateKey: key, orders: dayOrders, dayTotal });
-    }
-
-    return groups;
+        return { dateKey, label, orders, dayTotal };
+      })
+      .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
   }, [filteredOrders]);
+
+  const totalSales = useMemo(() => {
+    return orders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
+  }, [orders]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Historial de Ventas</h1>
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={() => setShowManualOrderDialog(true)}
-            variant="default"
-            size="sm"
-          >
-            ➕ Añadir Orden Manual
-          </Button>
-          {/* DISABLED: Botón peligroso que borra órdenes
-          <Button
-            onClick={handleConsolidateDuplicates}
-            disabled={consolidating}
-            variant="outline"
-            size="sm"
-          >
-            {consolidating ? "Consolidando..." : "🔗 Consolidar Duplicados"}
-          </Button>
-          */}
-          <Badge variant="outline" className="text-sm">
+      {/* Hero Section */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Historial de Órdenes</h1>
+            <p className="text-muted-foreground mt-1">
+              Últimas 30 días de ventas
+            </p>
+          </div>
+          <Badge variant="outline" className="text-sm px-4 py-2">
             {orders.length} órdenes
           </Badge>
         </div>
       </div>
 
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-blue-500/10 p-3">
+                <CurrencyDollar className="size-5 text-blue-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Ventas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(totalSales)}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-green-500/10 p-3">
+                <Receipt className="size-5 text-green-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Órdenes
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{orders.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-purple-500/10 p-3">
+                <CalendarBlank className="size-5 text-purple-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Promedio por Día
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {formatCurrency(groupedByDay.length > 0 ? totalSales / groupedByDay.length : 0)}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search */}
       <div className="relative">
         <MagnifyingGlass className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Buscar por #, cliente o mesa..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
+          className="pl-9 h-11"
         />
       </div>
 
+      {/* Orders List */}
       {loading ? (
         <div className="flex items-center justify-center h-64 text-muted-foreground">
-          Cargando...
+          <div className="text-center space-y-2">
+            <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+            <p>Cargando órdenes...</p>
+          </div>
         </div>
       ) : groupedByDay.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-          <Receipt className="size-12 mb-3 opacity-50" />
-          <p>No hay ventas registradas</p>
-        </div>
+        <Card className="border-none shadow-sm">
+          <CardContent className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+            <Receipt className="size-16 mb-4 opacity-20" weight="duotone" />
+            <p className="text-lg font-medium">No hay ventas registradas</p>
+            <p className="text-sm">Las órdenes aparecerán aquí</p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-8">
           {groupedByDay.map((group) => (
-            <div key={group.dateKey}>
-              {/* Day header */}
-              <div className="flex items-center justify-between mb-3 sticky top-0 bg-background z-10 py-2">
-                <h2 className="text-lg font-semibold">{group.label}</h2>
+            <div key={group.dateKey} className="space-y-4">
+              {/* Day Header */}
+              <div className="flex items-center justify-between sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 py-3 -mx-1 px-1">
                 <div className="flex items-center gap-3">
-                  <Button
-                    onClick={() => printDaySummary(group.orders, group.label)}
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                  >
-                    <Printer className="size-4" />
-                    Imprimir Resumen
-                  </Button>
-                  <span className="text-sm text-muted-foreground">
-                    {group.orders.length} orden{group.orders.length !== 1 ? "es" : ""}
-                  </span>
+                  <h2 className="text-xl font-semibold">{group.label}</h2>
                   <Badge variant="secondary" className="font-semibold">
                     {formatCurrency(group.dayTotal)}
                   </Badge>
                 </div>
+                <span className="text-sm text-muted-foreground">
+                  {group.orders.length} orden{group.orders.length !== 1 ? "es" : ""}
+                </span>
               </div>
 
-              {/* Orders list */}
-              <div className="space-y-2">
+              {/* Orders Grid */}
+              <div className="grid gap-3">
                 {group.orders.map((order) => {
                   const total = parseFloat(order.total || "0");
                   const tip = parseFloat((order as any).tip || "0");
                   const tableNum = (order as any).table?.number;
-                  const isPlatformDelivery = order.paymentMethod === 'platform_delivery';
-                  const platformCommission = (order as any).platformCommission ? parseFloat((order as any).platformCommission) : 0;
-                  const originalTotal = (order as any).originalTotal ? parseFloat((order as any).originalTotal) : 0;
 
                   return (
                     <button
                       key={order.id}
                       onClick={() => setSelectedOrder(order)}
-                      className="w-full text-left rounded-lg border bg-card p-4 hover:bg-accent/50 transition-colors"
+                      className="group w-full text-left rounded-xl border border-border/50 bg-card p-4 hover:border-primary/50 hover:shadow-md transition-all"
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary font-bold text-sm">
+                        <div className="flex items-center gap-4">
+                          {/* Order Number Badge */}
+                          <div className="flex items-center justify-center size-12 rounded-xl bg-primary/10 text-primary font-bold">
                             #{order.orderNumber}
                           </div>
-                          <div>
+                          
+                          {/* Order Info */}
+                          <div className="space-y-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium">
+                              <span className="font-semibold text-base">
                                 {tableNum ? `Mesa ${tableNum}` : "Para llevar"}
                               </span>
                               {order.customerName && (
                                 <span className="text-sm text-muted-foreground">
-                                  — {order.customerName}
+                                  • {order.customerName}
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-xs text-muted-foreground">
-                                {format(new Date(order.createdAt), "HH:mm", { locale: es })}
+                            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1.5">
+                                <Clock className="size-3.5" weight="duotone" />
+                                {format(new Date(order.createdAt), "HH:mm")}
                               </span>
                               {order.paymentMethod && (
-                                <Badge variant="outline" className="text-xs py-0 h-5">
+                                <Badge variant="outline" className="text-xs h-5">
                                   {methodLabels[order.paymentMethod] || order.paymentMethod}
                                 </Badge>
                               )}
                               {tip > 0 && (
-                                <span className="text-xs text-blue-500">
+                                <span className="text-blue-600 font-medium">
                                   +{formatCurrency(tip)} propina
-                                </span>
-                              )}
-                              {isPlatformDelivery && platformCommission > 0 && (
-                                <span className="text-xs text-orange-500">
-                                  -{formatCurrency(platformCommission)} comisión
                                 </span>
                               )}
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          {(() => {
-                            // Calcular descuento: puede venir guardado o calcularlo de items
-                            let discountAmt = parseFloat((order as any).discountAmount || "0");
-                            const subtotalAmt = parseFloat((order as any).subtotal || "0");
-                            
-                            // Si no hay descuento guardado, calcularlo de los items
-                            if (discountAmt === 0 && order.items && order.items.length > 0) {
-                              const itemsTotal = order.items.reduce((sum: number, item: any) => {
-                                return sum + parseFloat(item.subtotal || "0");
-                              }, 0);
-                              discountAmt = itemsTotal - subtotalAmt;
-                            }
-                            
-                            if (discountAmt > 0) {
-                              const percentage = subtotalAmt > 0 ? Math.round((discountAmt / subtotalAmt) * 100) : 0;
-                              return (
-                                <Badge className="bg-yellow-500 text-black font-semibold">
-                                  -{percentage}%
-                                </Badge>
-                              );
-                            }
-                            return null;
-                          })()}
+
+                        {/* Total and Arrow */}
+                        <div className="flex items-center gap-4">
                           <div className="text-right">
-                            <span className="text-lg font-bold">
+                            <div className="text-xl font-bold">
                               {formatCurrency(total)}
-                            </span>
-                            {isPlatformDelivery && originalTotal > 0 && (
-                              <div className="text-xs text-muted-foreground line-through">
-                                {formatCurrency(originalTotal)}
-                              </div>
-                            )}
+                            </div>
                           </div>
-                          <Eye className="size-4 text-muted-foreground" />
+                          <Eye className="size-5 text-muted-foreground group-hover:text-primary transition-colors" weight="duotone" />
                         </div>
                       </div>
                     </button>
@@ -451,10 +332,7 @@ export default function OrderHistoryPage() {
       )}
 
       {/* Order Detail Dialog */}
-      <Dialog
-        open={!!selectedOrder}
-        onOpenChange={() => setSelectedOrder(null)}
-      >
+      <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
         <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -474,217 +352,100 @@ export default function OrderHistoryPage() {
           </DialogHeader>
           {selectedOrder && (
             <div className="space-y-4 overflow-y-auto flex-1 pr-1">
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="size-4" />
                   <span>
                     {format(new Date(selectedOrder.createdAt), "EEEE d 'de' MMMM, HH:mm", { locale: es })}
                   </span>
                 </div>
                 
                 {/* Payment Method Editor */}
-                <div className="flex items-center gap-2">
+                <div className="space-y-2">
                   <span className="text-sm font-medium">Método de pago:</span>
-                  <select
-                    value={newPaymentMethod || selectedOrder.paymentMethod || ""}
-                    onChange={(e) => setNewPaymentMethod(e.target.value)}
-                    className="flex-1 px-3 py-1.5 text-sm border rounded-md bg-background"
-                  >
-                    <option value="cash">Efectivo</option>
-                    <option value="transfer">Transferencia</option>
-                    <option value="terminal_mercadopago">Terminal</option>
-                    <option value="split">Dividido</option>
-                    <option value="platform_delivery">Plataforma</option>
-                  </select>
-                  {newPaymentMethod && newPaymentMethod !== selectedOrder.paymentMethod && (
-                    <Button
-                      size="sm"
-                      onClick={() => handleUpdatePaymentMethod(selectedOrder.id, selectedOrder.orderNumber)}
-                      disabled={editingPayment}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={newPaymentMethod || selectedOrder.paymentMethod || ""}
+                      onChange={(e) => setNewPaymentMethod(e.target.value)}
+                      className="flex-1 px-3 py-2 text-sm border rounded-lg bg-background"
                     >
-                      {editingPayment ? "Guardando..." : "Guardar"}
-                    </Button>
-                  )}
+                      <option value="cash">Efectivo</option>
+                      <option value="transfer">Transferencia</option>
+                      <option value="terminal_mercadopago">Terminal</option>
+                      <option value="split">Dividido</option>
+                      <option value="platform_delivery">Plataforma</option>
+                    </select>
+                    {newPaymentMethod && newPaymentMethod !== selectedOrder.paymentMethod && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleUpdatePaymentMethod(selectedOrder.id, String(selectedOrder.orderNumber))}
+                        disabled={editingPayment}
+                      >
+                        {editingPayment ? "Guardando..." : "Guardar"}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {selectedOrder.customerName && (
-                <p className="text-sm">
-                  <strong>Cliente:</strong> {selectedOrder.customerName}
-                </p>
+                <div className="rounded-lg bg-muted/50 p-3">
+                  <p className="text-sm">
+                    <strong>Cliente:</strong> {selectedOrder.customerName}
+                  </p>
+                </div>
               )}
 
+              {/* Items */}
               <div className="space-y-2">
+                <h3 className="font-semibold">Productos</h3>
                 {(!selectedOrder.items || selectedOrder.items.length === 0) && (
                   <p className="text-sm text-muted-foreground italic">Sin detalle de productos</p>
                 )}
                 {selectedOrder.items?.map((item) => {
                   const isVoided = (item as any).voided;
-                  const promotionName = (item as any).promotionName;
-                  const promotionDiscount = parseFloat((item as any).promotionDiscount || "0");
                   return (
                     <div
                       key={item.id}
-                      className={`flex justify-between text-sm ${isVoided ? 'line-through opacity-50' : ''}`}
+                      className={`flex justify-between text-sm p-2 rounded-lg ${isVoided ? 'line-through opacity-50 bg-red-500/5' : 'bg-muted/30'}`}
                     >
                       <div className="flex-1">
-                        <span>{item.quantity}x {item.productName}</span>
-                        {promotionName && (
-                          <p className="text-xs text-blue-400 no-underline flex items-center gap-1">
-                            <span>🎁 {promotionName}</span>
-                            {promotionDiscount > 0 && (
-                              <span className="text-yellow-600 font-semibold">
-                                (-{formatCurrency(promotionDiscount)})
-                              </span>
-                            )}
-                          </p>
-                        )}
+                        <span className="font-medium">{item.quantity}x {item.productName}</span>
                         {isVoided && (item as any).voidReason && (
-                          <p className="text-xs text-red-400 no-underline">
+                          <p className="text-xs text-red-500 no-underline mt-0.5">
                             Eliminado: {(item as any).voidReason}
                           </p>
                         )}
                       </div>
-                      <span className="font-medium">
+                      <span className="font-semibold">
                         {formatCurrency(item.subtotal)}
                       </span>
                     </div>
                   );
                 })}
-                {(() => {
-                  const subtotal = parseFloat((selectedOrder as any).subtotal || "0");
-                  const tip = parseFloat((selectedOrder as any).tip || "0");
-                  const total = parseFloat(selectedOrder.total || "0");
-                  const discount = parseFloat((selectedOrder as any).discountAmount || "0");
-                  const isPlatformDelivery = selectedOrder.paymentMethod === 'platform_delivery';
-                  const platformCommission = (selectedOrder as any).platformCommission ? parseFloat((selectedOrder as any).platformCommission) : 0;
-                  const originalTotal = (selectedOrder as any).originalTotal ? parseFloat((selectedOrder as any).originalTotal) : 0;
-                  
-                  let splitData: any = null;
-                  try {
-                    const raw = (selectedOrder as any).splitBillData;
-                    if (raw) {
-                      splitData = typeof raw === "string" ? JSON.parse(raw) : raw;
-                      if (!splitData?.finalized) splitData = null;
-                    }
-                  } catch { splitData = null; }
-                  
-                  return (
-                    <>
-                      {splitData && splitData.persons && (
-                        <div className="border-t pt-3 space-y-3">
-                          <p className="text-sm font-semibold text-muted-foreground">
-                            Cuenta dividida — {splitData.guestCount} pax
-                          </p>
-                          {splitData.persons.map((person: any, idx: number) => (
-                            <div key={idx} className="bg-muted/30 rounded-lg p-3 space-y-1">
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm font-semibold">Pax {idx + 1}</span>
-                                <Badge variant="outline" className="text-xs">
-                                  {splitMethodLabels[person.method] || person.method || "—"}
-                                </Badge>
-                              </div>
-                              {person.items?.map((item: any, iIdx: number) => (
-                                <div key={iIdx} className="flex justify-between text-xs text-muted-foreground">
-                                  <span>{item.qty}x {item.name}</span>
-                                  <span>{formatCurrency(item.price)}</span>
-                                </div>
-                              ))}
-                              <div className="flex justify-between text-xs pt-1 border-t border-border/50">
-                                <span>Subtotal</span>
-                                <span>{formatCurrency(person.subtotal)}</span>
-                              </div>
-                              {person.tipAmount > 0 && (
-                                <div className="flex justify-between text-xs text-blue-400">
-                                  <span>Propina ({person.tipLabel})</span>
-                                  <span>{formatCurrency(person.tipAmount)}</span>
-                                </div>
-                              )}
-                              <div className="flex justify-between text-sm font-semibold">
-                                <span>Total</span>
-                                <span>{formatCurrency(person.total)}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      
-                      {subtotal > 0 && (
-                        <>
-                          <div className="flex justify-between border-t pt-2 text-sm">
-                            <span>Subtotal</span>
-                            <span>{formatCurrency(subtotal)}</span>
-                          </div>
-                          {discount > 0 && (() => {
-                            const percentage = subtotal > 0 ? Math.round((discount / subtotal) * 100) : 0;
-                            return (
-                              <div className="flex justify-between text-sm text-yellow-600 font-semibold">
-                                <span>Descuento {percentage}%</span>
-                                <span>-{formatCurrency(discount)}</span>
-                              </div>
-                            );
-                          })()}
-                          {tip > 0 && (
-                            <div className="flex justify-between text-sm text-blue-400">
-                              <span>Propina {(() => {
-                                if (splitData) return "";
-                                if (subtotal > 0 && tip > 0) {
-                                  const pct = Math.round((tip / subtotal) * 100);
-                                  if ([10, 15, 20].includes(pct)) return `(${pct}%)`;
-                                  return "(Otro)";
-                                }
-                                return "";
-                              })()}</span>
-                              <span>{formatCurrency(tip)}</span>
-                            </div>
-                          )}
-                        </>
-                      )}
-                      
-                      {isPlatformDelivery && platformCommission > 0 && (
-                        <>
-                          <div className="flex justify-between border-t pt-2 text-sm">
-                            <span>Total Orden</span>
-                            <span>{formatCurrency(originalTotal)}</span>
-                          </div>
-                          <div className="flex justify-between text-sm text-orange-500">
-                            <span>Comisión Plataforma (27%)</span>
-                            <span>-{formatCurrency(platformCommission)}</span>
-                          </div>
-                        </>
-                      )}
-                      
-                      <div className="flex justify-between border-t pt-2 text-lg font-bold">
-                        <span>{isPlatformDelivery && platformCommission > 0 ? 'Total Recibido' : 'Total'}</span>
-                        <span>{formatCurrency(total)}</span>
-                      </div>
-                    </>
-                  );
-                })()}
               </div>
 
-              <div className="pt-3 border-t">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="w-full"
-                  disabled={deleting}
-                  onClick={() => handleDeleteOrder(selectedOrder.id, selectedOrder.orderNumber)}
-                >
-                  <Trash className="size-4 mr-2" />
-                  {deleting ? "Eliminando..." : "Eliminar orden y revertir de caja"}
-                </Button>
+              {/* Totals */}
+              <div className="space-y-2 border-t pt-4">
+                <div className="flex justify-between text-sm">
+                  <span>Subtotal:</span>
+                  <span className="font-medium">{formatCurrency((selectedOrder as any).subtotal || selectedOrder.total)}</span>
+                </div>
+                {parseFloat((selectedOrder as any).tip || "0") > 0 && (
+                  <div className="flex justify-between text-sm text-blue-600">
+                    <span>Propina:</span>
+                    <span className="font-medium">+{formatCurrency((selectedOrder as any).tip)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-lg font-bold pt-2 border-t">
+                  <span>Total:</span>
+                  <span>{formatCurrency(selectedOrder.total)}</span>
+                </div>
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Manual Order Dialog */}
-      <ManualOrderDialog
-        open={showManualOrderDialog}
-        onClose={() => setShowManualOrderDialog(false)}
-        onSuccess={fetchOrders}
-      />
     </div>
   );
 }

@@ -43,7 +43,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
+import { 
+  Plus, 
+  PencilSimple, 
+  Trash,
+  Armchair,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Users,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import type { Table as TableType } from "@/lib/types";
 
@@ -165,26 +174,120 @@ export default function TablesPage() {
     reserved: "Reservada",
   };
 
+  const availableTables = tables.filter(t => t.status === 'available').length;
+  const occupiedTables = tables.filter(t => t.status === 'occupied').length;
+  const reservedTables = tables.filter(t => t.status === 'reserved').length;
+  const totalCapacity = tables.reduce((sum, t) => sum + t.capacity, 0);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-2">
+          <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-muted-foreground">Cargando mesas...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Hero Section */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Mesas</h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground mt-1">
             Gestiona las mesas del restaurante
           </p>
         </div>
-        <Button onClick={openCreateDialog}>
-          <Plus className="size-4 mr-2" />
+        <Button onClick={openCreateDialog} className="gap-2">
+          <Plus className="size-4" />
           Nueva Mesa
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Lista de Mesas</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-blue-500/10 p-3">
+                <Armchair className="size-5 text-blue-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Mesas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{tables.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-green-500/10 p-3">
+                <CheckCircle className="size-5 text-green-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Disponibles
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{availableTables}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-red-500/10 p-3">
+                <XCircle className="size-5 text-red-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Ocupadas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{occupiedTables}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-purple-500/10 p-3">
+                <Users className="size-5 text-purple-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Capacidad Total
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalCapacity}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t" />
+
+      {/* Tables List */}
+      {tables.length === 0 ? (
+        <Card className="border-none shadow-sm">
+          <CardContent className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+            <Armchair className="size-16 mb-4 opacity-20" weight="duotone" />
+            <p className="text-lg font-medium">No hay mesas registradas</p>
+            <p className="text-sm">Crea tu primera mesa para comenzar</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-none shadow-sm">
+          <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -251,8 +354,9 @@ export default function TablesPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Dialog para crear/editar mesa */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

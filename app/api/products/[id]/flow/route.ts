@@ -1,0 +1,211 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { productFlows, products, modifierSteps, modifierOptions } from "@/lib/db/schema";
+import { eq, asc } from "drizzle-orm";
+
+// GET /api/products/[id]/flow - Get product flow (or inherit from category)
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    console.log("🔍 GET /api/products/[id]/flow - Product ID:", id);
+
+    // Get product to know its category
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(eq(products.id, id))
+      .limit(1);
+
+    if (!product) {
+      console.log("❌ Product not found with ID:", id);
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+    
+    console.log("✅ Product found:", product.name, "Category:", product.categoryId);
+
+    // Check if product has a custom flow
+    const [productFlow] = await db
+      .select()
+      .from(productFlows)
+      .where(eq(productFlows.productId, id))
+      .limit(1);
+
+    console.log("🔍 Product flow lookup:", {
+      productId: id,
+      found: !!productFlow,
+      useDefaultFlow: productFlow?.useDefaultFlow,
+    });
+
+    // If product has custom flow and not using default, return it
+    if (productFlow && !productFlow.useDefaultFlow) {
+      const rawSteps = JSON.parse(productFlow.steps || "[]");
+      
+      // Normalize steps to include all required fields for Swift
+      const steps = await Promise.all(rawSteps.map(async (step: any, index: number) => {
+        let options = step.options || [];
+        
+        // If step type is "category", fetch products from that category
+        if (step.stepType === "category" && options.length > 0) {
+          const categoryId = options[0].id; // The category ID is stored in the first option
+          const categoryProducts = await db.query.products.findMany({
+            where: eq(products.categoryId, categoryId),
+            orderBy: [asc(products.name)],
+          });
+          
+          // Convert products to options format
+          options = categoryProducts.map((prod, idx) => ({
+            id: prod.id,
+            stepId: step.id,
+            name: prod.name,
+            description: null,
+            price: "0", // Don't add extra price for category products
+            sortOrder: idx,
+            active: prod.active,
+          }));
+        } else {
+          // For other types, just clean up the options
+          options = options.map((opt: any) => ({
+            id: opt.id,
+            stepId: opt.stepId,
+            name: opt.name,
+            description: opt.description,
+            price: opt.price,
+            sortOrder: opt.sortOrder,
+            active: opt.active,
+          }));
+        }
+        
+        return {
+          id: step.id,
+          categoryId: product.categoryId || null,
+          stepType: step.stepType,
+          stepName: step.stepName,
+          sortOrder: index,
+          isRequired: true,
+          allowMultiple: step.stepType === "extra",
+          includeNoneOption: step.includeNoneOption ?? true,
+          active: true,
+          options,
+        };
+      }));
+      
+      console.log("✅ Returning product-specific flow:", {
+        productId: id,
+        stepsCount: steps.length,
+        steps: steps.map(s => ({
+          name: s.stepName,
+          type: s.stepType,
+          optionsCount: s.options.length,
+          firstOptions: s.options.slice(0, 3).map((o: any) => o.name),
+        })),
+      });
+      const response = {
+        productId: id,
+        useDefaultFlow: false,
+        steps,
+        nodes: productFlow.nodes ? JSON.parse(productFlow.nodes) : null,
+        source: "product",
+      };
+      console.log("📤 Full response:", JSON.stringify(response, null, 2));
+      return NextResponse.json(response);
+    }
+
+    // Otherwise, inherit from category flow
+    if (product.categoryId) {
+      const steps = await db.query.modifierSteps.findMany({
+        where: eq(modifierSteps.categoryId, product.categoryId),
+        orderBy: [asc(modifierSteps.sortOrder)],
+        with: {
+          options: {
+            orderBy: [asc(modifierOptions.sortOrder)],
+          },
+        },
+      });
+
+      if (steps.length > 0) {
+        return NextResponse.json({
+          productId: id,
+          useDefaultFlow: false,
+          steps: steps.map((s) => ({
+            id: s.id,
+            stepName: s.stepName,
+            stepType: s.stepType,
+            includeNoneOption: s.includeNoneOption,
+            options: s.options || [],
+          })),
+          source: "category",
+        });
+      }
+    }
+
+    // No flow found, return default empty flow
+    return NextResponse.json({
+      productId: id,
+      useDefaultFlow: true,
+      steps: [],
+      source: "default",
+    });
+  } catch (error) {
+    console.error("Error fetching product flow:", error);
+    return NextResponse.json(
+      { error: "Error fetching product flow" },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/products/[id]/flow - Save product flow
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+    const { useDefaultFlow, steps, nodes } = body;
+    
+    console.log("💾 Saving product flow:", {
+      productId: id,
+      useDefaultFlow,
+      stepsCount: steps?.length || 0,
+      hasNodes: !!nodes,
+    });
+
+    // Check if product flow exists
+    const [existing] = await db
+      .select()
+      .from(productFlows)
+      .where(eq(productFlows.productId, id))
+      .limit(1);
+
+    const flowData = {
+      productId: id,
+      useDefaultFlow: useDefaultFlow ?? true,
+      steps: JSON.stringify(steps || []),
+      nodes: nodes ? JSON.stringify(nodes) : null,
+      updatedAt: new Date(),
+    };
+
+    if (existing) {
+      // Update existing
+      await db
+        .update(productFlows)
+        .set(flowData)
+        .where(eq(productFlows.id, existing.id));
+    } else {
+      // Create new
+      await db.insert(productFlows).values(flowData);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error saving product flow:", error);
+    return NextResponse.json(
+      { error: "Error saving product flow" },
+      { status: 500 }
+    );
+  }
+}

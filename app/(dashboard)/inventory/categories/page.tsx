@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +22,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash, FlowArrow, BeerStein } from "@phosphor-icons/react";
+import { 
+  Plus, 
+  Pencil, 
+  Trash, 
+  FlowArrow, 
+  BeerStein,
+  FolderOpen,
+  CheckCircle,
+  XCircle,
+  Package,
+} from "@phosphor-icons/react";
 import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
 import type { Category } from "@/lib/types";
@@ -133,26 +144,39 @@ export default function CategoriesPage() {
     });
   }
 
+  const activeCategories = categories.filter(c => c.active).length;
+  const inactiveCategories = categories.filter(c => !c.active).length;
+  const beverageCategories = categories.filter(c => c.isBeverage).length;
+
   if (loading) {
-    return <div className="p-8">Cargando...</div>;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-2">
+          <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-muted-foreground">Cargando categorías...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">Categorías de Productos</h1>
-          <p className="text-muted-foreground">
-            Organiza tus productos en categorías
-          </p>
-        </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={resetForm}>
-              <Plus className="mr-2 size-4" />
-              Nueva Categoría
-            </Button>
-          </DialogTrigger>
+    <div className="space-y-6">
+      {/* Hero Section */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Categorías de Productos</h1>
+            <p className="text-muted-foreground mt-1">
+              Organiza y gestiona tus categorías
+            </p>
+          </div>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={resetForm} className="gap-2">
+                <Plus className="size-4" />
+                Nueva Categoría
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
@@ -250,76 +274,169 @@ export default function CategoriesPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Color</TableHead>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Bebida</TableHead>
-              <TableHead>Descripción</TableHead>
-              <TableHead>Orden</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {categories.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  No hay categorías creadas
-                </TableCell>
-              </TableRow>
-            ) : (
-              categories.map((category) => (
-                <TableRow key={category.id}>
-                  <TableCell>
-                    <div
-                      className="w-8 h-8 rounded border"
-                      style={{ backgroundColor: category.color || "#6B7280" }}
-                    />
-                  </TableCell>
-                  <TableCell className="font-medium">{category.name}</TableCell>
-                  <TableCell>
-                    {category.isBeverage && <BeerStein className="size-4 text-cyan-500" weight="fill" />}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {category.description || "-"}
-                  </TableCell>
-                  <TableCell>{category.sortOrder}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => router.push(`/inventory/categories/${category.id}/flow`)}
-                        title="Configurar flujo de modificadores"
-                      >
-                        <FlowArrow className="size-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(category)}
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(category.id)}
-                      >
-                        <Trash className="size-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-blue-500/10 p-3">
+                <FolderOpen className="size-5 text-blue-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Categorías
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{categories.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-green-500/10 p-3">
+                <CheckCircle className="size-5 text-green-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Activas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activeCategories}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-orange-500/10 p-3">
+                <XCircle className="size-5 text-orange-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Inactivas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{inactiveCategories}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-cyan-500/10 p-3">
+                <BeerStein className="size-5 text-cyan-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Bebidas
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{beverageCategories}</div>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Divider */}
+      <div className="border-t" />
+
+      {/* Categories Grid */}
+      {categories.length === 0 ? (
+        <Card className="border-none shadow-sm">
+          <CardContent className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+            <FolderOpen className="size-16 mb-4 opacity-20" weight="duotone" />
+            <p className="text-lg font-medium">No hay categorías creadas</p>
+            <p className="text-sm">Crea tu primera categoría para organizar productos</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {categories.map((category) => (
+            <Card 
+              key={category.id} 
+              className="group border-none shadow-sm hover:shadow-md transition-all"
+            >
+              <CardContent className="p-5">
+                <div className="space-y-3">
+                  {/* Header with color dot aligned with title */}
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="size-3 rounded-full shadow-sm animate-pulse"
+                      style={{ 
+                        backgroundColor: category.color || "#6B7280",
+                        boxShadow: `0 0 0 4px ${category.color || "#6B7280"}20`
+                      }}
+                    />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg leading-none">{category.name}</h3>
+                    </div>
+                  </div>
+
+                  {/* Metadata */}
+                  <div className="flex items-center gap-2 pl-6">
+                    <span className="text-xs text-muted-foreground">
+                      Orden: {category.sortOrder}
+                    </span>
+                    {category.isBeverage && (
+                      <>
+                        <span className="text-xs text-muted-foreground">•</span>
+                        <div className="flex items-center gap-1 text-cyan-600">
+                          <BeerStein className="size-3.5" weight="fill" />
+                          <span className="text-xs font-medium">Bebida</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Description */}
+                  {category.description && (
+                    <p className="text-sm text-muted-foreground line-clamp-2 pl-6">
+                      {category.description}
+                    </p>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 pt-2 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => router.push(`/inventory/categories/${category.id}/flow`)}
+                      className="flex-1 gap-2"
+                      title="Configurar flujo de modificadores"
+                    >
+                      <FlowArrow className="size-4" />
+                      Flujo
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEdit(category)}
+                      className="gap-2"
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDelete(category.id)}
+                      className="gap-2 text-destructive hover:text-destructive"
+                    >
+                      <Trash className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

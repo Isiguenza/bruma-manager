@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +37,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, PencilSimple, Trash, MagnifyingGlass, WarningCircle } from "@phosphor-icons/react";
+import { 
+  Plus, 
+  PencilSimple, 
+  Trash, 
+  MagnifyingGlass, 
+  WarningCircle,
+  Package,
+  CheckCircle,
+  XCircle,
+  TrendDown,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import type { Ingredient } from "@/lib/types";
 
@@ -147,26 +159,120 @@ export default function IngredientsPage() {
   const isLowStock = (ing: Ingredient) =>
     parseFloat(ing.currentStock) <= parseFloat(ing.minStock);
 
+  const activeIngredients = ingredients.filter(i => i.active).length;
+  const inactiveIngredients = ingredients.filter(i => !i.active).length;
+  const lowStockCount = ingredients.filter(i => isLowStock(i)).length;
+  const totalValue = ingredients.reduce((sum, i) => sum + (parseFloat(i.currentStock) * parseFloat(i.costPerUnit)), 0);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-2">
+          <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-muted-foreground">Cargando ingredientes...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Hero Section */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Ingredientes</h1>
-        <Button onClick={openCreate}>
-          <Plus className="mr-1 size-4" /> Ingrediente
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Ingredientes</h1>
+          <p className="text-muted-foreground mt-1">
+            Gestiona el inventario de ingredientes
+          </p>
+        </div>
+        <Button onClick={openCreate} className="gap-2">
+          <Plus className="size-4" /> Ingrediente
         </Button>
       </div>
 
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-blue-500/10 p-3">
+                <Package className="size-5 text-blue-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Ingredientes
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{ingredients.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-green-500/10 p-3">
+                <CheckCircle className="size-5 text-green-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Activos
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activeIngredients}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-red-500/10 p-3">
+                <TrendDown className="size-5 text-red-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Stock Bajo
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{lowStockCount}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-purple-500/10 p-3">
+                <Package className="size-5 text-purple-600" weight="duotone" />
+              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Valor Inventario
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${totalValue.toFixed(2)}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t" />
+
+      {/* Search */}
       <div className="relative">
         <MagnifyingGlass className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Buscar ingrediente..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
+          className="pl-9 h-11"
         />
       </div>
 
-      <Card>
+      {/* Table */}
+      <Card className="border-none shadow-sm">
         <CardContent className="p-0">
           <Table>
             <TableHeader>

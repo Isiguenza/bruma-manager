@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { products, categories } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, isNull, and } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,8 +10,14 @@ export async function GET(request: NextRequest) {
 
     const includeImages = searchParams.get("images") === "true";
 
+    // Construir condiciones: siempre excluir productos eliminados (deletedAt IS NULL)
+    const conditions = [isNull(products.deletedAt)];
+    if (activeOnly) {
+      conditions.push(eq(products.active, true));
+    }
+
     const result = await db.query.products.findMany({
-      where: activeOnly ? eq(products.active, true) : undefined,
+      where: and(...conditions),
       columns: {
         id: true,
         name: true,
@@ -24,6 +30,7 @@ export async function GET(request: NextRequest) {
         hasVariants: true,
         variants: true,
         active: true,
+        deletedAt: true,
         createdAt: true,
         updatedAt: true,
       },

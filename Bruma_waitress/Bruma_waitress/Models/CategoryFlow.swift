@@ -16,8 +16,8 @@ struct ModifierOption: Codable, Identifiable {
 
 struct ModifierStep: Codable, Identifiable {
     let id: String
-    let categoryId: String
-    let stepType: String // "frosting", "topping", "extra", "custom"
+    let categoryId: String?  // Optional to support product flows
+    let stepType: String // "frosting", "topping", "extra", "custom", "products", "category"
     let stepName: String
     let sortOrder: Int
     let isRequired: Bool

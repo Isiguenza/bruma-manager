@@ -12,7 +12,7 @@ struct DeliveryInfoDialog: View {
                 VStack(spacing: 24) {
                     // Header
                     HStack {
-                        Text(vm.isPlatformDelivery ? "Delivery de Plataforma" : "Para Llevar")
+                        Text(vm.isCreatingPlatformDelivery ? "Delivery de Plataforma" : "Para Llevar")
                             .font(.title.bold())
                             .foregroundColor(.white)
                         Spacer()
@@ -29,7 +29,7 @@ struct DeliveryInfoDialog: View {
                     }
                     
                     // Platform Delivery Fields
-                    if vm.isPlatformDelivery {
+                    if vm.isCreatingPlatformDelivery {
                         // Platform Selector
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Plataforma *")
@@ -121,7 +121,7 @@ struct DeliveryInfoDialog: View {
     }
     
     private var isValid: Bool {
-        let isPlatform = vm.isPlatformDelivery
+        let isPlatform = vm.isCreatingPlatformDelivery
         let platform = vm.deliveryPlatform
         let digits = vm.platformOrderDigits
         let name = vm.deliveryCustomerName.trimmingCharacters(in: .whitespaces)
@@ -136,7 +136,7 @@ struct DeliveryInfoDialog: View {
     private func handleConfirm() {
         let trimmedName = vm.deliveryCustomerName.trimmingCharacters(in: .whitespaces)
         
-        if vm.isPlatformDelivery {
+        if vm.isCreatingPlatformDelivery {
             // Format: "Uber #1234 - Juan Pérez"
             vm.customerName = "\(vm.deliveryPlatform) #\(vm.platformOrderDigits) - \(trimmedName)"
             vm.showToast("Delivery - \(vm.deliveryPlatform) #\(vm.platformOrderDigits)")
@@ -144,6 +144,9 @@ struct DeliveryInfoDialog: View {
             vm.customerName = trimmedName
             vm.showToast("Para Llevar - \(trimmedName)")
         }
+        
+        // Navigate to POS screen
+        vm.currentScreen = .pos
         
         // Reset
         vm.showDeliveryDialog = false

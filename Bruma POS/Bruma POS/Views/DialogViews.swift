@@ -121,7 +121,7 @@ struct VariantDialog: View {
             
             if let product = vm.selectedProductForVariant {
                 ForEach(product.parsedVariants) { variant in
-                    let isPlatform = vm.customerName.hasPrefix("Uber") || vm.customerName.hasPrefix("Rappi") || vm.customerName.hasPrefix("Didi")
+                    let isPlatform = vm.isPlatformDelivery
                     let price = isPlatform ? variant.numericPlatformPrice : variant.numericPrice
                     
                     Button {
@@ -132,9 +132,17 @@ struct VariantDialog: View {
                                 .font(.headline)
                                 .foregroundColor(.white)
                             Spacer()
-                            Text(vm.formatCurrency(price))
-                                .font(.title3.bold())
-                                .foregroundColor(.white)
+                            HStack(spacing: 4) {
+                                Text(vm.formatCurrency(price))
+                                    .font(.title3.bold())
+                                    .foregroundColor(.white)
+                                
+                                if isPlatform && variant.platformPrice != nil {
+                                    Image(systemName: "motorcycle")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                }
+                            }
                         }
                         .padding(16)
                         .background(
