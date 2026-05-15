@@ -18,7 +18,7 @@ class APIService {
         var baseURL: String {
             switch self {
             case .development:
-                return "http://192.168.0.109:3000"
+                return "https://bruma.drinksespantapajaros.com.mx"
             case .production:
                 // IMPORTANTE: Cambiar por tu dominio de producción
                 return "https://drinksespantapajaros.com.mx"

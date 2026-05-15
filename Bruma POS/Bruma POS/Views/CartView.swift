@@ -132,6 +132,21 @@ struct CartView: View {
                             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
                     }
                     
+                    // Refresh button (only for tables)
+                    if vm.selectedTable != nil {
+                        Button {
+                            Task { await vm.refreshCurrentOrder() }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.white)
+                                .frame(width: 40, height: 40)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(10)
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                        }
+                    }
+                    
                     // Table/Customer button with context menu
                     Menu {
                         if vm.selectedTable != nil {

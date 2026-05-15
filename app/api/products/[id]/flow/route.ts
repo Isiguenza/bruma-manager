@@ -42,29 +42,58 @@ export async function GET(
     // If product has custom flow and not using default, return it
     if (productFlow && !productFlow.useDefaultFlow) {
       const rawSteps = JSON.parse(productFlow.steps || "[]");
+      console.log(`📋 Raw steps from DB:`, JSON.stringify(rawSteps, null, 2));
       
       // Normalize steps to include all required fields for Swift
       const steps = await Promise.all(rawSteps.map(async (step: any, index: number) => {
         let options = step.options || [];
         
+        console.log(`🔍 Processing step ${index}:`, {
+          stepName: step.stepName,
+          stepType: step.stepType,
+          stepCategoryId: step.categoryId,
+          optionsCount: options.length,
+          firstOption: options[0],
+        });
+        
+        // Store the selected category ID for category-type steps
+        let stepCategoryId = product.categoryId || null;
+        
         // If step type is "category", fetch products from that category
-        if (step.stepType === "category" && options.length > 0) {
-          const categoryId = options[0].id; // The category ID is stored in the first option
-          const categoryProducts = await db.query.products.findMany({
-            where: eq(products.categoryId, categoryId),
-            orderBy: [asc(products.name)],
-          });
+        if (step.stepType === "category") {
+          // Try to get categoryId from options first, then fallback to step.categoryId
+          const categoryId = (options.length > 0 ? options[0].id : step.categoryId) || null;
           
-          // Convert products to options format
-          options = categoryProducts.map((prod, idx) => ({
-            id: prod.id,
-            stepId: step.id,
-            name: prod.name,
-            description: null,
-            price: "0", // Don't add extra price for category products
-            sortOrder: idx,
-            active: prod.active,
-          }));
+          if (categoryId) {
+            stepCategoryId = categoryId; // Use the selected category ID for this step
+            
+            const categoryName = options.length > 0 ? options[0].name : step.stepName;
+            console.log(`📂 Fetching products for category: ${categoryId} (${categoryName})`);
+            
+            const categoryProducts = await db.query.products.findMany({
+              where: eq(products.categoryId, categoryId),
+              orderBy: [asc(products.name)],
+            });
+            
+            // Filter only active products
+            const activeProducts = categoryProducts.filter(p => p.active);
+            
+            console.log(`✅ Found ${categoryProducts.length} products (${activeProducts.length} active) in category ${categoryName}:`, 
+              activeProducts.map(p => p.name).join(", "));
+            
+            // Convert products to options format
+            options = activeProducts.map((prod, idx) => ({
+              id: prod.id,
+              stepId: step.id,
+              name: prod.name,
+              description: null,
+              price: "0", // Don't add extra price for category products
+              sortOrder: idx,
+              active: true,
+            }));
+          } else {
+            console.warn(`⚠️ Category step "${step.stepName}" has no categoryId - cannot expand products`);
+          }
         } else {
           // For other types, just clean up the options
           options = options.map((opt: any) => ({
@@ -80,7 +109,7 @@ export async function GET(
         
         return {
           id: step.id,
-          categoryId: product.categoryId || null,
+          categoryId: stepCategoryId,
           stepType: step.stepType,
           stepName: step.stepName,
           sortOrder: index,

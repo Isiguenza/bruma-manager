@@ -509,11 +509,13 @@ class POSViewModel: ObservableObject {
                 
                 do {
                     let orders = try await APIService.shared.fetchOrdersByTable(tableId: table.id)
-                    if let mainOrder = orders.first {
+                    // Filter only active orders (not paid/completed)
+                    let activeOrders = orders.filter { $0.paymentStatus != "paid" && $0.status != "completed" }
+                    if let mainOrder = activeOrders.first {
                         currentOrderId = mainOrder.id
-                        // Merge items from all related orders
+                        // Merge items from all active orders
                         var allItems: [CartItem] = []
-                        for order in orders {
+                        for order in activeOrders {
                             if let items = order.items {
                                 for item in items where !(item.voided ?? false) {
                                     var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
@@ -589,6 +591,7 @@ class POSViewModel: ObservableObject {
     
     func handleNewDeliveryOrder() {
         resetPaymentState()
+        isCreatingPlatformDelivery = false
         isPlatformDelivery = false
         deliveryPlatform = ""
         platformOrderDigits = ""
@@ -605,6 +608,7 @@ class POSViewModel: ObservableObject {
     
     func handleNewPlatformDeliveryOrder() {
         resetPaymentState()
+        isCreatingPlatformDelivery = true
         isPlatformDelivery = true
         deliveryPlatform = ""
         platformOrderDigits = ""
@@ -1052,6 +1056,40 @@ class POSViewModel: ObservableObject {
             cart[i].promotionDiscount = nil
         }
         cart = PromotionEngine.applyPromotions(cartItems: cart, promotions: activePromotions)
+    }
+    
+    // MARK: - Refresh Order (remove paid items)
+    
+    func refreshCurrentOrder() async {
+        guard let table = selectedTable else { return }
+        
+        do {
+            let orders = try await APIService.shared.fetchOrdersByTable(tableId: table.id)
+            // Filter only active orders (not paid/completed)
+            let activeOrders = orders.filter { $0.paymentStatus != "paid" && $0.status != "completed" }
+            
+            if let mainOrder = activeOrders.first {
+                currentOrderId = mainOrder.id
+                // Merge items from all active orders
+                var allItems: [CartItem] = []
+                for order in activeOrders {
+                    if let items = order.items {
+                        for item in items where !(item.voided ?? false) {
+                            var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
+                            cartItem.orderStatus = order.status
+                            allItems.append(cartItem)
+                        }
+                    }
+                }
+                cart = allItems
+            } else {
+                // No active orders, clear cart
+                cart = []
+                currentOrderId = nil
+            }
+        } catch {
+            print("Error refreshing order: \(error)")
+        }
     }
     
     // MARK: - Send to Kitchen

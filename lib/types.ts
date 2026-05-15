@@ -111,8 +111,8 @@ export interface Extra {
 
 export interface ModifierStep {
   id: string;
-  categoryId: string;
-  stepType: "frosting" | "topping" | "extra" | "custom";
+  categoryId?: string; // Optional for product flows
+  stepType: "frosting" | "topping" | "extra" | "custom" | "products" | "category";
   stepName: string;
   sortOrder: number;
   isRequired: boolean;
