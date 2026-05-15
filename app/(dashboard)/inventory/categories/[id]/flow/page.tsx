@@ -36,7 +36,7 @@ export default function CategoryFlowPage({ params }: { params: Promise<{ id: str
   const [editingStepIndex, setEditingStepIndex] = useState<number>(-1);
   
   const [stepForm, setStepForm] = useState({
-    stepType: "custom" as "frosting" | "topping" | "extra" | "custom",
+    stepType: "custom" as "frosting" | "topping" | "extra" | "custom" | "products" | "category",
     stepName: "",
     isRequired: false,
     allowMultiple: false,
