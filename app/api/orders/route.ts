@@ -53,6 +53,9 @@ export async function GET(request: NextRequest) {
         : and(...whereClauses)
       : undefined;
 
+    console.log("🔎 WHERE clause construido:", whereClause ? "SÍ" : "NO (sin filtros)");
+    console.log("📋 Total whereClauses:", whereClauses.length);
+    
     const result = await db.query.orders.findMany({
       where: whereClause,
       with: { 
@@ -117,6 +120,14 @@ export async function GET(request: NextRequest) {
     });
 
     console.log("✅ Órdenes encontradas:", result.length);
+    
+    // Log tableId de cada orden para debugging
+    if (tableId) {
+      console.log("🔍 Verificando tableId de órdenes retornadas:");
+      result.forEach((order, idx) => {
+        console.log(`  Orden[${idx}]: id=${order.id}, tableId=${order.tableId}, customerName=${order.customerName || "null"}, items=${order.items?.length || 0}`);
+      });
+    }
     
     // Ensure items have createdAt serialized as ISO string and add tableName/employeeName
     const serialized = result.map(order => ({

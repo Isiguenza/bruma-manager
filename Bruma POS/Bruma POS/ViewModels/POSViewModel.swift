@@ -9,6 +9,7 @@ class POSViewModel: ObservableObject {
     enum AppScreen { case dashboard, tableSelection, pos }
     @Published var currentScreen: AppScreen = .dashboard
     @Published var activeView: String = "pos" // "pos" or "reservations"
+    @Published var selectedTab: Int = 0 // Tab selection: 0=Mesas, 1=Caja, 2=Reservas, 3=Delivery
     @Published var loading = false
     @Published var toastMessage: String?
     @Published var toastIsError = false
@@ -508,15 +509,28 @@ class POSViewModel: ObservableObject {
                 activeSeat = guestCount > 0 ? "A1" : "C"
                 
                 do {
+                    print("✅ Cargando órdenes para mesa: \(table.id) (\(table.number))")
                     let orders = try await APIService.shared.fetchOrdersByTable(tableId: table.id)
+                    print("📊 Total órdenes recibidas: \(orders.count)")
+                    
+                    // Log all orders with their tableId
+                    for (idx, order) in orders.enumerated() {
+                        print("  Orden[\(idx)]: id=\(order.id), tableId=\(order.tableId ?? "nil"), customerName=\(order.customerName ?? "nil"), items=\(order.items?.count ?? 0)")
+                    }
+                    
                     // Filter only active orders (not paid/completed)
                     let activeOrders = orders.filter { $0.paymentStatus != "paid" && $0.status != "completed" }
+                    print("✅ Órdenes activas filtradas: \(activeOrders.count)")
+                    
                     if let mainOrder = activeOrders.first {
                         currentOrderId = mainOrder.id
+                        print("🎯 currentOrderId establecido: \(mainOrder.id)")
+                        
                         // Merge items from all active orders
                         var allItems: [CartItem] = []
                         for order in activeOrders {
                             if let items = order.items {
+                                print("  ➕ Agregando \(items.count) items de orden \(order.id)")
                                 for item in items where !(item.voided ?? false) {
                                     var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
                                     cartItem.orderStatus = order.status
@@ -525,9 +539,12 @@ class POSViewModel: ObservableObject {
                             }
                         }
                         cart = allItems
+                        print("🛒 Cart final: \(cart.count) items")
+                    } else {
+                        print("⚠️ No hay órdenes activas para esta mesa")
                     }
                 } catch {
-                    print("Error loading table orders: \(error)")
+                    print("❌ Error loading table orders: \(error)")
                 }
                 
                 currentScreen = .pos
@@ -1658,7 +1675,13 @@ class POSViewModel: ObservableObject {
     func executeReleaseTable() {
         Task {
             do {
-                // Si hay mesa, actualizar estado a "available"
+                // 1. Eliminar la orden de la BD si existe
+                if let orderId = currentOrderId {
+                    try await APIService.shared.deleteOrder(orderId: orderId)
+                    print("✅ Orden \(orderId) eliminada de la BD")
+                }
+                
+                // 2. Si hay mesa, actualizar estado a "available"
                 if let table = selectedTable {
                     try await APIService.shared.updateTableStatus(
                         tableId: table.id,
@@ -1669,20 +1692,27 @@ class POSViewModel: ObservableObject {
                 let orderType = selectedTable != nil ? "Mesa \(selectedTable!.number)" : "Orden"
                 showToast("\(orderType) liberada")
                 
-                // Resetear estado
+                // 3. Resetear estado
                 selectedTable = nil
                 cart = []
                 activeCourse = 1
                 activeSeat = "C"
                 customerName = ""
                 currentOrderId = nil
+                guestCount = 1
                 
-                // Recargar mesas
+                // 4. Recargar mesas
                 await refreshTables()
                 
+                // 5. Navegar de regreso al selector de mesas
+                await MainActor.run {
+                    currentScreen = .tableSelection
+                    selectedTab = 0 // Tab 0 = Mesas
+                }
+                
             } catch {
-                print("❌ Error liberando mesa:", error)
-                showToast("Error liberando mesa", isError: true)
+                print("❌ Error liberando mesa/orden:", error)
+                showToast("Error liberando mesa/orden", isError: true)
             }
         }
     }

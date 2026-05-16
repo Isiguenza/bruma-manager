@@ -288,12 +288,18 @@ struct BatchCardView: View {
                 // Custom modifiers
                 if let customMods = item.customModifiers,
                    let modifiers = viewModel.parseCustomModifiers(customMods) {
-                    ForEach(Array(modifiers.keys.sorted()), id: \.self) { stepName in
-                        if let modifier = modifiers[stepName] {
+                    ForEach(Array(modifiers.keys.sorted()), id: \.self) { stepId in
+                        if let modifier = modifiers[stepId] {
                             let optionNames = modifier.options.map { $0.name }.joined(separator: ", ")
-                            Text("\(stepName): \(optionNames)")
-                                .font(.system(size: 13))
-                                .foregroundColor(.white.opacity(0.7))
+                            HStack(spacing: 4) {
+                                Text("↳")
+                                    .foregroundColor(.cyan.opacity(0.6))
+                                Text("\(modifier.stepName): \(optionNames)")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.cyan)
+                                    .lineLimit(3)
+                                    .truncationMode(.tail)
+                            }
                         }
                     }
                 }
@@ -303,6 +309,8 @@ struct BatchCardView: View {
                     Text("Nota: \(notes)")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.yellow)
+                        .lineLimit(3)
+                        .truncationMode(.tail)
                         .padding(.top, 2)
                 }
             }

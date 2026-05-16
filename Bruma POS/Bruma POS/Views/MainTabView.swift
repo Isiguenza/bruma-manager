@@ -5,13 +5,12 @@ struct MainTabView: View {
     @StateObject private var cashVM = CashRegisterViewModel()
     @StateObject private var deliveryVM = DeliveryViewModel()
     
-    @State private var selectedTab = 0
     @State private var showPinModal = false
     @State private var cashTabAuthorized = false
     
     var body: some View {
         ZStack {
-            TabView(selection: $selectedTab) {
+            TabView(selection: $vm.selectedTab) {
                 // Tab 1: Mesas (Table Selection)
                 TableSelectionView(vm: vm)
                     .tabItem {
@@ -41,13 +40,13 @@ struct MainTabView: View {
                     .tag(3)
             }
             .accentColor(.blue)
-            .onChange(of: selectedTab) { oldValue, newValue in
+            .onChange(of: vm.selectedTab) { oldValue, newValue in
                 if newValue == 1 && !cashTabAuthorized {
                     // Intentando acceder a Caja sin autorización
                     showPinModal = true
                     // Volver a la tab anterior
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        selectedTab = oldValue
+                        vm.selectedTab = oldValue
                     }
                 }
             }
@@ -60,7 +59,7 @@ struct MainTabView: View {
             CashRegisterPinModal(vm: vm, onSuccess: {
                 showPinModal = false
                 cashTabAuthorized = true
-                selectedTab = 1
+                vm.selectedTab = 1
             }, onCancel: {
                 showPinModal = false
             })
