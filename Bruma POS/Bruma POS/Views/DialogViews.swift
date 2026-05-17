@@ -176,12 +176,14 @@ struct NotesDialog: View {
     @ObservedObject var vm: POSViewModel
     
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
+            // Header
             Text(vm.pendingCartItem?.productName ?? "")
                 .font(.title2.bold())
                 .foregroundColor(.white)
+                .multilineTextAlignment(.center)
             
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Comentarios especiales (opcional)")
                     .font(.subheadline.bold())
                     .foregroundColor(.white)
@@ -191,44 +193,64 @@ struct NotesDialog: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
-            TextEditor(text: $vm.tempNotes)
-                .scrollContentBackground(.hidden)
-                .foregroundColor(.white)
-                .padding(12)
-                .frame(height: 100)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(white: 0.06))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.2)))
-                )
-            
-            HStack(spacing: 12) {
-                Button("Cancelar") {
-                    vm.handleCancelNotes()
+            ZStack(alignment: .topLeading) {
+                if vm.tempNotes.isEmpty {
+                    Text("Ej: Sin cebolla, extra salsa...")
+                        .foregroundColor(.gray.opacity(0.5))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .font(.body)
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(Color(white: 0.12))
-                .foregroundColor(.white)
-                .cornerRadius(10)
                 
-                Button(vm.tempNotes.trimmingCharacters(in: .whitespaces).isEmpty ? "Agregar sin comentario" : "Agregar con comentario") {
-                    vm.handleConfirmNotes()
+                TextEditor(text: $vm.tempNotes)
+                    .scrollContentBackground(.hidden)
+                    .foregroundColor(.white)
+                    .padding(12)
+                    .frame(height: 120)
+                    .font(.body)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(white: 0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color(white: 0.15), lineWidth: 1)
+                    )
+            )
+            
+            // Botones
+            HStack(spacing: 12) {
+                Button {
+                    vm.handleCancelNotes()
+                } label: {
+                    Text("Cancelar")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color(white: 0.12))
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                .font(.headline)
+                
+                Button {
+                    vm.handleConfirmNotes()
+                } label: {
+                    Text(vm.tempNotes.trimmingCharacters(in: .whitespaces).isEmpty ? "Agregar" : "Confirmar")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
             }
         }
-        .padding(24)
-        .frame(maxWidth: 440)
+        .padding(28)
+        .frame(maxWidth: 480)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.1))
-                .shadow(color: .black.opacity(0.5), radius: 20)
+                .fill(Color(white: 0.08))
+                .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
         )
     }
 }

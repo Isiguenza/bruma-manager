@@ -708,6 +708,10 @@ class POSViewModel: ObservableObject {
             
             if let flow = flow, !flow.useDefaultFlow, !flow.steps.isEmpty {
                 print("   ✅ Using flow with \(flow.steps.count) steps")
+                print("📊 Detalles de los steps:")
+                for (idx, step) in flow.steps.enumerated() {
+                    print("     Step[\(idx)]: id=\(step.id), name=\(step.stepName), type=\(step.stepType), options=\(step.options?.count ?? 0)")
+                }
                 categoryFlow = flow
                 selectedProduct = product
                 currentStepIndex = 0
@@ -938,8 +942,7 @@ class POSViewModel: ObservableObject {
     }
     
     func handleCancelNotes() {
-        guard let item = pendingCartItem else { return }
-        addToCart(item)
+        // Solo cerrar el diálogo sin agregar al carrito
         showNotesDialog = false
         pendingCartItem = nil
         tempNotes = ""
@@ -1559,6 +1562,210 @@ class POSViewModel: ObservableObject {
             discount: discountData,
             paymentMethod: paymentMethod
         )
+    }
+    
+    func handlePrintPreTicket() async {
+        // Imprimir todos los items del carrito (incluso los no enviados a cocina)
+        guard !cart.isEmpty else { return }
+        
+        var itemsBySeat: [String: [[String: Any]]] = [:]
+        for item in cart {
+            let seat = item.seat.isEmpty ? "C" : item.seat
+            if itemsBySeat[seat] == nil { itemsBySeat[seat] = [] }
+            itemsBySeat[seat]?.append([
+                "name": item.productName,
+                "qty": item.quantity,
+                "total": Int(Double(item.quantity) * item.unitPrice)
+            ])
+        }
+        
+        let subtotal = cart.reduce(0.0) { $0 + (Double($1.quantity) * $1.unitPrice) }
+        
+        await PrintService.shared.printTicket(
+            customerName: customerName,
+            orderNumber: "PRE-TICKET",
+            items: itemsBySeat,
+            subtotal: Int(subtotal),
+            tip: 0,
+            total: Int(subtotal),
+            tableNumber: selectedTable?.number ?? "",
+            isDelivery: selectedTable == nil,
+            discount: nil,
+            paymentMethod: nil
+        )
+    }
+    
+    func handlePrintPreTicketPDF() async {
+        // Generar PDF y compartir
+        guard !cart.isEmpty else { return }
+        
+        let pdfData = generatePreTicketPDF()
+        
+        // Guardar PDF temporalmente
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("pre-ticket-\(Date().timeIntervalSince1970).pdf")
+        
+        do {
+            try pdfData.write(to: tempURL)
+            
+            // Mostrar share sheet en el main thread
+            await MainActor.run {
+                let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
+                
+                // Para iPad - necesita popover
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = windowScene.windows.first,
+                   let rootVC = window.rootViewController {
+                    
+                    if let popover = activityVC.popoverPresentationController {
+                        popover.sourceView = window
+                        popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                        popover.permittedArrowDirections = []
+                    }
+                    
+                    rootVC.present(activityVC, animated: true)
+                }
+            }
+        } catch {
+            showToast("Error generando PDF", isError: true)
+        }
+    }
+    
+    private func generatePreTicketPDF() -> Data {
+        let pdfMetaData = [
+            kCGPDFContextCreator: "Bruma POS",
+            kCGPDFContextTitle: "Pre-Ticket"
+        ]
+        let format = UIGraphicsPDFRendererFormat()
+        format.documentInfo = pdfMetaData as [String: Any]
+        
+        // Tamaño de ticket térmico (80mm = ~227 puntos)
+        let pageWidth: CGFloat = 227
+        let pageHeight: CGFloat = 800  // Altura variable
+        let pageRect = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
+        
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
+        
+        let data = renderer.pdfData { (context) in
+            context.beginPage()
+            
+            let titleFont = UIFont.boldSystemFont(ofSize: 18)
+            let largeFont = UIFont.boldSystemFont(ofSize: 14)
+            let bodyFont = UIFont.systemFont(ofSize: 9)  // Más pequeño (era 10)
+            let smallFont = UIFont.systemFont(ofSize: 7)  // Más pequeño (era 8)
+            
+            let margin: CGFloat = 10
+            var yPosition: CGFloat = 10
+            
+            // Logo (si existe en el bundle)
+            if let logoImage = UIImage(named: "logo") {
+                let logoHeight: CGFloat = 120  // Doble de grande (era 60)
+                let logoWidth = logoImage.size.width * (logoHeight / logoImage.size.height)
+                let logoX = (pageWidth - logoWidth) / 2
+                logoImage.draw(in: CGRect(x: logoX, y: yPosition, width: logoWidth, height: logoHeight))
+                yPosition += logoHeight + 5
+            } else {
+                // Fallback: texto BRUMA
+                let titleAttributes: [NSAttributedString.Key: Any] = [.font: titleFont]
+                let title = "BRUMA"
+                let titleSize = title.size(withAttributes: titleAttributes)
+                title.draw(at: CGPoint(x: (pageWidth - titleSize.width) / 2, y: yPosition), withAttributes: titleAttributes)
+                yPosition += titleSize.height + 5
+            }
+            
+            // Dirección centrada
+            let addressAttributes: [NSAttributedString.Key: Any] = [.font: smallFont]
+            let address1 = "Av. Panamericana Casa B14"
+            let address2 = "Col. Pedregal de Carrasco, CDMX"
+            let addr1Size = address1.size(withAttributes: addressAttributes)
+            let addr2Size = address2.size(withAttributes: addressAttributes)
+            address1.draw(at: CGPoint(x: (pageWidth - addr1Size.width) / 2, y: yPosition), withAttributes: addressAttributes)
+            yPosition += addr1Size.height + 2
+            address2.draw(at: CGPoint(x: (pageWidth - addr2Size.width) / 2, y: yPosition), withAttributes: addressAttributes)
+            yPosition += addr2Size.height + 10
+            
+            // Fecha y hora centrada
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "dd/MM/yyyy HH:mm"
+            let dateStr = dateFormatter.string(from: Date())
+            let dateSize = dateStr.size(withAttributes: addressAttributes)
+            dateStr.draw(at: CGPoint(x: (pageWidth - dateSize.width) / 2, y: yPosition), withAttributes: addressAttributes)
+            yPosition += dateSize.height + 10
+            
+            // Mesa/Para Llevar y # de Orden
+            let labelAttributes: [NSAttributedString.Key: Any] = [.font: largeFont]
+            let label = selectedTable != nil ? "MESA \(selectedTable!.number)" : "PARA LLEVAR"
+            let orderNum = "#PRE"
+            label.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: labelAttributes)
+            let orderSize = orderNum.size(withAttributes: labelAttributes)
+            orderNum.draw(at: CGPoint(x: pageWidth - margin - orderSize.width, y: yPosition), withAttributes: labelAttributes)
+            yPosition += 20
+            
+            // Línea separadora
+            let linePath = UIBezierPath()
+            linePath.move(to: CGPoint(x: margin, y: yPosition))
+            linePath.addLine(to: CGPoint(x: pageWidth - margin, y: yPosition))
+            UIColor.black.setStroke()
+            linePath.lineWidth = 0.5
+            linePath.stroke()
+            yPosition += 8
+            
+            // Items
+            let itemAttributes: [NSAttributedString.Key: Any] = [.font: bodyFont]
+            var subtotal: Double = 0
+            
+            for item in cart {
+                let itemTotal = Double(item.quantity) * item.unitPrice
+                subtotal += itemTotal
+                
+                let qtyName = "\(item.quantity)x \(item.productName)"
+                let price = formatCurrency(itemTotal)
+                
+                qtyName.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: itemAttributes)
+                let priceSize = price.size(withAttributes: itemAttributes)
+                price.draw(at: CGPoint(x: pageWidth - margin - priceSize.width, y: yPosition), withAttributes: itemAttributes)
+                yPosition += 15  // Más espaciado (era 12)
+                
+                // Notas
+                if !item.notes.isEmpty {
+                    let noteAttributes: [NSAttributedString.Key: Any] = [.font: smallFont, .foregroundColor: UIColor.gray]
+                    let note = "  ↳ \(item.notes)"
+                    note.draw(at: CGPoint(x: margin + 5, y: yPosition), withAttributes: noteAttributes)
+                    yPosition += 10
+                }
+            }
+            
+            yPosition += 5
+            
+            // Línea separadora
+            let linePath2 = UIBezierPath()
+            linePath2.move(to: CGPoint(x: margin, y: yPosition))
+            linePath2.addLine(to: CGPoint(x: pageWidth - margin, y: yPosition))
+            UIColor.black.setStroke()
+            linePath2.lineWidth = 0.5
+            linePath2.stroke()
+            yPosition += 8
+            
+            // Total
+            let totalAttributes: [NSAttributedString.Key: Any] = [.font: largeFont]
+            let totalLabel = "SUBTOTAL:"
+            let totalPrice = formatCurrency(subtotal)
+            totalLabel.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: totalAttributes)
+            let totalPriceSize = totalPrice.size(withAttributes: totalAttributes)
+            totalPrice.draw(at: CGPoint(x: pageWidth - margin - totalPriceSize.width, y: yPosition), withAttributes: totalAttributes)
+            yPosition += 25
+            
+            // Footer
+            let footerAttributes: [NSAttributedString.Key: Any] = [.font: smallFont, .foregroundColor: UIColor.gray]
+            let footer = "Este es un pre-ticket."
+            let footer2 = "No es válido como comprobante de pago."
+            let footerSize = footer.size(withAttributes: footerAttributes)
+            let footer2Size = footer2.size(withAttributes: footerAttributes)
+            footer.draw(at: CGPoint(x: (pageWidth - footerSize.width) / 2, y: yPosition), withAttributes: footerAttributes)
+            yPosition += footerSize.height + 2
+            footer2.draw(at: CGPoint(x: (pageWidth - footer2Size.width) / 2, y: yPosition), withAttributes: footerAttributes)
+        }
+        
+        return data
     }
     
     func printSplitPersonTicket(personIndex: Int, items: [Int], tip: Double, total: Double) async {

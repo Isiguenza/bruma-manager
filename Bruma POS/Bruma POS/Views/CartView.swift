@@ -132,21 +132,6 @@ struct CartView: View {
                             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
                     }
                     
-                    // Refresh button (only for tables)
-                    if vm.selectedTable != nil {
-                        Button {
-                            Task { await vm.refreshCurrentOrder() }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(.white)
-                                .frame(width: 40, height: 40)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(10)
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
-                        }
-                    }
-                    
                     // Table/Customer button with context menu
                     Menu {
                         if vm.selectedTable != nil {
@@ -367,9 +352,25 @@ struct CartView: View {
             }
             
             HStack(spacing: 10) {
-                // Print button
-                Button {
-                    Task { await vm.handlePrint() }
+                // Print button with context menu
+                Menu {
+                    Button {
+                        Task { await vm.handlePrint() }
+                    } label: {
+                        Label("Ticket Cuenta", systemImage: "doc.text")
+                    }
+                    
+                    Button {
+                        Task { await vm.handlePrintPreTicket() }
+                    } label: {
+                        Label("Pre-Ticket", systemImage: "doc.plaintext")
+                    }
+                    
+                    Button {
+                        Task { await vm.handlePrintPreTicketPDF() }
+                    } label: {
+                        Label("Pre-Ticket PDF", systemImage: "square.and.arrow.up")
+                    }
                 } label: {
                     Image(systemName: "printer.fill")
                         .font(.headline)
@@ -378,6 +379,8 @@ struct CartView: View {
                         .foregroundColor(.white)
                         .cornerRadius(12)
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                } primaryAction: {
+                    Task { await vm.handlePrint() }
                 }
                 .disabled(vm.cart.isEmpty)
                 .opacity(vm.cart.isEmpty ? 0.3 : 1)
@@ -530,33 +533,32 @@ struct CartItemRow: View {
             
             // Quantity controls — only if NOT sent to kitchen
             if !item.sentToKitchen {
-                HStack(spacing: 0) {
+                HStack(spacing: 8) {
                     Button {
                         vm.updateCartQuantity(at: index, delta: -1)
                     } label: {
                         Image(systemName: "minus")
-                            .font(.caption.weight(.bold))
-                            .frame(width: 32, height: 28)
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.white)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(Color.red.opacity(0.15)))
+                            .overlay(Circle().stroke(Color.red.opacity(0.3), lineWidth: 1))
                     }
                     
                     Text("\(item.quantity)")
-                        .font(.caption.weight(.bold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundColor(.white)
-                        .frame(width: 32, height: 28)
-                        .background(Color.white.opacity(0.05))
+                        .frame(minWidth: 24)
                     
                     Button {
                         vm.updateCartQuantity(at: index, delta: 1)
                     } label: {
                         Image(systemName: "plus")
-                            .font(.caption.weight(.bold))
-                            .frame(width: 32, height: 28)
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.white)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(Color.blue.opacity(0.15)))
+                            .overlay(Circle().stroke(Color.blue.opacity(0.3), lineWidth: 1))
                     }
                     
                     Spacer()
@@ -565,7 +567,6 @@ struct CartItemRow: View {
                         .font(.caption2)
                         .foregroundColor(.gray)
                 }
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.1), lineWidth: 1).padding(.trailing, 0))
             }
         }
         .padding(12)

@@ -34,7 +34,10 @@ export async function GET(request: NextRequest) {
     
     if (tableId) {
       console.log("🏓 Filtrando por tableId:", tableId);
-      whereClauses.push(eq(orders.tableId, tableId));
+      console.log("🏓 Tipo de tableId:", typeof tableId);
+      const tableIdClause = eq(orders.tableId, tableId);
+      console.log("🏓 Clause generado:", tableIdClause);
+      whereClauses.push(tableIdClause);
     }
     
     if (noTable) {
@@ -124,9 +127,18 @@ export async function GET(request: NextRequest) {
     // Log tableId de cada orden para debugging
     if (tableId) {
       console.log("🔍 Verificando tableId de órdenes retornadas:");
+      let mismatchCount = 0;
       result.forEach((order, idx) => {
-        console.log(`  Orden[${idx}]: id=${order.id}, tableId=${order.tableId}, customerName=${order.customerName || "null"}, items=${order.items?.length || 0}`);
+        const matches = order.tableId === tableId;
+        console.log(`  Orden[${idx}]: id=${order.id}, tableId=${order.tableId}, matches=${matches ? "✅" : "❌"}, customerName=${order.customerName || "null"}, items=${order.items?.length || 0}`);
+        if (!matches) {
+          mismatchCount++;
+          console.error(`  ❌❌❌ MISMATCH! Orden ${order.id} tiene tableId=${order.tableId} pero se pidió tableId=${tableId}`);
+        }
       });
+      if (mismatchCount > 0) {
+        console.error(`⚠️⚠️⚠️ PROBLEMA DETECTADO: ${mismatchCount} órdenes NO coinciden con el tableId solicitado!`);
+      }
     }
     
     // Ensure items have createdAt serialized as ISO string and add tableName/employeeName
