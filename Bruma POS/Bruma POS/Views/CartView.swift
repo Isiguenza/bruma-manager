@@ -8,9 +8,40 @@ struct CartView: View {
             cartHeader
                 .padding(16)
             
+            // Employee order tabs
+            if vm.isEmployeeOrder {
+                HStack(spacing: 0) {
+                    Button {
+                        vm.employeeOrderTab = 0
+                    } label: {
+                        Text("Orden Actual")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(vm.employeeOrderTab == 0 ? .white : .gray)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(vm.employeeOrderTab == 0 ? Color.blue.opacity(0.15) : Color.clear)
+                    }
+                    
+                    Button {
+                        vm.employeeOrderTab = 1
+                        Task { await vm.fetchEmployeeOrderHistory() }
+                    } label: {
+                        Text("Historial")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(vm.employeeOrderTab == 1 ? .white : .gray)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(vm.employeeOrderTab == 1 ? Color.blue.opacity(0.15) : Color.clear)
+                    }
+                }
+                .background(Color.white.opacity(0.04))
+            }
+            
             Rectangle().fill(Color(white: 0.12)).frame(height: 1)
             
-            if vm.cart.isEmpty {
+            if vm.isEmployeeOrder && vm.employeeOrderTab == 1 {
+                EmployeeOrderHistoryView(vm: vm)
+            } else if vm.cart.isEmpty {
                 Spacer()
                 VStack(spacing: 8) {
                     Text("Carrito vacío")

@@ -11,6 +11,8 @@ export async function GET(request: NextRequest) {
     const noTable = searchParams.get("noTable") === "true";
     const paymentStatus = searchParams.get("paymentStatus");
     const startDate = searchParams.get("startDate");
+    const userId = searchParams.get("userId");
+    const source = searchParams.get("source");
     const limit = parseInt(searchParams.get("limit") || "50");
 
     console.log("🔍 GET /api/orders - Params:", { status, tableId, noTable, paymentStatus, startDate, limit });
@@ -48,6 +50,16 @@ export async function GET(request: NextRequest) {
     if (startDate) {
       console.log("📅 Filtrando desde fecha:", startDate);
       whereClauses.push(gte(orders.createdAt, new Date(startDate)));
+    }
+    
+    if (userId) {
+      console.log("👤 Filtrando por userId:", userId);
+      whereClauses.push(eq(orders.userId, userId));
+    }
+    
+    if (source) {
+      console.log("🏷️ Filtrando por source:", source);
+      whereClauses.push(eq(orders.source, source));
     }
 
     const whereClause = whereClauses.length > 0 

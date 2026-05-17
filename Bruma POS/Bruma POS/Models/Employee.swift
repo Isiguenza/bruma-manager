@@ -6,6 +6,7 @@ struct Employee: Codable, Identifiable {
     let email: String?
     let role: String
     let employeeCode: String?
+    let active: Bool?
 }
 
 struct VerifyPinResponse: Codable {

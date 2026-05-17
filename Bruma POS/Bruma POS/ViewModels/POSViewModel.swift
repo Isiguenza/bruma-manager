@@ -86,6 +86,14 @@ class POSViewModel: ObservableObject {
     @Published var showTransferTableDialog = false
     @Published var showingReleaseConfirmation = false
     
+    // MARK: - Employee Orders
+    @Published var employees: [Employee] = []
+    @Published var selectedEmployee: Employee?
+    @Published var isEmployeeOrder = false
+    @Published var employeeOrderTab = 0 // 0=Orden Actual, 1=Historial
+    @Published var employeeOrderHistory: [Order] = []
+    @Published var loadingEmployees = false
+    
     // MARK: - Delivery
     @Published var showDeliveryDialog = false
     @Published var isCreatingPlatformDelivery = false
@@ -499,6 +507,8 @@ class POSViewModel: ObservableObject {
         
         // Reset payment state for new table/order
         resetPaymentState()
+        selectedEmployee = nil
+        isEmployeeOrder = false
         
         if table.isOccupied {
             // Load existing order for this table
@@ -604,6 +614,70 @@ class POSViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Employee Orders
+    
+    func fetchEmployees() async {
+        loadingEmployees = true
+        do {
+            let allEmployees = try await APIService.shared.fetchEmployees()
+            employees = allEmployees.filter { $0.active != false }
+        } catch {
+            print("Error fetching employees: \(error)")
+        }
+        loadingEmployees = false
+    }
+    
+    func handleSelectEmployee(_ employee: Employee) {
+        lastActivity = Date()
+        resetPaymentState()
+        
+        selectedEmployee = employee
+        selectedTable = nil
+        isEmployeeOrder = true
+        employeeOrderTab = 0
+        customerName = "Empleado: \(employee.name)"
+        guestCount = 1
+        activeSeat = "C"
+        activeCourse = 1
+        
+        Task {
+            loading = true
+            do {
+                let activeOrders = try await APIService.shared.fetchActiveEmployeeOrder(userId: employee.id)
+                if let existingOrder = activeOrders.first {
+                    currentOrderId = existingOrder.id
+                    var items: [CartItem] = []
+                    if let orderItems = existingOrder.items {
+                        for item in orderItems where !(item.voided ?? false) {
+                            var cartItem = CartItem.fromOrderItem(item, orderId: existingOrder.id)
+                            cartItem.orderStatus = existingOrder.status
+                            items.append(cartItem)
+                        }
+                    }
+                    cart = items
+                } else {
+                    currentOrderId = nil
+                    cart = []
+                }
+            } catch {
+                print("Error loading employee order: \(error)")
+                currentOrderId = nil
+                cart = []
+            }
+            currentScreen = .pos
+            loading = false
+        }
+    }
+    
+    func fetchEmployeeOrderHistory() async {
+        guard let employee = selectedEmployee else { return }
+        do {
+            employeeOrderHistory = try await APIService.shared.fetchEmployeeOrders(userId: employee.id)
+        } catch {
+            print("Error fetching employee order history: \(error)")
+        }
+    }
+    
     // MARK: - Delivery Orders
     
     func handleNewDeliveryOrder() {
@@ -615,6 +689,8 @@ class POSViewModel: ObservableObject {
         deliveryCustomerName = ""
         customerName = ""
         selectedTable = nil
+        selectedEmployee = nil
+        isEmployeeOrder = false
         cart = []
         currentOrderId = nil
         activeCourse = 1
@@ -1155,6 +1231,8 @@ class POSViewModel: ObservableObject {
                     if let table = selectedTable { body["tableId"] = table.id }
                     if !customerName.isEmpty { body["customerName"] = customerName }
                     if let loyaltyId = loyaltyCard?.id { body["loyaltyCardId"] = loyaltyId }
+                    if isEmployeeOrder { body["source"] = "employee" }
+                    if isEmployeeOrder, let empId = selectedEmployee?.id { body["userId"] = empId }
                     
                     let order = try await APIService.shared.createOrder(body: body)
                     currentOrderId = order.id

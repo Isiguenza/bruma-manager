@@ -88,6 +88,23 @@ class APIService {
         return result.employee
     }
     
+    // MARK: - Employees
+    
+    func fetchEmployees() async throws -> [Employee] {
+        let url = URL(string: "\(baseURL)/api/employees")!
+        return try await request(url)
+    }
+    
+    func fetchEmployeeOrders(userId: String, source: String = "employee") async throws -> [Order] {
+        let url = URL(string: "\(baseURL)/api/orders?userId=\(userId)&source=\(source)&limit=50")!
+        return try await request(url)
+    }
+    
+    func fetchActiveEmployeeOrder(userId: String) async throws -> [Order] {
+        let url = URL(string: "\(baseURL)/api/orders?userId=\(userId)&source=employee&paymentStatus=pending")!
+        return try await request(url)
+    }
+    
     // MARK: - Cash Register
     
     func checkCashRegister() async throws -> Bool {

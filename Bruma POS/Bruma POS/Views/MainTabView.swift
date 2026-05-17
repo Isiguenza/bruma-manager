@@ -38,6 +38,13 @@ struct MainTabView: View {
                         Label("Delivery", systemImage: "box.truck.fill")
                     }
                     .tag(3)
+                
+                // Tab 5: Empleados
+                EmployeeSelectionView(vm: vm)
+                    .tabItem {
+                        Label("Empleados", systemImage: "person.2.fill")
+                    }
+                    .tag(4)
             }
             .accentColor(.blue)
             .onChange(of: vm.selectedTab) { oldValue, newValue in
