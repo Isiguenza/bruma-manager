@@ -368,7 +368,7 @@ struct CartView: View {
             if vm.selectedTable == nil && !vm.isEmployeeOrder && !vm.isPlatformDelivery && !vm.cart.isEmpty {
                 HStack(spacing: 8) {
                     Button {
-                        vm.isHomeDelivery.toggle()
+                        vm.toggleHomeDelivery()
                     } label: {
                         Image(systemName: vm.isHomeDelivery ? "checkmark.square.fill" : "square")
                             .font(.subheadline)

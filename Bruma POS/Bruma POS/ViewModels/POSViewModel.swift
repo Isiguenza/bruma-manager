@@ -222,6 +222,18 @@ class POSViewModel: ObservableObject {
         isHomeDelivery ? homeDeliveryFee : 0
     }
     
+    func toggleHomeDelivery() {
+        isHomeDelivery.toggle()
+        // Persist to backend if order already exists
+        guard let orderId = currentOrderId else { return }
+        let nameForBackend = isHomeDelivery
+            ? "\(customerName) [ENVIO]"
+            : customerName.replacingOccurrences(of: " [ENVIO]", with: "")
+        Task {
+            try? await APIService.shared.updateOrder(orderId: orderId, body: ["customerName": nameForBackend])
+        }
+    }
+    
     var tipAmount: Double {
         if showCustomTip {
             return Double(customTip) ?? 0
@@ -760,9 +772,16 @@ class POSViewModel: ObservableObject {
         
         // Reset payment state for new order
         resetPaymentState()
-        isHomeDelivery = false
         
-        customerName = order.customerName ?? "Delivery"
+        let rawName = order.customerName ?? "Delivery"
+        // Restore home delivery flag from persisted tag
+        if rawName.contains("[ENVIO]") {
+            isHomeDelivery = true
+            customerName = rawName.replacingOccurrences(of: " [ENVIO]", with: "")
+        } else {
+            isHomeDelivery = false
+            customerName = rawName
+        }
         selectedTable = nil
         currentOrderId = order.id
         
@@ -1245,7 +1264,10 @@ class POSViewModel: ObservableObject {
                         "employeeId": employeeId ?? ""
                     ]
                     if let table = selectedTable { body["tableId"] = table.id }
-                    if !customerName.isEmpty { body["customerName"] = customerName }
+                    if !customerName.isEmpty {
+                        let nameToSend = isHomeDelivery ? "\(customerName) [ENVIO]" : customerName
+                        body["customerName"] = nameToSend
+                    }
                     if let loyaltyId = loyaltyCard?.id { body["loyaltyCardId"] = loyaltyId }
                     if isEmployeeOrder { body["source"] = "employee" }
                     if isEmployeeOrder, let empId = selectedEmployee?.id { body["userId"] = empId }

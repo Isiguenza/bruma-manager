@@ -480,7 +480,7 @@ struct DeliveryCardView: View {
                     Image(systemName: order.customerName?.hasPrefix("Uber") == true || order.customerName?.hasPrefix("Rappi") == true || order.customerName?.hasPrefix("Didi") == true ? "shippingbox.fill" : "bag.fill")
                         .font(.caption)
                         .foregroundColor(iconColor)
-                    Text(order.customerName ?? "Sin Nombre")
+                    Text((order.customerName ?? "Sin Nombre").replacingOccurrences(of: " [ENVIO]", with: ""))
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.white)
                         .lineLimit(1)
