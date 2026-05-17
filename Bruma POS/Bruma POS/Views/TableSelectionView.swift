@@ -203,6 +203,35 @@ struct TableSelectionView: View {
                             .onSubmit { vm.handleConfirmCustomerName() }
                     }
                     
+                    // Home delivery checkbox
+                    Button {
+                        vm.isHomeDelivery.toggle()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: vm.isHomeDelivery ? "checkmark.square.fill" : "square")
+                                .font(.title3)
+                                .foregroundColor(vm.isHomeDelivery ? .blue : .gray)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Envío a domicilio")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundColor(.white)
+                                Text("+\(vm.formatCurrency(vm.homeDeliveryFee))")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
+                            
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(vm.isHomeDelivery ? Color.blue.opacity(0.08) : Color(white: 0.06))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(vm.isHomeDelivery ? Color.blue.opacity(0.3) : Color(white: 0.2)))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    
                     HStack(spacing: 12) {
                         Button {
                             vm.showCustomerNameDialog = false

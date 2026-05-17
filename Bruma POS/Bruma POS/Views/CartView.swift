@@ -364,6 +364,46 @@ struct CartView: View {
     
     private var cartFooter: some View {
         VStack(spacing: 12) {
+            // Home delivery toggle (only for Para Llevar orders)
+            if vm.selectedTable == nil && !vm.isEmployeeOrder && !vm.isPlatformDelivery && !vm.cart.isEmpty {
+                HStack(spacing: 8) {
+                    Button {
+                        vm.isHomeDelivery.toggle()
+                    } label: {
+                        Image(systemName: vm.isHomeDelivery ? "checkmark.square.fill" : "square")
+                            .font(.subheadline)
+                            .foregroundColor(vm.isHomeDelivery ? .blue : .gray)
+                    }
+                    
+                    Text("Envío a domicilio")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.white)
+                    
+                    Spacer()
+                    
+                    if vm.isHomeDelivery {
+                        Text("+\(vm.formatCurrency(vm.homeDeliveryFee))")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.blue)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+            
+            // Show delivery fee in subtotal breakdown
+            if vm.isHomeDelivery && !vm.cart.isEmpty {
+                HStack {
+                    Text("Envío a domicilio")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                    Spacer()
+                    Text("+\(vm.formatCurrency(vm.homeDeliveryFee))")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.blue)
+                }
+                .padding(.horizontal, 4)
+            }
+            
             if !vm.cart.isEmpty && vm.cart.contains(where: { !$0.sentToKitchen }) {
                 Button {
                     Task { vm.handleSendToKitchen() }

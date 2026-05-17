@@ -101,6 +101,8 @@ class POSViewModel: ObservableObject {
     @Published var deliveryPlatform = ""
     @Published var platformOrderDigits = ""
     @Published var deliveryCustomerName = ""
+    @Published var isHomeDelivery = false
+    let homeDeliveryFee: Double = 25.0
     
     // MARK: - Payment
     @Published var showingPayment = false
@@ -216,6 +218,10 @@ class POSViewModel: ObservableObject {
         totalPromotionDiscount + flexibleDiscountAmount
     }
     
+    var deliveryFeeAmount: Double {
+        isHomeDelivery ? homeDeliveryFee : 0
+    }
+    
     var tipAmount: Double {
         if showCustomTip {
             return Double(customTip) ?? 0
@@ -223,8 +229,12 @@ class POSViewModel: ObservableObject {
         return cartTotalWithDiscount * Double(tipPercentage) / 100
     }
     
+    var tipWithDelivery: Double {
+        tipAmount + deliveryFeeAmount
+    }
+    
     var totalWithTip: Double {
-        cartTotalWithDiscount + tipAmount
+        cartTotalWithDiscount + tipAmount + deliveryFeeAmount
     }
     
     var changeAmount: Double {
@@ -459,6 +469,13 @@ class POSViewModel: ObservableObject {
             print("[POS] Error fetching ready items")
         }
         
+        // Fetch employees
+        if let emp = try? await APIService.shared.fetchEmployees() {
+            employees = emp.filter { $0.active != false }
+        } else {
+            print("[POS] Error fetching employees")
+        }
+        
         loading = false
     }
     
@@ -617,14 +634,9 @@ class POSViewModel: ObservableObject {
     // MARK: - Employee Orders
     
     func fetchEmployees() async {
-        loadingEmployees = true
-        do {
-            let allEmployees = try await APIService.shared.fetchEmployees()
-            employees = allEmployees.filter { $0.active != false }
-        } catch {
-            print("Error fetching employees: \(error)")
+        if let emp = try? await APIService.shared.fetchEmployees() {
+            employees = emp.filter { $0.active != false }
         }
-        loadingEmployees = false
     }
     
     func handleSelectEmployee(_ employee: Employee) {
@@ -684,6 +696,7 @@ class POSViewModel: ObservableObject {
         resetPaymentState()
         isCreatingPlatformDelivery = false
         isPlatformDelivery = false
+        isHomeDelivery = false
         deliveryPlatform = ""
         platformOrderDigits = ""
         deliveryCustomerName = ""
@@ -1425,7 +1438,7 @@ class POSViewModel: ObservableObject {
                     "loyaltyCardId": loyaltyCard?.id ?? "",
                     "loyaltyStamps": 1,
                     "userId": employeeId ?? "",
-                    "tip": tipAmount,
+                    "tip": tipWithDelivery,
                     "subtotal": cartTotalWithDiscount,
                     "discount": totalDiscount
                 ])
@@ -1449,7 +1462,7 @@ class POSViewModel: ObservableObject {
                     "loyaltyCardId": loyaltyCard?.id ?? "",
                     "loyaltyStamps": 1,
                     "userId": employeeId ?? "",
-                    "tip": tipAmount,
+                    "tip": tipWithDelivery,
                     "subtotal": cartTotalWithDiscount,
                     "discount": totalDiscount
                 ])
@@ -1473,7 +1486,7 @@ class POSViewModel: ObservableObject {
                     "loyaltyCardId": loyaltyCard?.id ?? "",
                     "loyaltyStamps": 1,
                     "userId": employeeId ?? "",
-                    "tip": tipAmount,
+                    "tip": tipWithDelivery,
                     "subtotal": cartTotalWithDiscount,
                     "discount": totalDiscount
                 ])
@@ -1611,7 +1624,8 @@ class POSViewModel: ObservableObject {
         let discountAmt = discountData?["amount"] as? Int ?? 0
         let subWithDiscount = subtotal - Double(discountAmt)
         let tip = showCustomTip ? (Double(customTip) ?? 0) : subWithDiscount * Double(tipPercentage) / 100
-        let total = subWithDiscount + tip
+        let tipPlusDelivery = tip + deliveryFeeAmount
+        let total = subWithDiscount + tipPlusDelivery
         
         var itemsBySeat: [String: [[String: Any]]] = [:]
         for (seat, items) in seatGroups {
@@ -1633,12 +1647,13 @@ class POSViewModel: ObservableObject {
             orderNumber: String((sentItems.first?.orderId ?? "N/A").prefix(8)),
             items: itemsBySeat,
             subtotal: Int(subtotal),
-            tip: Int(tip),
+            tip: Int(tipPlusDelivery),
             total: Int(total),
             tableNumber: selectedTable?.number ?? "",
             isDelivery: selectedTable == nil,
             discount: discountData,
-            paymentMethod: paymentMethod
+            paymentMethod: paymentMethod,
+            deliveryFee: Int(deliveryFeeAmount)
         )
     }
     

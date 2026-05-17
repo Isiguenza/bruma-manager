@@ -259,10 +259,20 @@ app.post('/print', async (req, res) => {
     content += " ".repeat(48 - 9 - subtotalStr.length) + subtotalStr + "\n";
     content += commands.feedLine;
     
-    // Propina (si hay)
-    if (tip > 0) {
+    // Envío a domicilio (si hay)
+    const deliveryFee = req.body.deliveryFee || 0;
+    if (deliveryFee > 0) {
+      content += "Envio a domicilio:";
+      const deliveryStr = `$${deliveryFee}`;
+      content += " ".repeat(48 - 18 - deliveryStr.length) + deliveryStr + "\n";
+      content += commands.feedLine;
+    }
+    
+    // Propina (si hay, excluyendo delivery fee)
+    const actualTip = deliveryFee > 0 ? tip - deliveryFee : tip;
+    if (actualTip > 0) {
       content += "Propina:";
-      const tipStr = `$${tip}`;
+      const tipStr = `$${actualTip}`;
       content += " ".repeat(48 - 8 - tipStr.length) + tipStr + "\n";
       content += commands.feedLine;
     }

@@ -45,7 +45,7 @@ struct EmployeeSelectionView: View {
                     }
                 }
                 .refreshable {
-                    await vm.fetchEmployees()
+                    await vm.fetchData()
                 }
             }
         }

@@ -47,7 +47,8 @@ class PrintService {
         tableNumber: String,
         isDelivery: Bool,
         discount: [String: Any]? = nil,
-        paymentMethod: String? = nil
+        paymentMethod: String? = nil,
+        deliveryFee: Int = 0
     ) async {
         guard let url = URL(string: "\(printServerURL)/print") else { return }
         var request = URLRequest(url: url)
@@ -67,6 +68,7 @@ class PrintService {
         ]
         if let discount = discount { body["discount"] = discount }
         if let pm = paymentMethod { body["paymentMethod"] = pm }
+        if deliveryFee > 0 { body["deliveryFee"] = deliveryFee }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         _ = try? await URLSession.shared.data(for: request)
