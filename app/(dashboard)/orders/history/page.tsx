@@ -20,11 +20,13 @@ import {
   CurrencyDollar,
   Clock,
   CalendarBlank,
+  Plus,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { format, isToday, isYesterday } from "date-fns";
 import { es } from "date-fns/locale";
 import type { Order } from "@/lib/types";
+import { ManualOrderDialog } from "@/components/manual-order-dialog";
 
 const methodLabels: Record<string, string> = {
   cash: "Efectivo",
@@ -41,6 +43,7 @@ export default function OrderHistoryPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [editingPayment, setEditingPayment] = useState(false);
   const [newPaymentMethod, setNewPaymentMethod] = useState<string>("");
+  const [showManualOrderDialog, setShowManualOrderDialog] = useState(false);
 
   useEffect(() => {
     fetchOrders();
@@ -158,9 +161,19 @@ export default function OrderHistoryPage() {
               Últimas 30 días de ventas
             </p>
           </div>
-          <Badge variant="outline" className="text-sm px-4 py-2">
-            {orders.length} órdenes
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => setShowManualOrderDialog(true)}
+              variant="default"
+              size="sm"
+            >
+              <Plus className="size-4 mr-1" />
+              Añadir Orden Manual
+            </Button>
+            <Badge variant="outline" className="text-sm px-4 py-2">
+              {orders.length} órdenes
+            </Badge>
+          </div>
         </div>
       </div>
 
@@ -446,6 +459,12 @@ export default function OrderHistoryPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ManualOrderDialog
+        open={showManualOrderDialog}
+        onClose={() => setShowManualOrderDialog(false)}
+        onSuccess={fetchOrders}
+      />
     </div>
   );
 }

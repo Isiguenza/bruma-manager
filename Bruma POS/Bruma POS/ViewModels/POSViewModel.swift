@@ -526,6 +526,7 @@ class POSViewModel: ObservableObject {
         resetPaymentState()
         selectedEmployee = nil
         isEmployeeOrder = false
+        isHomeDelivery = false
         
         if table.isOccupied {
             // Load existing order for this table
@@ -642,6 +643,7 @@ class POSViewModel: ObservableObject {
     func handleSelectEmployee(_ employee: Employee) {
         lastActivity = Date()
         resetPaymentState()
+        isHomeDelivery = false
         
         selectedEmployee = employee
         selectedTable = nil
@@ -758,6 +760,7 @@ class POSViewModel: ObservableObject {
         
         // Reset payment state for new order
         resetPaymentState()
+        isHomeDelivery = false
         
         customerName = order.customerName ?? "Delivery"
         selectedTable = nil
@@ -1673,18 +1676,20 @@ class POSViewModel: ObservableObject {
         }
         
         let subtotal = cart.reduce(0.0) { $0 + (Double($1.quantity) * $1.unitPrice) }
+        let preTicketTotal = subtotal + deliveryFeeAmount
         
         await PrintService.shared.printTicket(
             customerName: customerName,
             orderNumber: "PRE-TICKET",
             items: itemsBySeat,
             subtotal: Int(subtotal),
-            tip: 0,
-            total: Int(subtotal),
+            tip: Int(deliveryFeeAmount),
+            total: Int(preTicketTotal),
             tableNumber: selectedTable?.number ?? "",
             isDelivery: selectedTable == nil,
             discount: nil,
-            paymentMethod: nil
+            paymentMethod: nil,
+            deliveryFee: Int(deliveryFeeAmount)
         )
     }
     
@@ -1838,14 +1843,34 @@ class POSViewModel: ObservableObject {
             linePath2.stroke()
             yPosition += 8
             
-            // Total
+            // Subtotal
             let totalAttributes: [NSAttributedString.Key: Any] = [.font: largeFont]
-            let totalLabel = "SUBTOTAL:"
-            let totalPrice = formatCurrency(subtotal)
-            totalLabel.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: totalAttributes)
-            let totalPriceSize = totalPrice.size(withAttributes: totalAttributes)
-            totalPrice.draw(at: CGPoint(x: pageWidth - margin - totalPriceSize.width, y: yPosition), withAttributes: totalAttributes)
-            yPosition += 25
+            let subtotalLabel = "SUBTOTAL:"
+            let subtotalPrice = formatCurrency(subtotal)
+            subtotalLabel.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: totalAttributes)
+            let subtotalPriceSize = subtotalPrice.size(withAttributes: totalAttributes)
+            subtotalPrice.draw(at: CGPoint(x: pageWidth - margin - subtotalPriceSize.width, y: yPosition), withAttributes: totalAttributes)
+            yPosition += 18
+            
+            // Envío a domicilio
+            if isHomeDelivery {
+                let deliveryAttributes: [NSAttributedString.Key: Any] = [.font: bodyFont]
+                let deliveryLabel = "Envío a domicilio:"
+                let deliveryPrice = formatCurrency(homeDeliveryFee)
+                deliveryLabel.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: deliveryAttributes)
+                let deliveryPriceSize = deliveryPrice.size(withAttributes: deliveryAttributes)
+                deliveryPrice.draw(at: CGPoint(x: pageWidth - margin - deliveryPriceSize.width, y: yPosition), withAttributes: deliveryAttributes)
+                yPosition += 18
+                
+                // Total con envío
+                let grandTotalLabel = "TOTAL:"
+                let grandTotalPrice = formatCurrency(subtotal + homeDeliveryFee)
+                grandTotalLabel.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: totalAttributes)
+                let grandTotalPriceSize = grandTotalPrice.size(withAttributes: totalAttributes)
+                grandTotalPrice.draw(at: CGPoint(x: pageWidth - margin - grandTotalPriceSize.width, y: yPosition), withAttributes: totalAttributes)
+                yPosition += 18
+            }
+            yPosition += 7
             
             // Footer
             let footerAttributes: [NSAttributedString.Key: Any] = [.font: smallFont, .foregroundColor: UIColor.gray]
