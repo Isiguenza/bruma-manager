@@ -201,7 +201,7 @@ app.post('/print', async (req, res) => {
         const orderDigits = platformMatch[2];
         
         // Intentar imprimir logo de la plataforma
-        const platformLogoPath = path.join(__dirname, "public", `${platform}.png`);
+        const platformLogoPath = path.join(__dirname, "public", `${platform}.jpg`);
         if (fs.existsSync(platformLogoPath)) {
           content += commands.alignCenter;
           const platformBitmap = await imageToEscPosBitmap(platformLogoPath, 300);
