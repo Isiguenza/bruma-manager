@@ -193,16 +193,27 @@ app.post('/print', async (req, res) => {
     content += commands.textSizeNormal;
     content += commands.feedLine;
     
-    // Si es delivery de plataforma (Uber/Rappi/Didi), mostrar info de plataforma
+    // Si es delivery de plataforma (Uber/Rappi/Didi), mostrar logo + num pedido
     if (isDelivery && customerName) {
-      const platformMatch = customerName.match(/^(Uber|Rappi|Didi)\s*#(\d{4})/);
+      const platformMatch = customerName.match(/^(Uber|Rappi|Didi)\s*#(\d{4})/i);
       if (platformMatch) {
-        const platform = platformMatch[1];
+        const platform = platformMatch[1].toLowerCase();
         const orderDigits = platformMatch[2];
+        
+        // Intentar imprimir logo de la plataforma
+        const platformLogoPath = path.join(__dirname, "public", `${platform}.png`);
+        if (fs.existsSync(platformLogoPath)) {
+          content += commands.alignCenter;
+          const platformBitmap = await imageToEscPosBitmap(platformLogoPath, 300);
+          content += platformBitmap;
+          content += commands.feedLine;
+        }
+        
+        // Número de pedido grande debajo del logo
         content += commands.alignCenter;
         content += commands.textSizeLarge;
         content += commands.bold;
-        content += `${platform} #${orderDigits}\n`;
+        content += `#${orderDigits}\n`;
         content += commands.boldOff;
         content += commands.textSizeNormal;
         content += commands.alignLeft;
@@ -793,12 +804,24 @@ app.post('/print-comanda', async (req, res) => {
     content += `${paxCount} PAX\n`;
     content += commands.boldOff;
     
-    // Nombre del cliente (si es delivery con plataforma)
+    // Nombre del cliente (si es delivery con plataforma, mostrar logo)
     if (customerName) {
-      content += commands.alignCenter;
-      content += commands.bold;
-      content += customerName + "\n";
-      content += commands.boldOff;
+      const platformMatchComanda = customerName.match(/^(Uber|Rappi|Didi)\s*#(\d{4})/i);
+      if (platformMatchComanda) {
+        const platformName = platformMatchComanda[1];
+        const digits = platformMatchComanda[2];
+        content += commands.alignCenter;
+        content += commands.textSizeLarge;
+        content += commands.bold;
+        content += `${platformName} #${digits}\n`;
+        content += commands.boldOff;
+        content += commands.textSizeNormal;
+      } else {
+        content += commands.alignCenter;
+        content += commands.bold;
+        content += customerName + "\n";
+        content += commands.boldOff;
+      }
     }
     
     content += commands.alignLeft;
