@@ -204,7 +204,7 @@ app.post('/print', async (req, res) => {
         const platformLogoPath = path.join(__dirname, "public", `${platform}.jpg`);
         if (fs.existsSync(platformLogoPath)) {
           content += commands.alignCenter;
-          const platformBitmap = await imageToEscPosBitmap(platformLogoPath, 300);
+          const platformBitmap = await imageToEscPosBitmap(platformLogoPath, 200);
           content += platformBitmap;
           content += commands.feedLine;
         }
