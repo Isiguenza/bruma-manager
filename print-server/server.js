@@ -194,8 +194,10 @@ app.post('/print', async (req, res) => {
     content += commands.feedLine;
     
     // Si es delivery de plataforma (Uber/Rappi/Didi), mostrar logo + num pedido
+    console.log("[TICKET] isDelivery:", isDelivery, "customerName:", JSON.stringify(customerName));
     if (isDelivery && customerName) {
       const platformMatch = customerName.match(/^(Uber|Rappi|Didi)\s*#(\d{4})/i);
+      console.log("[TICKET] platformMatch:", platformMatch);
       if (platformMatch) {
         const platform = platformMatch[1].toLowerCase();
         const orderDigits = platformMatch[2];
