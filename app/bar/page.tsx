@@ -1237,7 +1237,7 @@ export default function BarPage() {
       
       // Imprimir comanda en cocina (fire-and-forget)
       try {
-        const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.109:3001";
+        const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.152:3001";
         fetch(`${printServerUrl}/print-comanda`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2363,7 +2363,7 @@ export default function BarPage() {
       }
 
       // Enviar al servidor local de impresión (iMac - IP reservada: 192.168.0.160)
-      const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.109:3001";
+      const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.152:3001";
       const response = await fetch(`${printServerUrl}/print`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3169,7 +3169,7 @@ export default function BarPage() {
                     });
 
                     // Imprimir ticket de cortesía con línea de firma
-                    const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.109:3001";
+                    const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.152:3001";
                     await fetch(`${printServerUrl}/print-guest`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },

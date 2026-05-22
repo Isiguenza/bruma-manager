@@ -14,7 +14,7 @@ enum AppEnvironment {
         case .development:
             return "http://192.168.0.227:3000" // Mac local server
         case .production:
-            return "http://192.168.0.109:3000" // Producción local
+            return "http://192.168.0.152:3000" // Producción local
         }
     }
     
@@ -23,7 +23,7 @@ enum AppEnvironment {
         case .development:
             return "http://192.168.0.227:3001"
         case .production:
-            return "http://192.168.0.109:3001"
+            return "http://192.168.0.152:3001"
         }
     }
 }

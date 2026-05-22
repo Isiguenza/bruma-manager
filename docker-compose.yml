@@ -3,11 +3,11 @@ services:
     build:
       context: .
       args:
-        - NEXT_PUBLIC_PRINT_SERVER_URL=http://192.168.0.109:3001
+        - NEXT_PUBLIC_PRINT_SERVER_URL=http://192.168.0.152:3001
     network_mode: host
     env_file: .env
     environment:
-      - NEXT_PUBLIC_PRINT_SERVER_URL=http://192.168.0.109:3001
+      - NEXT_PUBLIC_PRINT_SERVER_URL=http://192.168.0.152:3001
     restart: unless-stopped
 
   print-server:

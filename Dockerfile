@@ -12,7 +12,7 @@ RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-ARG NEXT_PUBLIC_PRINT_SERVER_URL=http://192.168.0.109:3001
+ARG NEXT_PUBLIC_PRINT_SERVER_URL=http://192.168.0.152:3001
 ENV NEXT_PUBLIC_PRINT_SERVER_URL=$NEXT_PUBLIC_PRINT_SERVER_URL
 RUN pnpm run build
 

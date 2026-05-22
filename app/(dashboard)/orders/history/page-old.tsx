@@ -148,7 +148,7 @@ export default function OrderHistoryPage() {
         return sum + parseFloat((order as any).tip || "0");
       }, 0);
 
-      const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.109:3001";
+      const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.152:3001";
       const res = await fetch(`${printServerUrl}/print-summary`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

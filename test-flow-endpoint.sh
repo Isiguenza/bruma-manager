@@ -4,7 +4,7 @@
 # Uso: ./test-flow-endpoint.sh <product-id>
 
 PRODUCT_ID=${1:-""}
-BASE_URL="http://192.168.0.109:3000"
+BASE_URL="http://192.168.0.152:3000"
 
 if [ -z "$PRODUCT_ID" ]; then
   echo "❌ Error: Debes proporcionar un product ID"

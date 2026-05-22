@@ -25,8 +25,8 @@ La app se conecta al servidor POS por HTTP en red local. Necesitas permitirlo:
 Edita `Services/APIService.swift` y cambia las IPs:
 
 ```swift
-var baseURL: String = "http://192.168.0.109:3000"      // IP de tu servidor POS
-var printServerURL: String = "http://192.168.0.109:3001" // IP del print server
+var baseURL: String = "http://192.168.0.152:3000"      // IP de tu servidor POS
+var printServerURL: String = "http://192.168.0.152:3001" // IP del print server
 ```
 
 ### 3. Deployment Target
