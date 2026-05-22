@@ -4,6 +4,8 @@ const net = require('net');
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
+const os = require('os');
 
 // Set timezone to Mexico City
 process.env.TZ = 'America/Mexico_City';
@@ -18,6 +20,42 @@ const PRINTER_PORT = parseInt(process.env.PRINTER_PORT || "9100");
 // Kitchen printer (comandas)
 const KITCHEN_PRINTER_IP = process.env.KITCHEN_PRINTER_IP || "YOUR_KITCHEN_PRINTER_IP";
 const KITCHEN_PRINTER_PORT = parseInt(process.env.KITCHEN_PRINTER_PORT || "9100");
+
+// Función para imprimir por USB como fallback
+function sendToUSBPrinter(content) {
+  return new Promise((resolve, reject) => {
+    const platform = os.platform();
+    const tempFile = path.join(os.tmpdir(), `print-${Date.now()}.bin`);
+    
+    // Guardar contenido en archivo temporal
+    fs.writeFileSync(tempFile, content, 'binary');
+    
+    let command;
+    if (platform === 'darwin') {
+      // macOS - buscar impresoras USB y usar lp
+      command = `lpstat -p -d | grep -i usb | head -1 | awk '{print $2}' | xargs -I {} lp -d {} "${tempFile}"`;
+    } else if (platform === 'linux') {
+      // Linux - intentar /dev/usb/lp0, lp1, lp2 o /dev/lp0, lp1, lp2
+      command = `cat "${tempFile}" > /dev/usb/lp0 2>/dev/null || cat "${tempFile}" > /dev/usb/lp1 2>/dev/null || cat "${tempFile}" > /dev/usb/lp2 2>/dev/null || cat "${tempFile}" > /dev/lp0 2>/dev/null || cat "${tempFile}" > /dev/lp1 2>/dev/null || cat "${tempFile}" > /dev/lp2 2>/dev/null`;
+    } else {
+      // Windows - usar default printer
+      command = `type "${tempFile}" > LPT1`;
+    }
+    
+    exec(command, (error, stdout, stderr) => {
+      // Limpiar archivo temporal
+      try { fs.unlinkSync(tempFile); } catch (e) {}
+      
+      if (error) {
+        console.error('❌ Error imprimiendo por USB:', error.message);
+        reject(error);
+      } else {
+        console.log('✅ Impreso por USB exitosamente');
+        resolve();
+      }
+    });
+  });
+}
 
 // Middleware
 app.use(cors());
@@ -88,10 +126,11 @@ async function imageToEscPosBitmap(imagePath, maxWidth = 384) {
   }
 }
 
-// Función para enviar a la impresora
+// Función para enviar a la impresora con fallback USB
 function sendToPrinter(content) {
   return new Promise((resolve, reject) => {
     const client = new net.Socket();
+    let connectionFailed = false;
     
     client.connect(PRINTER_PORT, PRINTER_IP, () => {
       console.log("Conectado a la impresora");
@@ -106,17 +145,35 @@ function sendToPrinter(content) {
     
     client.on("close", () => {
       console.log("Conexión cerrada");
-      resolve();
+      if (!connectionFailed) {
+        resolve();
+      }
     });
     
-    client.on("error", (err) => {
+    client.on("error", async (err) => {
+      connectionFailed = true;
       console.error("Error de conexión:", err);
-      reject(err);
+      
+      // Intentar fallback USB
+      if (err.code === 'EHOSTUNREACH' || err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
+        console.log('🔄 Intentando imprimir por USB...');
+        try {
+          await sendToUSBPrinter(content);
+          resolve();
+        } catch (usbError) {
+          console.error('❌ Fallback USB también falló:', usbError.message);
+          reject(err);
+        }
+      } else {
+        reject(err);
+      }
     });
     
     setTimeout(() => {
-      client.destroy();
-      resolve();
+      if (!connectionFailed) {
+        client.destroy();
+        resolve();
+      }
     }, 5000);
   });
 }
@@ -505,7 +562,7 @@ app.post('/print-summary', async (req, res) => {
     content += commands.feedLine;
     content += commands.cut;
     
-    // Enviar a impresora
+    // Enviar a impresora con fallback USB
     const client = new net.Socket();
     let responseSent = false;
     
@@ -515,11 +572,30 @@ app.post('/print-summary', async (req, res) => {
       client.end();
     });
     
-    client.on('error', (err) => {
+    client.on('error', async (err) => {
       console.error('❌ Error de conexión:', err.message);
-      if (!responseSent) {
-        responseSent = true;
-        res.status(500).json({ error: 'Error de conexión con impresora' });
+      
+      // Intentar fallback USB
+      if (err.code === 'EHOSTUNREACH' || err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
+        console.log('🔄 Intentando imprimir resumen por USB...');
+        try {
+          await sendToUSBPrinter(content);
+          if (!responseSent) {
+            responseSent = true;
+            res.json({ success: true, message: 'Impreso por USB' });
+          }
+        } catch (usbError) {
+          console.error('❌ Fallback USB también falló:', usbError.message);
+          if (!responseSent) {
+            responseSent = true;
+            res.status(500).json({ error: 'Error de conexión con impresora' });
+          }
+        }
+      } else {
+        if (!responseSent) {
+          responseSent = true;
+          res.status(500).json({ error: 'Error de conexión con impresora' });
+        }
       }
     });
     
@@ -613,7 +689,7 @@ app.post('/print-split', async (req, res) => {
     content += commands.feed;
     content += commands.cut;
 
-    // Enviar a impresora
+    // Enviar a impresora con fallback USB
     const client = new net.Socket();
     let responseSent = false;
 
@@ -624,11 +700,30 @@ app.post('/print-split', async (req, res) => {
       });
     });
 
-    client.on('error', (err) => {
+    client.on('error', async (err) => {
       console.error('❌ Error impresora:', err.message);
-      if (!responseSent) {
-        responseSent = true;
-        res.status(500).json({ error: err.message });
+      
+      // Intentar fallback USB
+      if (err.code === 'EHOSTUNREACH' || err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
+        console.log('🔄 Intentando imprimir ticket dividido por USB...');
+        try {
+          await sendToUSBPrinter(content);
+          if (!responseSent) {
+            responseSent = true;
+            res.json({ success: true, message: 'Impreso por USB' });
+          }
+        } catch (usbError) {
+          console.error('❌ Fallback USB también falló:', usbError.message);
+          if (!responseSent) {
+            responseSent = true;
+            res.status(500).json({ error: err.message });
+          }
+        }
+      } else {
+        if (!responseSent) {
+          responseSent = true;
+          res.status(500).json({ error: err.message });
+        }
       }
     });
 
@@ -691,7 +786,7 @@ app.post('/print-guest', async (req, res) => {
     content += commands.feed;
     content += commands.cut;
 
-    // Enviar a impresora
+    // Enviar a impresora con fallback USB
     const client = new net.Socket();
     let responseSent = false;
 
@@ -702,11 +797,30 @@ app.post('/print-guest', async (req, res) => {
       });
     });
 
-    client.on('error', (err) => {
+    client.on('error', async (err) => {
       console.error('❌ Error impresora:', err.message);
-      if (!responseSent) {
-        responseSent = true;
-        res.status(500).json({ error: err.message });
+      
+      // Intentar fallback USB
+      if (err.code === 'EHOSTUNREACH' || err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
+        console.log('🔄 Intentando imprimir ticket cortesía por USB...');
+        try {
+          await sendToUSBPrinter(content);
+          if (!responseSent) {
+            responseSent = true;
+            res.json({ success: true, message: 'Impreso por USB' });
+          }
+        } catch (usbError) {
+          console.error('❌ Fallback USB también falló:', usbError.message);
+          if (!responseSent) {
+            responseSent = true;
+            res.status(500).json({ error: err.message });
+          }
+        }
+      } else {
+        if (!responseSent) {
+          responseSent = true;
+          res.status(500).json({ error: err.message });
+        }
       }
     });
 
