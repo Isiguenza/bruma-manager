@@ -13,6 +13,8 @@ services:
   print-server:
     build: ./print-server
     network_mode: host
+    devices:
+      - /dev/usb/lp1:/dev/usb/lp1
     environment:
       - PRINTER_IP=${PRINTER_IP:-192.168.0.200}
       - PRINTER_PORT=${PRINTER_PORT:-9100}
