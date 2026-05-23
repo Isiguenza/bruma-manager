@@ -24,33 +24,17 @@ const KITCHEN_PRINTER_PORT = parseInt(process.env.KITCHEN_PRINTER_PORT || "9100"
 // Función para imprimir por USB como fallback
 function sendToUSBPrinter(content) {
   return new Promise((resolve, reject) => {
-    const platform = os.platform();
-    const tempFile = path.join(os.tmpdir(), `print-${Date.now()}.bin`);
+    const usbDevice = '/dev/usb/lp1';
     
-    // Guardar contenido en archivo temporal
-    fs.writeFileSync(tempFile, content, 'binary');
+    console.log(`📝 Escribiendo directamente a ${usbDevice}...`);
     
-    let command;
-    if (platform === 'darwin') {
-      // macOS - buscar impresoras USB y usar lp
-      command = `lpstat -p -d | grep -i usb | head -1 | awk '{print $2}' | xargs -I {} lp -d {} "${tempFile}"`;
-    } else if (platform === 'linux') {
-      // Linux - intentar /dev/usb/lp0, lp1, lp2 o /dev/lp0, lp1, lp2
-      command = `cat "${tempFile}" > /dev/usb/lp0 2>/dev/null || cat "${tempFile}" > /dev/usb/lp1 2>/dev/null || cat "${tempFile}" > /dev/usb/lp2 2>/dev/null || cat "${tempFile}" > /dev/lp0 2>/dev/null || cat "${tempFile}" > /dev/lp1 2>/dev/null || cat "${tempFile}" > /dev/lp2 2>/dev/null`;
-    } else {
-      // Windows - usar default printer
-      command = `type "${tempFile}" > LPT1`;
-    }
-    
-    exec(command, (error, stdout, stderr) => {
-      // Limpiar archivo temporal
-      try { fs.unlinkSync(tempFile); } catch (e) {}
-      
+    // Escribir directamente al dispositivo USB
+    fs.writeFile(usbDevice, content, 'binary', (error) => {
       if (error) {
         console.error('❌ Error imprimiendo por USB:', error.message);
         reject(error);
       } else {
-        console.log('✅ Impreso por USB exitosamente');
+        console.log('✅ Impreso por USB exitosamente en', usbDevice);
         resolve();
       }
     });
