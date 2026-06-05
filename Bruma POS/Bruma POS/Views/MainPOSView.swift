@@ -87,6 +87,19 @@ struct MainPOSView: View {
                 dialogOverlay { GuestItemsDialog(vm: vm) }
             }
             
+            if vm.showChangeItemDialog {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { vm.cancelChangeItem() }
+                
+                ChangeItemModal(vm: vm)
+                    .frame(maxWidth: 480)
+                    .frame(maxHeight: 600)
+                    .cornerRadius(16)
+                    .shadow(color: .black.opacity(0.5), radius: 20)
+                    .padding(.horizontal, 32)
+            }
+            
             // MARK: - Toast
             
             if let toast = vm.toastMessage {

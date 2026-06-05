@@ -29,6 +29,23 @@ class POSViewModel: ObservableObject {
     @Published var tables: [Table] = []
     @Published var selectedTable: Table?
     @Published var tablesWithReadyItems: Set<String> = []
+    @Published var tableFilter: TableFilter = .all
+    
+    enum TableFilter: String, CaseIterable {
+        case all = "Todas"
+        case available = "Libres"
+        case occupied = "Ocupadas"
+        case reserved = "Reservadas"
+    }
+    
+    var filteredTables: [Table] {
+        switch tableFilter {
+        case .all: return tables
+        case .available: return tables.filter { $0.isAvailable }
+        case .occupied: return tables.filter { $0.isOccupied }
+        case .reserved: return tables.filter { $0.isReserved }
+        }
+    }
     
     // MARK: - Delivery
     @Published var deliveryOrders: [Order] = []
@@ -81,6 +98,10 @@ class POSViewModel: ObservableObject {
     @Published var showVoidDialog = false
     @Published var voidItemIndex: Int?
     @Published var voidReason = ""
+    
+    // MARK: - Change Item
+    @Published var showChangeItemDialog = false
+    @Published var changeItemIndex: Int?
     
     // MARK: - Transfer Table
     @Published var showTransferTableDialog = false
@@ -611,6 +632,7 @@ class POSViewModel: ObservableObject {
         selectedEmployee = nil
         isEmployeeOrder = false
         isHomeDelivery = false
+        customerName = ""
         
         if table.isOccupied {
             // Load existing order for this table
@@ -1238,6 +1260,139 @@ class POSViewModel: ObservableObject {
             cart[index].deliveredToTable = true
             showToast("Marcado como entregado")
         }
+    }
+    
+    // MARK: - Change Item (swap product globally in DB)
+    
+    func openChangeItemDialog(at index: Int) {
+        changeItemIndex = index
+        showChangeItemDialog = true
+    }
+    
+    func confirmChangeItem(newProduct: Product, quantityToChange: Int = 1) {
+        guard let index = changeItemIndex, index < cart.count else {
+            showChangeItemDialog = false
+            return
+        }
+        let item = cart[index]
+        guard let itemId = item.itemId, let orderId = item.orderId else {
+            showChangeItemDialog = false
+            showToast("Solo items ya enviados pueden cambiarse en BD", isError: true)
+            return
+        }
+        
+        let isPlatform = customerName.hasPrefix("Uber") || customerName.hasPrefix("Rappi") || customerName.hasPrefix("Didi")
+        let newPrice = isPlatform ? newProduct.numericPlatformPrice : newProduct.numericPrice
+        let clampedQty = min(max(quantityToChange, 1), item.quantity)
+        let remainingQty = item.quantity - clampedQty
+        
+        Task {
+            do {
+                if remainingQty == 0 {
+                    // Replace entire item
+                    try await APIService.shared.updateOrderItem(
+                        itemId: itemId,
+                        productId: newProduct.id,
+                        productName: newProduct.name,
+                        unitPrice: newPrice
+                    )
+                    let updatedItem = CartItem(
+                        productId: newProduct.id,
+                        productName: newProduct.name,
+                        unitPrice: newPrice,
+                        quantity: clampedQty,
+                        notes: item.notes,
+                        frostingId: nil, frostingName: nil,
+                        dryToppingId: nil, dryToppingName: nil,
+                        extraId: nil, extraName: nil,
+                        customModifiers: nil,
+                        seat: item.seat,
+                        course: item.course,
+                        sentToKitchen: item.sentToKitchen,
+                        orderId: item.orderId,
+                        itemId: item.itemId,
+                        isBeverage: newProduct.category?.isBeverage ?? false,
+                        orderStatus: item.orderStatus,
+                        deliveredToTable: item.deliveredToTable,
+                        isGuest: item.isGuest
+                    )
+                    cart[index] = updatedItem
+                } else {
+                    // Split: reduce original quantity, create new item with new product
+                    try await APIService.shared.updateOrderItemQuantity(itemId: itemId, quantity: remainingQty, unitPrice: item.unitPrice)
+                    
+                    let newOrder: Order = try await APIService.shared.addItemsToOrder(orderId: orderId, items: [[
+                        "productId": newProduct.id,
+                        "productName": newProduct.name,
+                        "quantity": clampedQty,
+                        "unitPrice": newPrice,
+                        "notes": item.notes,
+                        "seat": item.seat,
+                        "course": item.course,
+                        "isGuest": item.isGuest
+                    ]])
+                    
+                    // Update original in cart with reduced quantity
+                    var reduced = item
+                    cart[index] = CartItem(
+                        productId: item.productId,
+                        productName: item.productName,
+                        unitPrice: item.unitPrice,
+                        quantity: remainingQty,
+                        notes: item.notes,
+                        frostingId: item.frostingId, frostingName: item.frostingName,
+                        dryToppingId: item.dryToppingId, dryToppingName: item.dryToppingName,
+                        extraId: item.extraId, extraName: item.extraName,
+                        customModifiers: item.customModifiers,
+                        seat: item.seat,
+                        course: item.course,
+                        sentToKitchen: item.sentToKitchen,
+                        orderId: item.orderId,
+                        itemId: item.itemId,
+                        isBeverage: item.isBeverage,
+                        orderStatus: item.orderStatus,
+                        deliveredToTable: item.deliveredToTable,
+                        isGuest: item.isGuest
+                    )
+                    
+                    // Add new item to cart (get itemId from returned order)
+                    if let newOrderItem = newOrder.items?.last(where: { $0.productId == newProduct.id }) {
+                        let newCartItem = CartItem(
+                            productId: newProduct.id,
+                            productName: newProduct.name,
+                            unitPrice: newPrice,
+                            quantity: clampedQty,
+                            notes: item.notes,
+                            frostingId: nil, frostingName: nil,
+                            dryToppingId: nil, dryToppingName: nil,
+                            extraId: nil, extraName: nil,
+                            customModifiers: nil,
+                            seat: item.seat,
+                            course: item.course,
+                            sentToKitchen: true,
+                            orderId: orderId,
+                            itemId: newOrderItem.id,
+                            isBeverage: newProduct.category?.isBeverage ?? false,
+                            orderStatus: item.orderStatus,
+                            deliveredToTable: false,
+                            isGuest: item.isGuest
+                        )
+                        cart.append(newCartItem)
+                    }
+                    _ = reduced
+                }
+                showToast("\(clampedQty)× cambiado a \(newProduct.name)")
+            } catch {
+                showToast("Error al cambiar item", isError: true)
+            }
+            showChangeItemDialog = false
+            changeItemIndex = nil
+        }
+    }
+    
+    func cancelChangeItem() {
+        showChangeItemDialog = false
+        changeItemIndex = nil
     }
     
     // MARK: - Change Seat/Course
@@ -2202,26 +2357,32 @@ class POSViewModel: ObservableObject {
     }
     
     func handleReleaseTable() {
+        print("🔥 handleReleaseTable() called - cart.count=\(cart.count), currentOrderId=\(currentOrderId ?? "nil")")
         let orderType = selectedTable != nil ? "Mesa \(selectedTable!.number)" : "Orden Para Llevar"
         
         // Confirmar si hay items en el carrito
         if !cart.isEmpty {
-            // Mostrar alerta de confirmación
+            print("🛒 Cart not empty (\(cart.count) items), showing confirmation dialog")
             showingReleaseConfirmation = true
             return
         }
         
+        print("🛒 Cart empty, calling executeReleaseTable directly")
         // Si no hay items, liberar directamente
         executeReleaseTable()
     }
     
     func executeReleaseTable() {
+        print("🔥 executeReleaseTable() started")
         Task {
             do {
                 // 1. Eliminar la orden de la BD si existe
                 if let orderId = currentOrderId {
+                    print("🗑️ Deleting order \(orderId)")
                     try await APIService.shared.deleteOrder(orderId: orderId)
                     print("✅ Orden \(orderId) eliminada de la BD")
+                } else {
+                    print("⚠️ No currentOrderId to delete")
                 }
                 
                 // 2. Si hay mesa, actualizar estado a "available"

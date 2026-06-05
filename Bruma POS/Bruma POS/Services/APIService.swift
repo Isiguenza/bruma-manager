@@ -153,6 +153,27 @@ class APIService {
         }
     }
     
+    // MARK: - Order Items
+    
+    @discardableResult
+    func updateOrderItem(itemId: String, productId: String, productName: String, unitPrice: Double) async throws -> OrderItem {
+        let url = URL(string: "\(baseURL)/api/order-items/\(itemId)")!
+        return try await request(url, method: "PATCH", body: [
+            "productId": productId,
+            "productName": productName,
+            "unitPrice": unitPrice
+        ])
+    }
+    
+    @discardableResult
+    func updateOrderItemQuantity(itemId: String, quantity: Int, unitPrice: Double) async throws -> OrderItem {
+        let url = URL(string: "\(baseURL)/api/order-items/\(itemId)")!
+        return try await request(url, method: "PATCH", body: [
+            "quantity": quantity,
+            "unitPrice": unitPrice
+        ])
+    }
+    
     // MARK: - Products & Categories
     
     func fetchProducts() async throws -> [Product] {

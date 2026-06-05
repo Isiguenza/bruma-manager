@@ -33,23 +33,19 @@ struct CartItemRow: View {
                 
                 Spacer()
                 
-                // Price with original strikethrough and discounted price
-                VStack(alignment: .trailing, spacing: 2) {
-                    let itemTotal = item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
-                    
-                    if let origPrice = item.originalPrice, (item.promotionDiscount ?? 0) > 0 {
-                        Text(vm.formatCurrency(origPrice * Double(item.quantity)))
-                            .font(.caption2)
-                            .foregroundColor(.gray)
-                            .strikethrough()
-                    }
-                    
-                    Text(vm.formatCurrency(itemTotal))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(priceColor)
+                // Price per unit
+                if !isInsidePromotionGroup {
+                    Text(vm.formatCurrency(item.unitPrice) + " c/u")
+                        .font(.caption2)
+                        .foregroundColor(Color(white: 0.4))
                 }
                 
                 if !isInsidePromotionGroup {
+                    Button { vm.openChangeItemDialog(at: index) } label: {
+                        Image(systemName: "arrow.2.circlepath")
+                            .font(.caption)
+                            .foregroundColor(.blue.opacity(0.7))
+                    }
                     Button { vm.removeFromCart(at: index) } label: {
                         Image(systemName: "trash")
                             .font(.caption)
@@ -110,47 +106,34 @@ struct CartItemRow: View {
                 }
             }
             
-            // Status badge
+            let itemTotal = item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
+            
+            // Status + price for sent items
             if item.sentToKitchen {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     if item.deliveredToTable {
                         Label("Entregado", systemImage: "checkmark.circle.fill")
                             .font(.caption2.weight(.semibold))
                             .foregroundColor(.blue)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.blue.opacity(0.12))
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.blue.opacity(0.2), lineWidth: 1))
                     } else if item.orderStatus == "ready" {
                         Label("Listo", systemImage: "checkmark.circle.fill")
                             .font(.caption2.weight(.semibold))
                             .foregroundColor(.green)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.green.opacity(0.12))
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.green.opacity(0.2), lineWidth: 1))
                     } else {
                         Label("En cocina", systemImage: "frying.pan")
                             .font(.caption2.weight(.semibold))
                             .foregroundColor(.orange)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.orange.opacity(0.12))
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.orange.opacity(0.2), lineWidth: 1))
                     }
                     
                     Spacer()
                     
-                    Text(vm.formatCurrency(item.unitPrice) + " c/u")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
+                    Text(vm.formatCurrency(itemTotal))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(priceColor)
                 }
             }
             
-            // Quantity controls — only if NOT sent to kitchen
+            // Quantity controls + price for unsent items
             if !item.sentToKitchen {
                 HStack(spacing: 8) {
                     Button {
@@ -182,9 +165,18 @@ struct CartItemRow: View {
                     
                     Spacer()
                     
-                    Text(vm.formatCurrency(item.unitPrice) + " c/u")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
+                    // Price total aligned with controls
+                    VStack(alignment: .trailing, spacing: 2) {
+                        if let origPrice = item.originalPrice, (item.promotionDiscount ?? 0) > 0 {
+                            Text(vm.formatCurrency(origPrice * Double(item.quantity)))
+                                .font(.caption2)
+                                .foregroundColor(Color(white: 0.4))
+                                .strikethrough()
+                        }
+                        Text(vm.formatCurrency(itemTotal))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(priceColor)
+                    }
                 }
             }
         }

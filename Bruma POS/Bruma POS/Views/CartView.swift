@@ -43,11 +43,19 @@ struct CartView: View {
                 EmployeeOrderHistoryView(vm: vm)
             } else if vm.cart.isEmpty {
                 Spacer()
-                VStack(spacing: 8) {
+                VStack(spacing: 14) {
+                    Image(systemName: "cart.badge.plus")
+                        .font(.system(size: 44, weight: .light))
+                        .foregroundColor(Color(white: 0.25))
                     Text("Carrito vacío")
-                        .font(.subheadline)
-                        .foregroundColor(Color(white: 0.5))
+                        .font(.headline.weight(.semibold))
+                        .foregroundColor(Color(white: 0.45))
+                    Text("Selecciona productos del menú para comenzar")
+                        .font(.caption)
+                        .foregroundColor(Color(white: 0.35))
+                        .multilineTextAlignment(.center)
                 }
+                .padding(.horizontal, 24)
                 Spacer()
             } else {
                 ScrollView {
@@ -137,6 +145,15 @@ struct CartView: View {
                 .padding(16)
         }
         .background(Color(red: 0.04, green: 0.04, blue: 0.05))
+        .alert("Liberar Mesa", isPresented: $vm.showingReleaseConfirmation) {
+            Button("Cancelar", role: .cancel) { }
+            Button("Liberar", role: .destructive) {
+                print("🔥 Alert confirm: calling executeReleaseTable()")
+                vm.executeReleaseTable()
+            }
+        } message: {
+            Text("Hay \(vm.cart.count) items en el carrito que se perderán. ¿Deseas liberar la mesa?")
+        }
     }
     
     private var cartHeader: some View {
@@ -161,6 +178,7 @@ struct CartView: View {
                     Menu {
                         if vm.selectedTable != nil {
                             Button(role: .destructive) {
+                                print("🔥 Menu tapped: Liberar Mesa")
                                 vm.handleReleaseTable()
                             } label: {
                                 Label("Liberar Mesa", systemImage: "door.open")
@@ -170,6 +188,7 @@ struct CartView: View {
                         } else {
                             // For delivery/takeout orders
                             Button(role: .destructive) {
+                                print("🔥 Menu tapped: Liberar Orden")
                                 vm.handleReleaseTable()
                             } label: {
                                 Label("Liberar Orden", systemImage: "trash")
@@ -250,75 +269,83 @@ struct CartView: View {
                 }
             }
             
-            HStack {
+            HStack(spacing: 0) {
                 Text("Orden")
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(.gray)
                 Spacer()
+                Text(vm.formatCurrency(vm.cartTotal))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundColor(.white)
                 Menu {
                     Button { vm.qrDialogOpen = true } label: { Label("Leer QR", systemImage: "qrcode") }
                     Button { vm.manualStampDialogOpen = true } label: { Label("Asignar sellos", systemImage: "barcode.viewfinder") }
                 } label: {
-                    Image(systemName: "ellipsis").font(.body).foregroundColor(Color(white: 0.5)).padding(4)
+                    Image(systemName: "ellipsis")
+                        .font(.body)
+                        .foregroundColor(Color(white: 0.4))
+                        .padding(.leading, 8)
+                        .padding(.vertical, 4)
                 }
-                Text(vm.formatCurrency(vm.cartTotal)).font(.subheadline.bold()).foregroundColor(.white)
             }
             
-            // Seat buttons
+            // Seat selector
             if vm.selectedTable != nil && vm.guestCount > 0 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(1...vm.guestCount, id: \.self) { i in
-                            Button { vm.activeSeat = "A\(i)" } label: {
-                                Text("A\(i)")
-                                    .font(.caption.weight(.medium))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(vm.activeSeat == "A\(i)" ? Color.blue.opacity(0.2) : Color.white.opacity(0.05))
-                                    .foregroundColor(vm.activeSeat == "A\(i)" ? .blue : .gray)
-                                    .cornerRadius(8)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(vm.activeSeat == "A\(i)" ? Color.blue.opacity(0.4) : Color.white.opacity(0.1), lineWidth: 1)
-                                    )
+                let seats = (1...vm.guestCount).map { "A\($0)" } + ["C"]
+                HStack(spacing: 4) {
+                    ForEach(seats, id: \.self) { seat in
+                        let isActive = vm.activeSeat == seat
+                        let isCenter = seat == "C"
+                        Button { vm.activeSeat = seat } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: isCenter ? "fork.knife" : "person.fill")
+                                    .font(.system(size: 10, weight: .medium))
+                                Text(seat)
+                                    .font(.caption.weight(.semibold))
                             }
-                        }
-                        Button { vm.activeSeat = "C" } label: {
-                            Text("C")
-                                .font(.caption.weight(.medium))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(vm.activeSeat == "C" ? Color.orange.opacity(0.2) : Color.white.opacity(0.05))
-                                .foregroundColor(vm.activeSeat == "C" ? .orange : .gray)
-                                .cornerRadius(8)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(vm.activeSeat == "C" ? Color.orange.opacity(0.4) : Color.white.opacity(0.1), lineWidth: 1)
-                                )
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(isActive
+                                ? (isCenter ? Color.orange : Color.blue).opacity(0.15)
+                                : Color.white.opacity(0.04))
+                            .foregroundColor(isActive
+                                ? (isCenter ? .orange : .blue)
+                                : Color(white: 0.45))
+                            .cornerRadius(8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(isActive
+                                        ? (isCenter ? Color.orange : Color.blue).opacity(0.35)
+                                        : Color.white.opacity(0.06), lineWidth: 1)
+                            )
                         }
                     }
                 }
             }
             
-            // Course buttons (fixed T1-T4)
+            // Course selector (T1-T4)
             if !vm.cart.isEmpty {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     ForEach(1...4, id: \.self) { c in
+                        let isActive = vm.activeCourse == c
                         Button { vm.activeCourse = c } label: {
-                            Text("T\(c)")
-                                .font(.caption.weight(.medium))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(vm.activeCourse == c ? Color.green.opacity(0.2) : Color.white.opacity(0.05))
-                                .foregroundColor(vm.activeCourse == c ? .green : .gray)
-                                .cornerRadius(8)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(vm.activeCourse == c ? Color.green.opacity(0.4) : Color.white.opacity(0.1), lineWidth: 1)
-                                )
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 9, weight: .medium))
+                                Text("T\(c)")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(isActive ? Color.green.opacity(0.15) : Color.white.opacity(0.04))
+                            .foregroundColor(isActive ? .green : Color(white: 0.45))
+                            .cornerRadius(8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(isActive ? Color.green.opacity(0.35) : Color.white.opacity(0.06), lineWidth: 1)
+                            )
                         }
                     }
-                    Spacer()
                 }
             }
             
@@ -416,7 +443,7 @@ struct CartView: View {
                 }
             }
             
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 // Print button with context menu
                 Menu {
                     Button {
@@ -439,11 +466,10 @@ struct CartView: View {
                 } label: {
                     Image(systemName: "printer.fill")
                         .font(.headline)
-                        .frame(width: 52, height: 52)
+                        .frame(width: 54, height: 54)
                         .background(Color.white.opacity(0.08))
                         .foregroundColor(.white)
-                        .cornerRadius(12)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                        .cornerRadius(14)
                 } primaryAction: {
                     Task { await vm.handlePrint() }
                 }

@@ -42,6 +42,10 @@ class CartViewModel: ObservableObject {
         return seats
     }
     
+    func itemCount(for seat: String) -> Int {
+        items.filter { $0.seat == seat }.reduce(0) { $0 + $1.quantity }
+    }
+    
     func addItem(_ item: CartItem) {
         var newItem = item
         newItem.seat = activeSeat
@@ -191,7 +195,7 @@ class CartViewModel: ObservableObject {
     
     func reset() {
         items = []
-        activeSeat = "C"
+        activeSeat = "A1"
         activeCourse = 1
         currentOrderId = nil
         selectedTable = nil
@@ -201,6 +205,9 @@ class CartViewModel: ObservableObject {
     func setupForTable(_ table: Table?, customerName: String?, guestCount: Int) {
         self.selectedTable = table
         self.customerName = customerName
+        
+        // Default to first seat (A1) instead of "C" (Todos)
+        activeSeat = "A1"
         
         // If table has existing order, load its items and guestCount
         if let order = table?.activeOrder {

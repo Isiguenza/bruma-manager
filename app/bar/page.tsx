@@ -801,6 +801,7 @@ export default function BarPage() {
   async function handleSelectTable(table: Table) {
     setSelectedTable(table);
     setShowTableSelection(false);
+    setCustomerName("");
     // Cargar guestCount persistido de la mesa
     setGuestCount((table as any).guestCount || 1);
     setTempGuestCount((table as any).guestCount || 1);

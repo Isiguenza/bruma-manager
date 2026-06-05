@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { tables, reservations } from "@/lib/db/schema";
-import { eq, and, gte } from "drizzle-orm";
+import { tables, reservations, orders, orderItems } from "@/lib/db/schema";
+import { eq, and, gte, count, sql } from "drizzle-orm";
 
 // GET /api/tables - Obtener todas las mesas
 export async function GET() {
@@ -31,9 +31,39 @@ export async function GET() {
           }
         });
 
+        // Fetch active order for this table (pending payment)
+        const [activeOrder] = await db
+          .select()
+          .from(orders)
+          .where(
+            and(
+              eq(orders.tableId, table.id),
+              eq(orders.paymentStatus, "pending")
+            )
+          )
+          .orderBy(orders.createdAt)
+          .limit(1);
+
+        // Get item count for the active order
+        let itemCount = 0;
+        if (activeOrder) {
+          const [result] = await db
+            .select({ count: count() })
+            .from(orderItems)
+            .where(eq(orderItems.orderId, activeOrder.id));
+          itemCount = result?.count ?? 0;
+        }
+
         return {
           ...table,
           next_reservation: nextReservation || null,
+          active_order: activeOrder ? {
+            id: activeOrder.id,
+            order_number: activeOrder.orderNumber,
+            status: activeOrder.status,
+            total: activeOrder.total,
+            item_count: itemCount,
+          } : null,
         };
       })
     );

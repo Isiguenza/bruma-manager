@@ -3,6 +3,7 @@ import SwiftUI
 // Clean, minimal design inspired by Bruma_waitress
 struct TableSelectionView: View {
     @ObservedObject var vm: POSViewModel
+    @Namespace private var filterNamespace
     
     var body: some View {
         ZStack {
@@ -12,47 +13,18 @@ struct TableSelectionView: View {
                 // Header — same as /bar
                 header
                 
-                // Grid — 3 columns
+                // Filter bar
+                filterBar
+                
+                // Scroll content
                 ScrollView {
                     VStack(spacing: 0) {
-                        // DELIVERY SECTION
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("DELIVERY")
-                                .font(.caption.weight(.bold))
-                                .foregroundColor(.gray)
-                                .padding(.horizontal, 16)
-                                .padding(.top, 16)
-                            
-                            LazyVGrid(columns: [
-                                GridItem(.flexible(), spacing: 12),
-                                GridItem(.flexible(), spacing: 12),
-                                GridItem(.flexible(), spacing: 12)
-                            ], spacing: 12) {
-                                // 1. Para Llevar button (always first)
-                                paraLlevarCard
-                                
-                                // 2. Platform Delivery button (always second)
-                                platformDeliveryCard
-                                
-                                // 3. Active Para Llevar orders
-                                ForEach(vm.deliveryOrders) { order in
-                                    DeliveryCardView(order: order, iconColor: .green, bgColor: .green) {
-                                        vm.handleSelectDeliveryOrder(order)
-                                    }
-                                }
-                                
-                                // 4. Active Platform Delivery orders
-                                ForEach(vm.platformDeliveryOrders) { order in
-                                    DeliveryCardView(order: order, iconColor: .purple, bgColor: .purple) {
-                                        vm.handleSelectDeliveryOrder(order)
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                        }
+                        // DELIVERY ROW — horizontal, always visible
+                        deliveryRow
+                            .padding(.top, 16)
                         
                         // Divider
-                        if !vm.tables.isEmpty {
+                        if !vm.filteredTables.isEmpty {
                             Rectangle()
                                 .fill(Color.white.opacity(0.1))
                                 .frame(height: 1)
@@ -61,19 +33,26 @@ struct TableSelectionView: View {
                         }
                         
                         // MESAS SECTION
-                        if !vm.tables.isEmpty {
+                        if !vm.filteredTables.isEmpty {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("MESAS")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundColor(.gray)
-                                    .padding(.horizontal, 16)
+                                HStack {
+                                    Text("MESAS")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundColor(.gray)
+                                    Spacer()
+                                    Text("\(vm.filteredTables.count) mesas")
+                                        .font(.caption2)
+                                        .foregroundColor(.gray)
+                                }
+                                .padding(.horizontal, 16)
                                 
                                 LazyVGrid(columns: [
-                                    GridItem(.flexible(), spacing: 12),
-                                    GridItem(.flexible(), spacing: 12),
-                                    GridItem(.flexible(), spacing: 12)
-                                ], spacing: 12) {
-                                    ForEach(vm.tables) { table in
+                                    GridItem(.flexible(), spacing: 10),
+                                    GridItem(.flexible(), spacing: 10),
+                                    GridItem(.flexible(), spacing: 10),
+                                    GridItem(.flexible(), spacing: 10)
+                                ], spacing: 10) {
+                                    ForEach(vm.filteredTables) { table in
                                         TableCardView(table: table, hasReadyItems: vm.tablesWithReadyItems.contains(table.id)) {
                                             vm.handleSelectTable(table)
                                         }
@@ -274,6 +253,7 @@ struct TableSelectionView: View {
                 Text("Elige una mesa o crea una orden para llevar")
                     .font(.caption)
                     .foregroundColor(.gray)
+                    
             }
             
             Spacer()
@@ -304,65 +284,161 @@ struct TableSelectionView: View {
         .padding(.bottom, 12)
     }
     
-    // MARK: - Para Llevar (clean style)
+    // MARK: - Filter Bar
     
-    private var paraLlevarCard: some View {
+    private var filterBar: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(POSViewModel.TableFilter.allCases.enumerated()), id: \.element) { _, filter in
+                let isActive = vm.tableFilter == filter
+                let count: Int = {
+                    switch filter {
+                    case .all: return vm.tables.count
+                    case .available: return vm.tables.filter { $0.isAvailable }.count
+                    case .occupied: return vm.tables.filter { $0.isOccupied }.count
+                    case .reserved: return vm.tables.filter { $0.isReserved }.count
+                    }
+                }()
+                
+                Button(action: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        vm.tableFilter = filter
+                    }
+                }) {
+                    Text("\(filter.rawValue) (\(count))")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(isActive ? .white : Color(white: 0.6))
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background {
+                    if isActive {
+                        Capsule()
+                            .fill(Color.blue.opacity(0.7))
+                            .glassEffect(.regular.interactive(), in: Capsule())
+                            .matchedGeometryEffect(id: "activeFilter", in: filterNamespace)
+                    }
+                }
+            }
+        }
+        .padding(4)
+        .background {
+            Capsule()
+                .fill(.thinMaterial)
+                .opacity(0.5)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+    
+    // MARK: - Delivery Row (horizontal scroll)
+    
+    private var deliveryRow: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("ÓRDENES")
+                .font(.caption.weight(.bold))
+                .foregroundColor(.gray)
+                .padding(.horizontal, 16)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    // New Para Llevar
+                    paraLlevarCompactCard
+                    
+                    // New Platform Delivery
+                    platformDeliveryCompactCard
+                    
+                    // Active Para Llevar orders
+                    ForEach(vm.deliveryOrders) { order in
+                        DeliveryCompactCard(order: order, iconColor: .green) {
+                            vm.handleSelectDeliveryOrder(order)
+                        }
+                    }
+                    
+                    // Active Platform Delivery orders
+                    ForEach(vm.platformDeliveryOrders) { order in
+                        DeliveryCompactCard(order: order, iconColor: .purple) {
+                            vm.handleSelectDeliveryOrder(order)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+    
+    // MARK: - Compact Delivery Cards
+    
+    private var paraLlevarCompactCard: some View {
         Button {
             vm.handleNewDeliveryOrder()
         } label: {
-            VStack(spacing: 8) {
+            HStack(spacing: 12) {
                 Image(systemName: "bag.fill")
-                    .font(.system(size: 28))
+                    .font(.system(size: 24))
                     .foregroundColor(.blue)
-                Text("Para Llevar")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                Text("Nueva Orden")
-                    .font(.caption2)
-                    .foregroundColor(.blue.opacity(0.8))
+                
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Para Llevar")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                    Text("Nueva")
+                        .font(.caption)
+                        .foregroundColor(.blue.opacity(0.8))
+                }
+                
+                Spacer()
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 120)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(Color.blue.opacity(0.12))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(cornerRadius: 12)
                             .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                     )
             )
         }
+        .frame(width: 200, height: 64)
         .buttonStyle(.plain)
     }
     
-    // MARK: - Platform Delivery (clean style)
-    
-    private var platformDeliveryCard: some View {
+    private var platformDeliveryCompactCard: some View {
         Button {
             vm.handleNewPlatformDeliveryOrder()
         } label: {
-            VStack(spacing: 8) {
+            HStack(spacing: 12) {
                 Image(systemName: "shippingbox.fill")
-                    .font(.system(size: 28))
+                    .font(.system(size: 24))
                     .foregroundColor(.purple)
-                Text("Delivery")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                Text("Uber/Rappi/Didi")
-                    .font(.caption2)
-                    .foregroundColor(.purple.opacity(0.8))
+                
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Delivery")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                    Text("Uber/Rappi")
+                        .font(.caption)
+                        .foregroundColor(.purple.opacity(0.8))
+                }
+                
+                Spacer()
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 120)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(Color.purple.opacity(0.12))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(cornerRadius: 12)
                             .stroke(Color.purple.opacity(0.3), lineWidth: 1)
                     )
             )
         }
+        .frame(width: 200, height: 64)
         .buttonStyle(.plain)
     }
 }
@@ -376,54 +452,93 @@ struct TableCardView: View {
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                Text(table.number)
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                
-                Text(table.name ?? "Mesa")
-                    .font(.caption2)
-                    .foregroundColor(.gray)
-                
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(tableStatusColor(table))
-                        .frame(width: 6, height: 6)
-                    Text(tableStatusLabel(table))
-                        .font(.caption2.weight(.medium))
-                        .foregroundColor(tableStatusColor(table))
-                }
-                
-                if let reservation = table.nextReservation {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar")
-                            .font(.caption2)
-                            .foregroundColor(.purple)
-                        Text("Reservada - \(reservation.reservationTime)")
-                            .font(.caption2.weight(.medium))
-                            .foregroundColor(.purple)
+            ZStack {
+                VStack(spacing: 6) {
+                    HStack {
+                        Text(table.number)
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        Spacer()
+                        if table.isAvailable {
+                            Image(systemName: "chair.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(.green.opacity(0.6))
+                        }
                     }
-                }
-                
-                if hasReadyItems {
+                    
+                    if table.isOccupied, let activeOrder = table.activeOrder, let totalStr = activeOrder.total {
+                        let total = Double(totalStr) ?? 0
+                        HStack(alignment: .firstTextBaseline, spacing: 1) {
+                            Text("$")
+                                .font(.system(size: 14, weight: .medium))
+                            Text("\(Int(total))")
+                                .font(.system(size: 20, weight: .bold))
+                            Text(".\(String(format: "%02d", Int((total - Double(Int(total))) * 100)))")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        Text("\(activeOrder.itemCount ?? 0) items")
+                            .font(.caption2)
+                            .foregroundColor(.orange.opacity(0.8))
+                    } else {
+                        Text(table.name ?? "Mesa")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                    }
+                    
                     HStack(spacing: 4) {
                         Circle()
-                            .fill(Color.green)
+                            .fill(tableStatusColor(table))
                             .frame(width: 6, height: 6)
-                        Text("Platillos listos")
+                        Text(tableStatusLabel(table))
                             .font(.caption2.weight(.medium))
-                            .foregroundColor(.green)
+                            .foregroundColor(tableStatusColor(table))
                     }
+                    
+                    if let reservation = table.nextReservation {
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar")
+                                .font(.caption2)
+                                .foregroundColor(.purple)
+                            Text("Reservada - \(reservation.reservationTime)")
+                                .font(.caption2.weight(.medium))
+                                .foregroundColor(.purple)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(10)
+                
+                // Prominent ready badge
+                if hasReadyItems {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 10))
+                                Text("Listo")
+                                    .font(.system(size: 9, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color(red: 1.0, green: 0.45, blue: 0.0))
+                            .clipShape(Capsule())
+                        }
+                        Spacer()
+                    }
+                    .padding(6)
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 120)
+            .frame(height: 115)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(tableBackgroundColor(table))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(tableBorderColor(table), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(tableBorderColor(table), lineWidth: hasReadyItems ? 2 : 1)
                     )
             )
         }
@@ -433,7 +548,7 @@ struct TableCardView: View {
     private func tableStatusColor(_ table: Table) -> Color {
         switch table.status {
         case "available": return .green
-        case "occupied": return .orange
+        case "occupied": return Color(red: 1.0, green: 0.45, blue: 0.0)
         case "reserved": return .purple
         default: return .gray
         }
@@ -458,7 +573,7 @@ struct TableCardView: View {
     
     private func tableBorderColor(_ table: Table) -> Color {
         switch table.status {
-        case "occupied": return Color.orange.opacity(0.3)
+        case "occupied": return Color(red: 1.0, green: 0.45, blue: 0.0).opacity(0.4)
         case "reserved": return Color.purple.opacity(0.3)
         default: return Color.white.opacity(0.1)
         }
@@ -467,36 +582,27 @@ struct TableCardView: View {
 
 // MARK: - Delivery Card (clean style)
 
-struct DeliveryCardView: View {
+struct DeliveryCompactCard: View {
     let order: Order
     var iconColor: Color = .green
-    var bgColor: Color = .green
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
-                HStack {
-                    Image(systemName: order.customerName?.hasPrefix("Uber") == true || order.customerName?.hasPrefix("Rappi") == true || order.customerName?.hasPrefix("Didi") == true ? "shippingbox.fill" : "bag.fill")
-                        .font(.caption)
-                        .foregroundColor(iconColor)
+            HStack(spacing: 12) {
+                Image(systemName: order.customerName?.hasPrefix("Uber") == true || order.customerName?.hasPrefix("Rappi") == true || order.customerName?.hasPrefix("Didi") == true ? "shippingbox.fill" : "bag.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(iconColor)
+                
+                VStack(alignment: .leading, spacing: 3) {
                     Text((order.customerName ?? "Sin Nombre").replacingOccurrences(of: " [ENVIO]", with: ""))
-                        .font(.caption.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundColor(.white)
                         .lineLimit(1)
-                    Spacer()
-                }
-                
-                HStack {
-                    Text("#\(order.orderNumber)")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
-                    Spacer()
-                    if let itemCount = order.items?.count {
-                        Text("\(itemCount) items")
-                            .font(.caption2)
-                            .foregroundColor(iconColor.opacity(0.8))
-                    }
+                    Text("#\(order.orderNumber) - \(order.items?.count ?? 0) items")
+                        .font(.caption)
+                        .foregroundColor(iconColor.opacity(0.8))
+                        .lineLimit(1)
                 }
                 
                 Spacer()
@@ -506,22 +612,23 @@ struct DeliveryCardView: View {
                         .fill(iconColor)
                         .frame(width: 6, height: 6)
                     Text("Activa")
-                        .font(.caption2.weight(.medium))
+                        .font(.caption.weight(.medium))
                         .foregroundColor(iconColor)
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity)
-            .frame(height: 120)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(bgColor.opacity(0.08))
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(iconColor.opacity(0.08))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(bgColor.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(iconColor.opacity(0.3), lineWidth: 1)
                     )
             )
         }
+        .frame(width: 200, height: 64)
         .buttonStyle(.plain)
     }
 }

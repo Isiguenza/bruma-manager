@@ -33,29 +33,10 @@ struct OrderTakingView: View {
         .overlay(
             Group {
                 if cartVM.showKitchenConfirmation {
-                    ZStack {
-                        Color.green
-                            .ignoresSafeArea()
-                        
-                        VStack(spacing: 20) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 80))
-                                .foregroundColor(.white)
-                            
-                            Text("Enviado a Cocina")
-                                .font(.system(size: 32, weight: .bold))
-                                .foregroundColor(.white)
-                            
-                            Text("Toca para continuar")
-                                .font(.headline)
-                                .foregroundColor(.white.opacity(0.8))
-                                .padding(.top, 8)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
+                    KitchenSuccessView {
                         cartVM.showKitchenConfirmation = false
+                        dismiss()
+                        onDismiss()
                     }
                 }
             }
@@ -157,44 +138,70 @@ struct OrderTakingView: View {
     // MARK: - Seat & Course
     
     private var seatCourseBar: some View {
-        HStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
+            // Top row: Seats (scrolls horizontally if needed)
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                HStack(spacing: 2) {
                     ForEach(cartVM.seatLabels, id: \.self) { seat in
+                        let count = cartVM.itemCount(for: seat)
+                        let isActive = cartVM.activeSeat == seat
                         Button(action: { cartVM.activeSeat = seat }) {
-                            Text(seat == "C" ? "Todos" : seat)
-                                .font(.caption.weight(.medium))
-                                .foregroundColor(cartVM.activeSeat == seat ? .white : .gray)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(cartVM.activeSeat == seat ? Color.blue : Color.white.opacity(0.06))
-                                .cornerRadius(14)
+                            HStack(spacing: 4) {
+                                if seat == "C" {
+                                    Image(systemName: "person.2.fill")
+                                        .font(.system(size: 12))
+                                } else {
+                                    Text(seat)
+                                        .font(.caption.weight(.medium))
+                                }
+                                if count > 0 {
+                                    Text("\(count)")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 2)
+                                        .background(Color.white.opacity(0.25))
+                                        .clipShape(Capsule())
+                                }
+                            }
+                            .foregroundColor(isActive ? .white : .gray)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(isActive ? Color(red: 0.2, green: 0.5, blue: 1.0) : Color.clear)
+                            .clipShape(Capsule())
                         }
                     }
                 }
+                .padding(.horizontal, 3)
+                .padding(.vertical, 2)
+                .background(Color.white.opacity(0.04))
+                .clipShape(Capsule())
+                .padding(.horizontal, 12)
             }
             
-            Divider()
-                .frame(height: 20)
-                .padding(.horizontal, 8)
-            
-            HStack(spacing: 4) {
+            // Bottom row: Courses (left-aligned, no scroll needed)
+            HStack(spacing: 2) {
                 ForEach(1...4, id: \.self) { course in
+                    let isActive = cartVM.activeCourse == course
                     Button(action: { cartVM.activeCourse = course }) {
                         Text("T\(course)")
-                            .font(.caption2.weight(.medium))
-                            .foregroundColor(cartVM.activeCourse == course ? .white : .gray)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(cartVM.activeCourse == course ? Color(red: 0.2, green: 0.55, blue: 0.35) : Color.white.opacity(0.04))
-                            .cornerRadius(10)
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(isActive ? .white : .gray)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(isActive ? Color(red: 1.0, green: 0.58, blue: 0.0) : Color.clear)
+                            .clipShape(Capsule())
                     }
                 }
             }
+            .padding(.horizontal, 3)
+            .padding(.vertical, 2)
+            .background(Color.white.opacity(0.04))
+            .clipShape(Capsule())
+            .padding(.horizontal, 12)
         }
-        .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color(red: 0.06, green: 0.06, blue: 0.06))
+        .background(Color(red: 0.06, green: 0.06, blue: 0.07))
     }
     
     // MARK: - Menu Content
@@ -302,8 +309,6 @@ struct OrderTakingView: View {
                     Button(action: {
                         Task {
                             await cartVM.sendToKitchen()
-                            dismiss()
-                            onDismiss()
                         }
                     }) {
                         HStack(spacing: 8) {

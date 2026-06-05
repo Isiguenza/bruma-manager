@@ -36,5 +36,16 @@ struct ActiveOrder: Codable {
     let id: String
     let orderNumber: Int
     let status: String
+    let total: String?
+    let itemCount: Int?
     let items: [OrderItem]?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case orderNumber = "order_number"
+        case status
+        case total
+        case itemCount = "item_count"
+        case items
+    }
 }
