@@ -1285,6 +1285,7 @@ class POSViewModel: ObservableObject {
         let newPrice = isPlatform ? newProduct.numericPlatformPrice : newProduct.numericPrice
         let clampedQty = min(max(quantityToChange, 1), item.quantity)
         let remainingQty = item.quantity - clampedQty
+        let changeNote = "Cambio de \(item.productName) a \(newProduct.name)"
         
         Task {
             do {
@@ -1294,14 +1295,15 @@ class POSViewModel: ObservableObject {
                         itemId: itemId,
                         productId: newProduct.id,
                         productName: newProduct.name,
-                        unitPrice: newPrice
+                        unitPrice: newPrice,
+                        notes: changeNote
                     )
                     let updatedItem = CartItem(
                         productId: newProduct.id,
                         productName: newProduct.name,
                         unitPrice: newPrice,
                         quantity: clampedQty,
-                        notes: item.notes,
+                        notes: changeNote,
                         frostingId: nil, frostingName: nil,
                         dryToppingId: nil, dryToppingName: nil,
                         extraId: nil, extraName: nil,
@@ -1326,7 +1328,7 @@ class POSViewModel: ObservableObject {
                         "productName": newProduct.name,
                         "quantity": clampedQty,
                         "unitPrice": newPrice,
-                        "notes": item.notes,
+                        "notes": changeNote,
                         "seat": item.seat,
                         "course": item.course,
                         "isGuest": item.isGuest
@@ -1362,7 +1364,7 @@ class POSViewModel: ObservableObject {
                             productName: newProduct.name,
                             unitPrice: newPrice,
                             quantity: clampedQty,
-                            notes: item.notes,
+                            notes: changeNote,
                             frostingId: nil, frostingName: nil,
                             dryToppingId: nil, dryToppingName: nil,
                             extraId: nil, extraName: nil,

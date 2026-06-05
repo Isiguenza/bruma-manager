@@ -156,13 +156,15 @@ class APIService {
     // MARK: - Order Items
     
     @discardableResult
-    func updateOrderItem(itemId: String, productId: String, productName: String, unitPrice: Double) async throws -> OrderItem {
+    func updateOrderItem(itemId: String, productId: String, productName: String, unitPrice: Double, notes: String? = nil) async throws -> OrderItem {
         let url = URL(string: "\(baseURL)/api/order-items/\(itemId)")!
-        return try await request(url, method: "PATCH", body: [
+        var body: [String: Any] = [
             "productId": productId,
             "productName": productName,
             "unitPrice": unitPrice
-        ])
+        ]
+        if let notes = notes { body["notes"] = notes }
+        return try await request(url, method: "PATCH", body: body)
     }
     
     @discardableResult

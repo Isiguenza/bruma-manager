@@ -10,7 +10,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await req.json();
-    const { productId, productName, unitPrice, quantity } = body;
+    const { productId, productName, unitPrice, quantity, notes } = body;
 
     // Must provide either (productId + productName + unitPrice) or (quantity + unitPrice)
     const isProductChange = productId && productName && unitPrice !== undefined;
@@ -47,6 +47,10 @@ export async function PATCH(
     if (isProductChange) {
       updateFields.productId = productId;
       updateFields.productName = productName;
+    }
+
+    if (notes !== undefined) {
+      updateFields.notes = notes;
     }
 
     const [updated] = await db
