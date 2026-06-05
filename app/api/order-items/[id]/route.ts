@@ -5,9 +5,10 @@ import { eq } from "drizzle-orm";
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await req.json();
     const { productId, productName, unitPrice, quantity } = body;
 
@@ -25,7 +26,7 @@ export async function PATCH(
     const existing = await db
       .select({ quantity: orderItems.quantity, orderId: orderItems.orderId })
       .from(orderItems)
-      .where(eq(orderItems.id, params.id))
+      .where(eq(orderItems.id, id))
       .limit(1);
 
     if (!existing.length) {
@@ -51,7 +52,7 @@ export async function PATCH(
     const [updated] = await db
       .update(orderItems)
       .set(updateFields)
-      .where(eq(orderItems.id, params.id))
+      .where(eq(orderItems.id, id))
       .returning();
 
     // Recalculate order total
