@@ -168,7 +168,7 @@ class APIService {
     
     // MARK: - Orders
     
-    func createOrder(tableId: String?, items: [[String: Any]], customerName: String?) async throws -> Order {
+    func createOrder(tableId: String?, items: [[String: Any]], customerName: String?, guestCount: Int? = nil) async throws -> Order {
         let url = URL(string: "\(baseURL)/api/orders")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -180,6 +180,7 @@ class APIService {
         ]
         if let tableId = tableId { body["tableId"] = tableId }
         if let name = customerName { body["customerName"] = name }
+        if let gc = guestCount { body["guestCount"] = gc }
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         

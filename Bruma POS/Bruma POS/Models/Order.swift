@@ -8,6 +8,7 @@ struct Order: Codable, Identifiable {
     let total: String?
     let paymentStatus: String?
     let customerName: String?
+    let guestCount: Int?
     let tableId: String?
     let tableName: String?
     let tableNumber: String?

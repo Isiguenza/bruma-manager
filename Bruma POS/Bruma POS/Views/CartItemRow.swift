@@ -33,16 +33,18 @@ struct CartItemRow: View {
                 
                 Spacer()
                 
-                // Price with original strikethrough if discounted
+                // Price with original strikethrough and discounted price
                 VStack(alignment: .trailing, spacing: 2) {
-                    if let origPrice = item.originalPrice, origPrice != item.unitPrice {
+                    let itemTotal = item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
+                    
+                    if let origPrice = item.originalPrice, (item.promotionDiscount ?? 0) > 0 {
                         Text(vm.formatCurrency(origPrice * Double(item.quantity)))
                             .font(.caption2)
                             .foregroundColor(.gray)
                             .strikethrough()
                     }
                     
-                    Text(vm.formatCurrency(item.unitPrice * Double(item.quantity)))
+                    Text(vm.formatCurrency(itemTotal))
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(priceColor)
                 }
@@ -149,7 +151,7 @@ struct CartItemRow: View {
             }
             
             // Quantity controls — only if NOT sent to kitchen
-            if !item.sentToKitchen && !isInsidePromotionGroup {
+            if !item.sentToKitchen {
                 HStack(spacing: 8) {
                     Button {
                         vm.updateCartQuantity(at: index, delta: -1)
@@ -191,7 +193,16 @@ struct CartItemRow: View {
         .cornerRadius(10)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(borderColor, lineWidth: 1))
         .contextMenu {
-            if !item.sentToKitchen && !isInsidePromotionGroup {
+            if item.sentToKitchen {
+                Text("Item ya enviado a cocina")
+                    .foregroundColor(.gray)
+            } else if isInsidePromotionGroup {
+                Button {
+                    vm.removeItemFromPromotion(at: index)
+                } label: {
+                    Label("Quitar de promoción", systemImage: "person.crop.circle.badge.xmark")
+                }
+            } else {
                 // Change seat submenu
                 if vm.selectedTable != nil && vm.guestCount > 0 {
                     Menu {
@@ -247,9 +258,6 @@ struct CartItemRow: View {
                 } label: {
                     Label("Eliminar", systemImage: "trash")
                 }
-            } else {
-                Text("Item ya enviado a cocina")
-                    .foregroundColor(.gray)
             }
         }
     }

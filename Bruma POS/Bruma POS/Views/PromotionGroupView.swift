@@ -5,6 +5,7 @@ struct PromotionGroup: Identifiable {
     let promotionId: String
     let name: String
     let type: String // "buy_x_get_y", "percentage_discount", "fixed_discount", "combo"
+    let course: Int
     let items: [(index: Int, item: CartItem)]
     let totalSavings: Double
 }
@@ -33,8 +34,8 @@ struct PromotionGroupView: View {
                 
                 Spacer()
                 
-                // Total del grupo
-                let groupTotal = group.items.reduce(0) { $0 + ($1.item.unitPrice * Double($1.item.quantity)) }
+                // Total del grupo (con descuento aplicado)
+                let groupTotal = group.items.reduce(0) { $0 + ($1.item.unitPrice * Double($1.item.quantity)) } - group.totalSavings
                 Text(vm.formatCurrency(groupTotal))
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)

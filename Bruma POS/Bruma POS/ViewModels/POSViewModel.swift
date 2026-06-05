@@ -190,6 +190,78 @@ class POSViewModel: ObservableObject {
         cart.filter { !$0.isGuest }.reduce(0) { $0 + $1.unitPrice * Double($1.quantity) }
     }
     
+    var cartRenderElements: [CartRenderElement] {
+        let seatOrder = selectedTable != nil
+            ? Array(1...guestCount).map { "A\($0)" } + ["C"]
+            : ["C"]
+        
+        let sortedCart = cart.enumerated().map { (index: $0, item: $1) }
+            .sorted { a, b in
+                let courseA = a.item.course
+                let courseB = b.item.course
+                if courseA != courseB { return courseA < courseB }
+                if selectedTable != nil {
+                    let aIdx = seatOrder.firstIndex(of: a.item.seat) ?? 999
+                    let bIdx = seatOrder.firstIndex(of: b.item.seat) ?? 999
+                    return aIdx < bIdx
+                }
+                return false
+            }
+        
+        // Build promotion groups (grouped by promoId + course)
+        let promoItems = sortedCart.filter { $0.item.promotionId != nil }
+        let promoDict = Dictionary(grouping: promoItems) { "\($0.item.promotionId!)_\($0.item.course)" }
+        var promoGroups: [PromotionGroup] = []
+        
+        for (key, items) in promoDict {
+            let parts = key.split(separator: "_", maxSplits: 1)
+            let promoId = String(parts[0])
+            let course = Int(parts[1]) ?? 0
+            guard let promo = activePromotions.first(where: { $0.id == promoId }) else { continue }
+            let totalSavings = items.reduce(0) { $0 + ($1.item.promotionDiscount ?? 0) }
+            promoGroups.append(PromotionGroup(
+                id: key,
+                promotionId: promoId,
+                name: promo.name,
+                type: promo.type,
+                course: course,
+                items: items,
+                totalSavings: totalSavings
+            ))
+        }
+        
+        let maxCourse = cart.map { $0.course }.max() ?? 1
+        let showCourseHeaders = maxCourse > 1
+        
+        var renderElements: [CartRenderElement] = []
+        var renderedPromoIds = Set<String>()
+        var lastCourse = 0
+        var lastSeat = ""
+        
+        for (_, element) in sortedCart.enumerated() {
+            let item = element.item
+            if let promoId = item.promotionId, !renderedPromoIds.contains("\(promoId)_\(item.course)") {
+                if let group = promoGroups.first(where: { $0.promotionId == promoId && $0.course == item.course }) {
+                    let firstItem = group.items.first?.item
+                    let showCourseHeader = showCourseHeaders && (firstItem?.course ?? 0) != lastCourse
+                    let showSeatHeader = selectedTable != nil && (firstItem?.seat ?? "") != lastSeat
+                    if showCourseHeader { lastCourse = firstItem?.course ?? 0; lastSeat = "" }
+                    if showSeatHeader { lastSeat = firstItem?.seat ?? "" }
+                    renderElements.append(.promotionGroup(group, showCourseHeader: showCourseHeader, showSeatHeader: showSeatHeader))
+                    renderedPromoIds.insert("\(promoId)_\(item.course)")
+                }
+            } else if item.promotionId == nil {
+                let showCourseHeader = showCourseHeaders && item.course != lastCourse
+                let showSeatHeader = selectedTable != nil && item.seat != lastSeat
+                if showCourseHeader { lastCourse = item.course; lastSeat = "" }
+                if showSeatHeader { lastSeat = item.seat }
+                renderElements.append(.item(element.index, item, showCourseHeader: showCourseHeader, showSeatHeader: showSeatHeader))
+            }
+        }
+        
+        return renderElements
+    }
+    
     var totalPromotionDiscount: Double {
         cart.filter { !$0.isGuest }.reduce(0) { $0 + ($1.promotionDiscount ?? 0) }
     }
@@ -579,7 +651,9 @@ class POSViewModel: ObservableObject {
                             }
                         }
                         cart = allItems
-                        print("🛒 Cart final: \(cart.count) items")
+                        applyPromotions()
+                        guestCount = mainOrder.guestCount ?? 1
+                        print("🛒 Cart final: \(cart.count) items, guestCount: \(guestCount)")
                     } else {
                         print("⚠️ No hay órdenes activas para esta mesa")
                     }
@@ -640,6 +714,10 @@ class POSViewModel: ObservableObject {
                 if let updated = try? await APIService.shared.updateTable(tableId: table.id, body: ["guestCount": tempGuestCount]) {
                     selectedTable = updated
                 }
+                // Also update active order if exists
+                if let orderId = currentOrderId {
+                    try? await APIService.shared.updateOrder(orderId: orderId, body: ["guestCount": tempGuestCount])
+                }
             }
         }
     }
@@ -681,6 +759,8 @@ class POSViewModel: ObservableObject {
                         }
                     }
                     cart = items
+                    applyPromotions()
+                    guestCount = existingOrder.guestCount ?? 1
                 } else {
                     currentOrderId = nil
                     cart = []
@@ -795,6 +875,8 @@ class POSViewModel: ObservableObject {
             }
         }
         cart = items
+        applyPromotions()
+        guestCount = order.guestCount ?? 1
         currentScreen = .pos
     }
     
@@ -1254,6 +1336,8 @@ class POSViewModel: ObservableObject {
                     }
                 }
                 cart = allItems
+                applyPromotions()
+                guestCount = mainOrder.guestCount ?? 1
             } else {
                 // No active orders, clear cart
                 cart = []
@@ -1310,6 +1394,7 @@ class POSViewModel: ObservableObject {
                         body["customerName"] = nameToSend
                     }
                     if let loyaltyId = loyaltyCard?.id { body["loyaltyCardId"] = loyaltyId }
+                    body["guestCount"] = guestCount
                     if isEmployeeOrder { body["source"] = "employee" }
                     if isEmployeeOrder, let empId = selectedEmployee?.id { body["userId"] = empId }
                     
@@ -1676,6 +1761,7 @@ class POSViewModel: ObservableObject {
                     total: Double(item.quantity) * item.unitPrice,
                     promotionName: item.promotionName,
                     promotionDiscount: item.promotionDiscount,
+                    originalPrice: item.originalPrice,
                     isGuest: item.isGuest
                 )
             }
@@ -1703,6 +1789,7 @@ class POSViewModel: ObservableObject {
                 ]
                 if let pn = item.promotionName { dict["promotionName"] = pn }
                 if let pd = item.promotionDiscount { dict["promotionDiscount"] = Int(pd) }
+                if let op = item.originalPrice { dict["originalPrice"] = Int(op * Double(item.qty)) }
                 if let ig = item.isGuest, ig { dict["isGuest"] = true }
                 return dict
             }
@@ -1731,11 +1818,15 @@ class POSViewModel: ObservableObject {
         for item in cart {
             let seat = item.seat.isEmpty ? "C" : item.seat
             if itemsBySeat[seat] == nil { itemsBySeat[seat] = [] }
-            itemsBySeat[seat]?.append([
+            var dict: [String: Any] = [
                 "name": item.productName,
                 "qty": item.quantity,
                 "total": Int(Double(item.quantity) * item.unitPrice)
-            ])
+            ]
+            if let pn = item.promotionName { dict["promotionName"] = pn }
+            if let op = item.originalPrice { dict["originalPrice"] = Int(op * Double(item.quantity)) }
+            if let pd = item.promotionDiscount { dict["promotionDiscount"] = Int(pd) }
+            itemsBySeat[seat]?.append(dict)
         }
         
         let subtotal = cart.reduce(0.0) { $0 + (Double($1.quantity) * $1.unitPrice) }
@@ -1870,21 +1961,60 @@ class POSViewModel: ObservableObject {
             linePath.stroke()
             yPosition += 8
             
-            // Items
+            // Items grouped by promotion
             let itemAttributes: [NSAttributedString.Key: Any] = [.font: bodyFont]
+            let promoAttributes: [NSAttributedString.Key: Any] = [.font: smallFont, .foregroundColor: UIColor.gray]
+            let discountAttributes: [NSAttributedString.Key: Any] = [.font: smallFont, .foregroundColor: UIColor.red]
             var subtotal: Double = 0
+            var totalDiscount: Double = 0
             
             for item in cart {
+                let originalTotal = Double(item.quantity) * (item.originalPrice ?? item.unitPrice)
                 let itemTotal = Double(item.quantity) * item.unitPrice
+                let itemDiscount = item.promotionDiscount ?? 0
+                
                 subtotal += itemTotal
+                totalDiscount += itemDiscount
                 
+                // Show item line
                 let qtyName = "\(item.quantity)x \(item.productName)"
-                let price = formatCurrency(itemTotal)
                 
-                qtyName.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: itemAttributes)
-                let priceSize = price.size(withAttributes: itemAttributes)
-                price.draw(at: CGPoint(x: pageWidth - margin - priceSize.width, y: yPosition), withAttributes: itemAttributes)
-                yPosition += 15  // Más espaciado (era 12)
+                // If item has promotion, show original price as strikethrough
+                if item.promotionId != nil && item.originalPrice != nil {
+                    // Name with strikethrough original price
+                    qtyName.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: itemAttributes)
+                    
+                    // Draw original price with strikethrough
+                    let origPriceStr = formatCurrency(originalTotal)
+                    let origSize = origPriceStr.size(withAttributes: itemAttributes)
+                    origPriceStr.draw(at: CGPoint(x: pageWidth - margin - origSize.width, y: yPosition), withAttributes: itemAttributes)
+                    // Strikethrough line
+                    let strikePath = UIBezierPath()
+                    strikePath.move(to: CGPoint(x: pageWidth - margin - origSize.width, y: yPosition + origSize.height / 2))
+                    strikePath.addLine(to: CGPoint(x: pageWidth - margin, y: yPosition + origSize.height / 2))
+                    UIColor.gray.setStroke()
+                    strikePath.lineWidth = 0.5
+                    strikePath.stroke()
+                    
+                    yPosition += 15
+                    
+                    // Show promotion discount line with promo name
+                    if itemDiscount > 0 {
+                        let promoLine = item.promotionName != nil ? "  > \(item.promotionName!)" : "  > Descuento"
+                        let discountStr = "-\(formatCurrency(itemDiscount))"
+                        promoLine.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: promoAttributes)
+                        let discountSize = discountStr.size(withAttributes: discountAttributes)
+                        discountStr.draw(at: CGPoint(x: pageWidth - margin - discountSize.width, y: yPosition), withAttributes: discountAttributes)
+                        yPosition += 12
+                    }
+                } else {
+                    // Normal item - no promo
+                    let price = formatCurrency(itemTotal)
+                    qtyName.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: itemAttributes)
+                    let priceSize = price.size(withAttributes: itemAttributes)
+                    price.draw(at: CGPoint(x: pageWidth - margin - priceSize.width, y: yPosition), withAttributes: itemAttributes)
+                    yPosition += 15
+                }
                 
                 // Notas
                 if !item.notes.isEmpty {
@@ -1906,7 +2036,7 @@ class POSViewModel: ObservableObject {
             linePath2.stroke()
             yPosition += 8
             
-            // Subtotal
+            // Subtotal (original price before discounts)
             let totalAttributes: [NSAttributedString.Key: Any] = [.font: largeFont]
             let subtotalLabel = "SUBTOTAL:"
             let subtotalPrice = formatCurrency(subtotal)
@@ -1914,6 +2044,19 @@ class POSViewModel: ObservableObject {
             let subtotalPriceSize = subtotalPrice.size(withAttributes: totalAttributes)
             subtotalPrice.draw(at: CGPoint(x: pageWidth - margin - subtotalPriceSize.width, y: yPosition), withAttributes: totalAttributes)
             yPosition += 18
+            
+            // Promotion discount line
+            if totalDiscount > 0 {
+                let discountLabelAttributes: [NSAttributedString.Key: Any] = [.font: bodyFont, .foregroundColor: UIColor.red]
+                let discountLabel = "Desc. Promos:"
+                let discountPrice = "-\(formatCurrency(totalDiscount))"
+                discountLabel.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: discountLabelAttributes)
+                let discountPriceSize = discountPrice.size(withAttributes: discountLabelAttributes)
+                discountPrice.draw(at: CGPoint(x: pageWidth - margin - discountPriceSize.width, y: yPosition), withAttributes: discountLabelAttributes)
+                yPosition += 16
+            }
+            
+            let finalSubtotal = subtotal - totalDiscount
             
             // Envío a domicilio
             if isHomeDelivery {
@@ -1925,9 +2068,17 @@ class POSViewModel: ObservableObject {
                 deliveryPrice.draw(at: CGPoint(x: pageWidth - margin - deliveryPriceSize.width, y: yPosition), withAttributes: deliveryAttributes)
                 yPosition += 18
                 
-                // Total con envío
+                // Total con envío y descuentos
                 let grandTotalLabel = "TOTAL:"
-                let grandTotalPrice = formatCurrency(subtotal + homeDeliveryFee)
+                let grandTotalPrice = formatCurrency(finalSubtotal + homeDeliveryFee)
+                grandTotalLabel.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: totalAttributes)
+                let grandTotalPriceSize = grandTotalPrice.size(withAttributes: totalAttributes)
+                grandTotalPrice.draw(at: CGPoint(x: pageWidth - margin - grandTotalPriceSize.width, y: yPosition), withAttributes: totalAttributes)
+                yPosition += 18
+            } else {
+                // Total con descuentos (sin envío)
+                let grandTotalLabel = "TOTAL:"
+                let grandTotalPrice = formatCurrency(finalSubtotal)
                 grandTotalLabel.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: totalAttributes)
                 let grandTotalPriceSize = grandTotalPrice.size(withAttributes: totalAttributes)
                 grandTotalPrice.draw(at: CGPoint(x: pageWidth - margin - grandTotalPriceSize.width, y: yPosition), withAttributes: totalAttributes)
@@ -1956,12 +2107,16 @@ class POSViewModel: ObservableObject {
         for itemIndex in items {
             guard itemIndex < cart.count else { continue }
             let item = cart[itemIndex]
-            ticketItems.append([
+            var dict: [String: Any] = [
                 "name": item.productName,
                 "qty": item.quantity,
                 "price": item.unitPrice,
                 "total": Double(item.quantity) * item.unitPrice
-            ])
+            ]
+            if let pn = item.promotionName { dict["promotionName"] = pn }
+            if let op = item.originalPrice { dict["originalPrice"] = Int(op * Double(item.quantity)) }
+            if let pd = item.promotionDiscount { dict["promotionDiscount"] = Int(pd) }
+            ticketItems.append(dict)
         }
         
         let subtotal = items.reduce(0.0) { sum, ci in
@@ -2240,5 +2395,6 @@ struct TicketItem {
     var total: Double
     var promotionName: String?
     var promotionDiscount: Double?
+    var originalPrice: Double?
     var isGuest: Bool?
 }

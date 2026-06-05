@@ -38,6 +38,9 @@ export async function PATCH(
     if (body.splitBillData !== undefined) {
       updateData.splitBillData = body.splitBillData ? JSON.stringify(body.splitBillData) : null;
     }
+    if (body.guestCount !== undefined) {
+      updateData.guestCount = Number(body.guestCount);
+    }
 
     await db.update(orders).set(updateData).where(eq(orders.id, id));
     return NextResponse.json({ success: true });

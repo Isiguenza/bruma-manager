@@ -52,81 +52,7 @@ struct CartView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        // Group by course and seat like /bar
-                        let seatOrder = vm.selectedTable != nil
-                            ? Array(1...vm.guestCount).map { "A\($0)" } + ["C"]
-                            : ["C"]
-                        
-                        let sortedCart = vm.cart.enumerated().map { (index: $0, item: $1) }
-                            .sorted { a, b in
-                                let courseA = a.item.course
-                                let courseB = b.item.course
-                                if courseA != courseB { return courseA < courseB }
-                                
-                                if vm.selectedTable != nil {
-                                    let aIdx = seatOrder.firstIndex(of: a.item.seat) ?? 999
-                                    let bIdx = seatOrder.firstIndex(of: b.item.seat) ?? 999
-                                    return aIdx < bIdx
-                                }
-                                return false
-                            }
-                        
-                        // Build promotion groups and track which indices are grouped
-                        var groupedIndices = Set<Int>()
-                        var promoGroups: [PromotionGroup] = []
-                        
-                        // Group items by promotionId
-                        let promoItems = sortedCart.filter { $0.item.promotionId != nil }
-                        let promoDict = Dictionary(grouping: promoItems) { $0.item.promotionId! }
-                        
-                        for (promoId, items) in promoDict {
-                            guard let promo = vm.activePromotions.first(where: { $0.id == promoId }) else { continue }
-                            let totalSavings = items.reduce(0) { $0 + ($1.item.promotionDiscount ?? 0) }
-                            promoGroups.append(PromotionGroup(
-                                id: promoId,
-                                promotionId: promoId,
-                                name: promo.name,
-                                type: promo.type,
-                                items: items,
-                                totalSavings: totalSavings
-                            ))
-                            for item in items {
-                                groupedIndices.insert(item.index)
-                            }
-                        }
-                        
-                        let maxCourse = vm.cart.map { $0.course }.max() ?? 1
-                        let showCourseHeaders = maxCourse > 1
-                        
-                        var lastCourse = 0
-                        var lastSeat = ""
-                        
-                        // Build render elements with pre-calculated headers
-                        var renderElements: [CartRenderElement] = []
-                        var renderedPromoIds = Set<String>()
-                        
-                        for (_, element) in sortedCart.enumerated() {
-                            let item = element.item
-                            if let promoId = item.promotionId, !renderedPromoIds.contains(promoId) {
-                                if let group = promoGroups.first(where: { $0.promotionId == promoId }) {
-                                    let firstItem = group.items.first?.item
-                                    let showCourseHeader = showCourseHeaders && (firstItem?.course ?? 0) != lastCourse
-                                    let showSeatHeader = vm.selectedTable != nil && (firstItem?.seat ?? "") != lastSeat
-                                    if showCourseHeader { lastCourse = firstItem?.course ?? 0; lastSeat = "" }
-                                    if showSeatHeader { lastSeat = firstItem?.seat ?? "" }
-                                    renderElements.append(.promotionGroup(group, showCourseHeader: showCourseHeader, showSeatHeader: showSeatHeader))
-                                    renderedPromoIds.insert(promoId)
-                                }
-                            } else if item.promotionId == nil {
-                                let showCourseHeader = showCourseHeaders && item.course != lastCourse
-                                let showSeatHeader = vm.selectedTable != nil && item.seat != lastSeat
-                                if showCourseHeader { lastCourse = item.course; lastSeat = "" }
-                                if showSeatHeader { lastSeat = item.seat }
-                                renderElements.append(.item(element.index, item, showCourseHeader: showCourseHeader, showSeatHeader: showSeatHeader))
-                            }
-                        }
-                        
-                        ForEach(Array(renderElements.enumerated()), id: \.offset) { arrayIndex, renderElement in
+                        ForEach(vm.cartRenderElements) { renderElement in
                             switch renderElement {
                             case .promotionGroup(let group, let showCourseHeader, let showSeatHeader):
                                 VStack(alignment: .leading, spacing: 4) {
@@ -145,7 +71,6 @@ struct CartView: View {
                                         .background(Color.green.opacity(0.1))
                                         .cornerRadius(8)
                                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.3), lineWidth: 1))
-                                        .padding(.top, arrayIndex == 0 ? 0 : 8)
                                     }
                                     
                                     if showSeatHeader, let firstItem = group.items.first?.item {
@@ -158,7 +83,7 @@ struct CartView: View {
                                         .foregroundColor(firstItem.seat == "C" ? .orange : .blue)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 4)
-                                        .padding(.top, showCourseHeader ? 4 : (arrayIndex == 0 ? 0 : 8))
+                                        .padding(.top, showCourseHeader ? 4 : 0)
                                     }
                                     
                                     PromotionGroupView(group: group, vm: vm)
@@ -182,7 +107,6 @@ struct CartView: View {
                                         .background(Color.green.opacity(0.1))
                                         .cornerRadius(8)
                                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.3), lineWidth: 1))
-                                        .padding(.top, arrayIndex == 0 ? 0 : 8)
                                     }
                                     
                                     if showSeatHeader {
@@ -195,7 +119,7 @@ struct CartView: View {
                                         .foregroundColor(item.seat == "C" ? .orange : .blue)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 4)
-                                        .padding(.top, showCourseHeader ? 4 : (arrayIndex == 0 ? 0 : 8))
+                                        .padding(.top, showCourseHeader ? 4 : 0)
                                     }
                                     
                                     CartItemRow(item: item, index: index, vm: vm)
@@ -546,11 +470,4 @@ struct CartView: View {
             }
         }
     }
-}
-
-// MARK: - Cart Render Element (for grouping promotions)
-
-enum CartRenderElement {
-    case promotionGroup(PromotionGroup, showCourseHeader: Bool, showSeatHeader: Bool)
-    case item(Int, CartItem, showCourseHeader: Bool, showSeatHeader: Bool)
 }

@@ -195,7 +195,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { items, customerName, notes, status: orderStatus, tableId, paymentMethod, loyaltyCardId, orderNumber: manualOrderNumber } = body;
+    const { items, customerName, notes, status: orderStatus, tableId, paymentMethod, loyaltyCardId, orderNumber: manualOrderNumber, guestCount: bodyGuestCount } = body;
 
     console.log("📦 API recibió orden:", { customerName, orderStatus, tableId, manualOrderNumber });
 
@@ -239,6 +239,7 @@ export async function POST(request: NextRequest) {
         orderNumber: nextNumber,
         total: total.toFixed(2),
         customerName: customerName || null,
+        guestCount: bodyGuestCount ? Number(bodyGuestCount) : 1,
         notes: notes || null,
         tableId: tableId || null,
         cashRegisterId: currentRegister?.id || null,

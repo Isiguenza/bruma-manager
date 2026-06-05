@@ -271,6 +271,7 @@ export const orders = pgTable("orders", {
   userId: uuid("user_id").references(() => userProfiles.id),
   tableId: uuid("table_id").references(() => tables.id),
   customerName: varchar("customer_name", { length: 255 }),
+  guestCount: integer("guest_count").default(1),
   notes: text("notes"),
   loyaltyCardId: uuid("loyalty_card_id").references(() => loyaltyCards.id),
   cashRegisterId: uuid("cash_register_id").references(() => cashRegisters.id),

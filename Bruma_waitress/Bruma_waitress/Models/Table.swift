@@ -18,5 +18,6 @@ struct ActiveOrder: Codable {
     let id: String
     let orderNumber: Int
     let status: String
+    let guestCount: Int?
     let items: [OrderItem]?
 }

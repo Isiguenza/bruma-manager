@@ -111,7 +111,8 @@ class CartViewModel: ObservableObject {
                 let order = try await APIService.shared.createOrder(
                     tableId: selectedTable?.id,
                     items: itemsData,
-                    customerName: customerName
+                    customerName: customerName,
+                    guestCount: guestCount
                 )
                 currentOrderId = order.id
             }
@@ -200,17 +201,20 @@ class CartViewModel: ObservableObject {
     func setupForTable(_ table: Table?, customerName: String?, guestCount: Int) {
         self.selectedTable = table
         self.customerName = customerName
-        self.guestCount = guestCount
         
-        // If table has existing order, load its items
+        // If table has existing order, load its items and guestCount
         if let order = table?.activeOrder {
             currentOrderId = order.id
             loadOrderItems(order)
+            self.guestCount = order.guestCount ?? guestCount
         } else if table == nil, let name = customerName, !name.isEmpty {
             // Para Llevar: fetch existing order by customer name
             Task {
                 await loadParaLlevarOrder(customerName: name)
             }
+            self.guestCount = guestCount
+        } else {
+            self.guestCount = guestCount
         }
     }
     
@@ -253,6 +257,7 @@ class CartViewModel: ObservableObject {
             if let order = orders.first(where: { $0.customerName == customerName }) {
                 currentOrderId = order.id
                 loadOrderItems(order)
+                guestCount = order.guestCount ?? 1
             }
         } catch {
             print("Error loading Para Llevar order:", error)
