@@ -61,6 +61,13 @@ export async function POST(
       })
       .where(eq(orders.id, id));
 
+    // Marcar todos los items como entregados a mesa para que salgan de Dispatch/cocina
+    await db
+      .update(orderItems)
+      .set({ deliveredToTable: true })
+      .where(eq(orderItems.orderId, id));
+    console.log(`✅ Todos los items de la orden ${id} marcados como deliveredToTable`);
+
     // Liberar mesa si aplica
     if (order.tableId) {
       await db

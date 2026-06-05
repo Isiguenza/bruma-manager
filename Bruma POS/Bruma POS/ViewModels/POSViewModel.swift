@@ -1189,6 +1189,47 @@ class POSViewModel: ObservableObject {
         cart = PromotionEngine.applyPromotions(cartItems: cart, promotions: activePromotions)
     }
     
+    // MARK: - Remove Promotion from Group
+    
+    func removePromotionFromGroup(promotionId: String) {
+        // Find all items with this promotion and restore their original price
+        for i in cart.indices {
+            if cart[i].promotionId == promotionId {
+                if let origPrice = cart[i].originalPrice {
+                    cart[i].unitPrice = origPrice
+                }
+                cart[i].promotionId = nil
+                cart[i].promotionName = nil
+                cart[i].originalPrice = nil
+                cart[i].promotionDiscount = nil
+            }
+        }
+        showToast("Promoción removida")
+    }
+    
+    // MARK: - Remove Item from Promotion
+    
+    func removeItemFromPromotion(at index: Int) {
+        guard index < cart.count else { return }
+        if cart[index].sentToKitchen {
+            showToast("No se puede modificar un item ya enviado a cocina", isError: true)
+            return
+        }
+        
+        // Restore original price
+        if let origPrice = cart[index].originalPrice {
+            cart[index].unitPrice = origPrice
+        }
+        cart[index].promotionId = nil
+        cart[index].promotionName = nil
+        cart[index].originalPrice = nil
+        cart[index].promotionDiscount = nil
+        
+        // Re-apply promotions to the rest of the cart
+        applyPromotions()
+        showToast("Item removido de la promoción")
+    }
+    
     // MARK: - Refresh Order (remove paid items)
     
     func refreshCurrentOrder() async {

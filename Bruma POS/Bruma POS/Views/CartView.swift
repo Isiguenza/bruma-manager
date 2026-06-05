@@ -53,7 +53,7 @@ struct CartView: View {
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         // Group by course and seat like /bar
-                        let seatOrder = vm.selectedTable != nil 
+                        let seatOrder = vm.selectedTable != nil
                             ? Array(1...vm.guestCount).map { "A\($0)" } + ["C"]
                             : ["C"]
                         
@@ -71,65 +71,135 @@ struct CartView: View {
                                 return false
                             }
                         
+                        // Build promotion groups and track which indices are grouped
+                        var groupedIndices = Set<Int>()
+                        var promoGroups: [PromotionGroup] = []
+                        
+                        // Group items by promotionId
+                        let promoItems = sortedCart.filter { $0.item.promotionId != nil }
+                        let promoDict = Dictionary(grouping: promoItems) { $0.item.promotionId! }
+                        
+                        for (promoId, items) in promoDict {
+                            guard let promo = vm.activePromotions.first(where: { $0.id == promoId }) else { continue }
+                            let totalSavings = items.reduce(0) { $0 + ($1.item.promotionDiscount ?? 0) }
+                            promoGroups.append(PromotionGroup(
+                                id: promoId,
+                                promotionId: promoId,
+                                name: promo.name,
+                                type: promo.type,
+                                items: items,
+                                totalSavings: totalSavings
+                            ))
+                            for item in items {
+                                groupedIndices.insert(item.index)
+                            }
+                        }
+                        
                         let maxCourse = vm.cart.map { $0.course }.max() ?? 1
                         let showCourseHeaders = maxCourse > 1
                         
                         var lastCourse = 0
                         var lastSeat = ""
                         
-                        ForEach(Array(sortedCart.enumerated()), id: \.offset) { arrayIndex, element in
-                            let index = element.index
+                        // Build render elements with pre-calculated headers
+                        var renderElements: [CartRenderElement] = []
+                        var renderedPromoIds = Set<String>()
+                        
+                        for (_, element) in sortedCart.enumerated() {
                             let item = element.item
-                            let itemCourse = item.course
-                            
-                            // Check if we need to show headers
-                            let showCourseHeader = showCourseHeaders && itemCourse != lastCourse
-                            let showSeatHeader = vm.selectedTable != nil && item.seat != lastSeat
-                            
-                            // Update tracking variables
-                            let _ = {
-                                if showCourseHeader {
-                                    lastCourse = itemCourse
-                                    lastSeat = "" // Reset seat when course changes
+                            if let promoId = item.promotionId, !renderedPromoIds.contains(promoId) {
+                                if let group = promoGroups.first(where: { $0.promotionId == promoId }) {
+                                    let firstItem = group.items.first?.item
+                                    let showCourseHeader = showCourseHeaders && (firstItem?.course ?? 0) != lastCourse
+                                    let showSeatHeader = vm.selectedTable != nil && (firstItem?.seat ?? "") != lastSeat
+                                    if showCourseHeader { lastCourse = firstItem?.course ?? 0; lastSeat = "" }
+                                    if showSeatHeader { lastSeat = firstItem?.seat ?? "" }
+                                    renderElements.append(.promotionGroup(group, showCourseHeader: showCourseHeader, showSeatHeader: showSeatHeader))
+                                    renderedPromoIds.insert(promoId)
                                 }
-                                if showSeatHeader {
-                                    lastSeat = item.seat
-                                }
-                            }()
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                if showCourseHeader {
-                                    HStack(spacing: 6) {
-                                        Text("T\(itemCourse)")
-                                            .font(.caption.weight(.bold))
-                                        Text("•")
-                                            .foregroundColor(Color(white: 0.4))
-                                        Text("Tiempo \(itemCourse)")
-                                            .font(.caption.weight(.semibold))
+                            } else if item.promotionId == nil {
+                                let showCourseHeader = showCourseHeaders && item.course != lastCourse
+                                let showSeatHeader = vm.selectedTable != nil && item.seat != lastSeat
+                                if showCourseHeader { lastCourse = item.course; lastSeat = "" }
+                                if showSeatHeader { lastSeat = item.seat }
+                                renderElements.append(.item(element.index, item, showCourseHeader: showCourseHeader, showSeatHeader: showSeatHeader))
+                            }
+                        }
+                        
+                        ForEach(Array(renderElements.enumerated()), id: \.offset) { arrayIndex, renderElement in
+                            switch renderElement {
+                            case .promotionGroup(let group, let showCourseHeader, let showSeatHeader):
+                                VStack(alignment: .leading, spacing: 4) {
+                                    if showCourseHeader, let firstItem = group.items.first?.item {
+                                        HStack(spacing: 6) {
+                                            Text("T\(firstItem.course)")
+                                                .font(.caption.weight(.bold))
+                                            Text("•")
+                                                .foregroundColor(Color(white: 0.4))
+                                            Text("Tiempo \(firstItem.course)")
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                        .foregroundColor(.green)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 6)
+                                        .background(Color.green.opacity(0.1))
+                                        .cornerRadius(8)
+                                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.3), lineWidth: 1))
+                                        .padding(.top, arrayIndex == 0 ? 0 : 8)
                                     }
-                                    .foregroundColor(.green)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 6)
-                                    .background(Color.green.opacity(0.1))
-                                    .cornerRadius(8)
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.3), lineWidth: 1))
-                                    .padding(.top, arrayIndex == 0 ? 0 : 8)
-                                }
-                                
-                                if showSeatHeader {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: item.seat == "C" ? "fork.knife" : "person.fill")
-                                            .font(.caption2)
-                                        Text(item.seat == "C" ? "Centro (compartido)" : "Asiento \(item.seat)")
-                                            .font(.caption.weight(.semibold))
+                                    
+                                    if showSeatHeader, let firstItem = group.items.first?.item {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: firstItem.seat == "C" ? "fork.knife" : "person.fill")
+                                                .font(.caption2)
+                                            Text(firstItem.seat == "C" ? "Centro (compartido)" : "Asiento \(firstItem.seat)")
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                        .foregroundColor(firstItem.seat == "C" ? .orange : .blue)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .padding(.top, showCourseHeader ? 4 : (arrayIndex == 0 ? 0 : 8))
                                     }
-                                    .foregroundColor(item.seat == "C" ? .orange : .blue)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .padding(.top, showCourseHeader ? 4 : (arrayIndex == 0 ? 0 : 8))
+                                    
+                                    PromotionGroupView(group: group, vm: vm)
+                                        .padding(.top, 4)
                                 }
-                                
-                                CartItemRow(item: item, index: index, vm: vm)
+                            
+                            case .item(let index, let item, let showCourseHeader, let showSeatHeader):
+                                VStack(alignment: .leading, spacing: 4) {
+                                    if showCourseHeader {
+                                        HStack(spacing: 6) {
+                                            Text("T\(item.course)")
+                                                .font(.caption.weight(.bold))
+                                            Text("•")
+                                                .foregroundColor(Color(white: 0.4))
+                                            Text("Tiempo \(item.course)")
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                        .foregroundColor(.green)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 6)
+                                        .background(Color.green.opacity(0.1))
+                                        .cornerRadius(8)
+                                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.3), lineWidth: 1))
+                                        .padding(.top, arrayIndex == 0 ? 0 : 8)
+                                    }
+                                    
+                                    if showSeatHeader {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: item.seat == "C" ? "fork.knife" : "person.fill")
+                                                .font(.caption2)
+                                            Text(item.seat == "C" ? "Centro (compartido)" : "Asiento \(item.seat)")
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                        .foregroundColor(item.seat == "C" ? .orange : .blue)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .padding(.top, showCourseHeader ? 4 : (arrayIndex == 0 ? 0 : 8))
+                                    }
+                                    
+                                    CartItemRow(item: item, index: index, vm: vm)
+                                }
                             }
                         }
                     }
@@ -478,243 +548,9 @@ struct CartView: View {
     }
 }
 
-struct CartItemRow: View {
-    let item: CartItem
-    let index: Int
-    @ObservedObject var vm: POSViewModel
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Row 1: Product name + price + trash
-            HStack(alignment: .top, spacing: 8) {
-                Text("\(item.quantity)×")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.gray)
-                
-                Text(item.productName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                Spacer()
-                
-                Text(vm.formatCurrency(item.unitPrice * Double(item.quantity)))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(item.isGuest ? .gray : .white)
-                    .strikethrough(item.isGuest)
-                
-                Button { vm.removeFromCart(at: index) } label: {
-                    Image(systemName: "trash")
-                        .font(.caption)
-                        .foregroundColor(.red.opacity(0.7))
-                }
-            }
-            
-            // Modifiers
-            if let f = item.frostingName {
-                HStack(spacing: 4) {
-                    Text("↳").foregroundColor(.gray)
-                    Text(f)
-                }.font(.caption2).foregroundColor(Color(white: 0.55))
-            }
-            if let t = item.dryToppingName {
-                HStack(spacing: 4) {
-                    Text("↳").foregroundColor(.gray)
-                    Text(t)
-                }.font(.caption2).foregroundColor(Color(white: 0.55))
-            }
-            if let e = item.extraName {
-                HStack(spacing: 4) {
-                    Text("↳").foregroundColor(.gray)
-                    Text(e)
-                }.font(.caption2).foregroundColor(Color(white: 0.55))
-            }
-            
-            // Custom modifiers
-            if let cm = item.customModifiers,
-               let data = cm.data(using: .utf8),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                ForEach(Array(json.keys.sorted()), id: \.self) { key in
-                    if let stepDict = json[key] as? [String: Any],
-                       let options = stepDict["options"] as? [[String: Any]] {
-                        ForEach(Array(options.enumerated()), id: \.offset) { _, opt in
-                            if let name = opt["name"] as? String {
-                                HStack(spacing: 4) {
-                                    Text("↳").foregroundColor(.gray)
-                                    Text(name)
-                                }.font(.caption2).foregroundColor(Color(white: 0.55))
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Notes
-            if !item.notes.isEmpty {
-                HStack(spacing: 4) {
-                    Text("↳")
-                        .font(.caption2)
-                        .foregroundColor(.orange.opacity(0.8))
-                    Text(item.notes)
-                        .italic()
-                        .font(.caption2)
-                        .foregroundColor(.orange.opacity(0.9))
-                }
-            }
-            
-            // Status badge
-            if item.sentToKitchen {
-                HStack(spacing: 6) {
-                    if item.deliveredToTable {
-                        Label("Entregado", systemImage: "checkmark.circle.fill")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundColor(.blue)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.blue.opacity(0.12))
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.blue.opacity(0.2), lineWidth: 1))
-                    } else if item.orderStatus == "ready" {
-                        Label("Listo", systemImage: "checkmark.circle.fill")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundColor(.green)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.green.opacity(0.12))
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.green.opacity(0.2), lineWidth: 1))
-                    } else {
-                        Label("En cocina", systemImage: "frying.pan")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundColor(.orange)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.orange.opacity(0.12))
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.orange.opacity(0.2), lineWidth: 1))
-                    }
-                    
-                    Spacer()
-                    
-                    Text(vm.formatCurrency(item.unitPrice) + " c/u")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
-                }
-            }
-            
-            // Quantity controls — only if NOT sent to kitchen
-            if !item.sentToKitchen {
-                HStack(spacing: 8) {
-                    Button {
-                        vm.updateCartQuantity(at: index, delta: -1)
-                    } label: {
-                        Image(systemName: "minus")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 28, height: 28)
-                            .background(Circle().fill(Color.red.opacity(0.15)))
-                            .overlay(Circle().stroke(Color.red.opacity(0.3), lineWidth: 1))
-                    }
-                    
-                    Text("\(item.quantity)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                        .frame(minWidth: 24)
-                    
-                    Button {
-                        vm.updateCartQuantity(at: index, delta: 1)
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 28, height: 28)
-                            .background(Circle().fill(Color.blue.opacity(0.15)))
-                            .overlay(Circle().stroke(Color.blue.opacity(0.3), lineWidth: 1))
-                    }
-                    
-                    Spacer()
-                    
-                    Text(vm.formatCurrency(item.unitPrice) + " c/u")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
-                }
-            }
-        }
-        .padding(12)
-        .background(Color.white.opacity(0.04))
-        .cornerRadius(10)
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08), lineWidth: 1))
-        .contextMenu {
-            // Only show context menu if item hasn't been sent to kitchen
-            if !item.sentToKitchen {
-                // Change seat submenu
-                if vm.selectedTable != nil && vm.guestCount > 0 {
-                    Menu {
-                        ForEach(1...vm.guestCount, id: \.self) { seatNum in
-                            Button {
-                                vm.changeSeat(at: index, to: "A\(seatNum)")
-                            } label: {
-                                HStack {
-                                    Text("Asiento A\(seatNum)")
-                                    if item.seat == "A\(seatNum)" {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                        Button {
-                            vm.changeSeat(at: index, to: "C")
-                        } label: {
-                            HStack {
-                                Text("Centro (compartido)")
-                                if item.seat == "C" {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    } label: {
-                        Label("Cambiar Asiento", systemImage: "person.fill")
-                    }
-                }
-                
-                // Change course submenu
-                Menu {
-                    ForEach(1...5, id: \.self) { courseNum in
-                        Button {
-                            vm.changeCourse(at: index, to: courseNum)
-                        } label: {
-                            HStack {
-                                Text("Tiempo \(courseNum)")
-                                if item.course == courseNum {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Label("Cambiar Tiempo", systemImage: "clock.fill")
-                }
-                
-                Divider()
-                
-                Button(role: .destructive) {
-                    vm.removeFromCart(at: index)
-                } label: {
-                    Label("Eliminar", systemImage: "trash")
-                }
-            } else {
-                Text("Item ya enviado a cocina")
-                    .foregroundColor(.gray)
-            }
-        }
-        .alert(vm.selectedTable != nil ? "¿Liberar Mesa?" : "¿Liberar Orden?", isPresented: $vm.showingReleaseConfirmation) {
-            Button("Cancelar", role: .cancel) { }
-            Button("Liberar", role: .destructive) {
-                vm.executeReleaseTable()
-            }
-        } message: {
-            let orderType = vm.selectedTable != nil ? "Mesa \(vm.selectedTable!.number)" : "Orden Para Llevar"
-            Text("¿Liberar \(orderType)?\n\nHay \(vm.cart.count) items en el carrito que se perderán.")
-        }
-    }
+// MARK: - Cart Render Element (for grouping promotions)
+
+enum CartRenderElement {
+    case promotionGroup(PromotionGroup, showCourseHeader: Bool, showSeatHeader: Bool)
+    case item(Int, CartItem, showCourseHeader: Bool, showSeatHeader: Bool)
 }

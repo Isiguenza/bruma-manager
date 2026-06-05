@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { orders } from "@/lib/db/schema";
+import { orders, orderItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 export async function PATCH(
@@ -35,6 +35,15 @@ export async function PATCH(
       .returning();
 
     console.log(`✅ Orden DESPUÉS: id=${order.id}, status=${order.status}, tableId=${order.tableId}`);
+
+    // Si la orden se marca como delivered o cancelled, sacar items de Dispatch/cocina
+    if (status === "delivered" || status === "cancelled") {
+      await db
+        .update(orderItems)
+        .set({ deliveredToTable: true })
+        .where(eq(orderItems.orderId, id));
+      console.log(`✅ Items de orden ${id} marcados como deliveredToTable (status: ${status})`);
+    }
 
     return NextResponse.json(order);
   } catch (error) {

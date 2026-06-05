@@ -50,6 +50,18 @@ export async function GET(request: NextRequest) {
     if (startDate) {
       console.log("📅 Filtrando desde fecha:", startDate);
       whereClauses.push(gte(orders.createdAt, new Date(startDate)));
+    } else if (status) {
+      // Para Dispatch/cocina: si se filtra por status activo y no hay startDate,
+      // limitar automáticamente al día actual para evitar traer órdenes viejas
+      const statuses = status.split(",") as string[];
+      const activeKitchenStatuses = ["pending", "preparing", "ready"];
+      const hasKitchenStatus = statuses.some((s) => activeKitchenStatuses.includes(s));
+      if (hasKitchenStatus) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        console.log("📅 Auto-filtrando desde inicio del día:", today.toISOString());
+        whereClauses.push(gte(orders.createdAt, today));
+      }
     }
     
     if (userId) {
