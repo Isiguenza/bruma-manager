@@ -1431,7 +1431,8 @@ class POSViewModel: ObservableObject {
             cart[i].originalPrice = nil
             cart[i].promotionDiscount = nil
         }
-        cart = PromotionEngine.applyPromotions(cartItems: cart, promotions: activePromotions)
+        let productCategoryMap = Dictionary(uniqueKeysWithValues: products.map { ($0.id, $0.categoryId) })
+        cart = PromotionEngine.applyPromotions(cartItems: cart, promotions: activePromotions, productCategoryMap: productCategoryMap)
     }
     
     // MARK: - Remove Promotion from Group

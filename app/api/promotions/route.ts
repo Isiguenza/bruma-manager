@@ -82,6 +82,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (type === "combo") {
+      if (!buyQuantity || buyQuantity < 2) {
+        return NextResponse.json(
+          { error: "buyQuantity >= 2 es requerido para tipo combo" },
+          { status: 400 }
+        );
+      }
+      if (!discountPercentage && !discountAmount) {
+        return NextResponse.json(
+          { error: "discountPercentage o discountAmount es requerido para tipo combo" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Apply-to validation
     if (applyTo === "specific_products" && !productIds) {
       return NextResponse.json(

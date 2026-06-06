@@ -461,6 +461,7 @@ export default function PromotionsPage() {
                   <SelectItem value="buy_x_get_y">Compra X Lleva Y (2x1, 3x2)</SelectItem>
                   <SelectItem value="percentage_discount">% Descuento</SelectItem>
                   <SelectItem value="fixed_discount">$ Descuento Fijo</SelectItem>
+                  <SelectItem value="combo">Combo (X + Y = descuento)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -510,6 +511,44 @@ export default function PromotionsPage() {
                   min="0"
                 />
               </div>
+            )}
+
+            {formData.type === "combo" && (
+              <>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Items requeridos</Label>
+                    <Input
+                      type="number"
+                      value={formData.buyQuantity}
+                      onChange={(e) => setFormData({ ...formData, buyQuantity: parseInt(e.target.value) })}
+                      min="2"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>% Descuento</Label>
+                    <Input
+                      type="number"
+                      value={formData.discountPercentage}
+                      onChange={(e) => setFormData({ ...formData, discountPercentage: parseFloat(e.target.value) })}
+                      min="0"
+                      max="100"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>$ Descuento</Label>
+                    <Input
+                      type="number"
+                      value={formData.discountAmount}
+                      onChange={(e) => setFormData({ ...formData, discountAmount: parseFloat(e.target.value) })}
+                      min="0"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Aplica si el carrito tiene al menos los items seleccionados. El descuento se aplica a los items más baratos del combo.
+                </p>
+              </>
             )}
 
             {/* Apply To */}
