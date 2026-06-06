@@ -6,6 +6,7 @@ struct PromotionGroup: Identifiable {
     let name: String
     let type: String // "buy_x_get_y", "percentage_discount", "fixed_discount", "combo"
     let course: Int
+    let seat: String
     let items: [(index: Int, item: CartItem)]
     let totalSavings: Double
 }

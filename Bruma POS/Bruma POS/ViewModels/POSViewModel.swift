@@ -229,15 +229,17 @@ class POSViewModel: ObservableObject {
                 return false
             }
         
-        // Build promotion groups (grouped by promoId + course)
+        // Build promotion groups (grouped by promoId + course + seat)
         let promoItems = sortedCart.filter { $0.item.promotionId != nil }
-        let promoDict = Dictionary(grouping: promoItems) { "\($0.item.promotionId!)_\($0.item.course)" }
+        let promoDict = Dictionary(grouping: promoItems) { "\($0.item.promotionId!)|\($0.item.course)|\($0.item.seat)" }
         var promoGroups: [PromotionGroup] = []
         
         for (key, items) in promoDict {
-            let parts = key.split(separator: "_", maxSplits: 1)
+            let parts = key.split(separator: "|")
+            guard parts.count >= 3 else { continue }
             let promoId = String(parts[0])
             let course = Int(parts[1]) ?? 0
+            let seat = String(parts[2])
             guard let promo = activePromotions.first(where: { $0.id == promoId }) else { continue }
             let totalSavings = items.reduce(0) { $0 + ($1.item.promotionDiscount ?? 0) }
             promoGroups.append(PromotionGroup(
@@ -246,6 +248,7 @@ class POSViewModel: ObservableObject {
                 name: promo.name,
                 type: promo.type,
                 course: course,
+                seat: seat,
                 items: items,
                 totalSavings: totalSavings
             ))
@@ -255,21 +258,22 @@ class POSViewModel: ObservableObject {
         let showCourseHeaders = maxCourse > 1
         
         var renderElements: [CartRenderElement] = []
-        var renderedPromoIds = Set<String>()
+        var renderedPromoKeys = Set<String>()
         var lastCourse = 0
         var lastSeat = ""
         
         for (_, element) in sortedCart.enumerated() {
             let item = element.item
-            if let promoId = item.promotionId, !renderedPromoIds.contains("\(promoId)_\(item.course)") {
-                if let group = promoGroups.first(where: { $0.promotionId == promoId && $0.course == item.course }) {
+            let promoKey = "\(item.promotionId ?? "")|\(item.course)|\(item.seat)"
+            if let promoId = item.promotionId, !renderedPromoKeys.contains(promoKey) {
+                if let group = promoGroups.first(where: { $0.promotionId == promoId && $0.course == item.course && $0.seat == item.seat }) {
                     let firstItem = group.items.first?.item
                     let showCourseHeader = showCourseHeaders && (firstItem?.course ?? 0) != lastCourse
                     let showSeatHeader = selectedTable != nil && (firstItem?.seat ?? "") != lastSeat
                     if showCourseHeader { lastCourse = firstItem?.course ?? 0; lastSeat = "" }
                     if showSeatHeader { lastSeat = firstItem?.seat ?? "" }
                     renderElements.append(.promotionGroup(group, showCourseHeader: showCourseHeader, showSeatHeader: showSeatHeader))
-                    renderedPromoIds.insert("\(promoId)_\(item.course)")
+                    renderedPromoKeys.insert(promoKey)
                 }
             } else if item.promotionId == nil {
                 let showCourseHeader = showCourseHeaders && item.course != lastCourse
@@ -308,7 +312,9 @@ class POSViewModel: ObservableObject {
     }
     
     var totalDiscount: Double {
-        totalPromotionDiscount + flexibleDiscountAmount
+        // NOTE: PromotionEngine already modifies unitPrice, so totalPromotionDiscount
+        // is accounted for in cartTotal. We only add flexible/manual discounts here.
+        flexibleDiscountAmount
     }
     
     var deliveryFeeAmount: Double {
@@ -1924,7 +1930,13 @@ class POSViewModel: ObservableObject {
             }
         }
         
-        let subtotal = seatGroups.values.flatMap { $0.values }.filter { !($0.isGuest ?? false) }.reduce(0.0) { $0 + $1.total }
+        // Use originalPrice * qty - promotionDiscount so buy_x_get_y partial-qty promos are correct.
+        // For promos that modify unitPrice (percentage/fixed), originalPrice * qty - promoDiscount gives same result.
+        let subtotal = seatGroups.values.flatMap { $0.values }.filter { !($0.isGuest ?? false) }.reduce(0.0) { sum, item in
+            let basePrice = item.originalPrice ?? item.price
+            let promoDiscount = item.promotionDiscount ?? 0
+            return sum + (basePrice * Double(item.qty) - promoDiscount)
+        }
         
         let discountData: [String: Any]? = selectedDiscount.map { d in
             ["name": d.name, "amount": Int(flexibleDiscountAmount)]
@@ -1986,7 +1998,11 @@ class POSViewModel: ObservableObject {
             itemsBySeat[seat]?.append(dict)
         }
         
-        let subtotal = cart.reduce(0.0) { $0 + (Double($1.quantity) * $1.unitPrice) }
+        let subtotal = cart.filter { !$0.isGuest }.reduce(0.0) { sum, item in
+            let basePrice = item.originalPrice ?? item.unitPrice
+            let promoDiscount = item.promotionDiscount ?? 0
+            return sum + (basePrice * Double(item.quantity) - promoDiscount)
+        }
         let preTicketTotal = subtotal + deliveryFeeAmount
         
         await PrintService.shared.printTicket(

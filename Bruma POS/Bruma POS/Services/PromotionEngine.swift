@@ -5,10 +5,10 @@ class PromotionEngine {
     static func applyPromotions(cartItems: [CartItem], promotions: [Promotion]) -> [CartItem] {
         if promotions.isEmpty { return cartItems }
         
-        // Group items by product AND price
+        // Group items by product + price + seat so promos are evaluated independently per seat
         var itemsByProduct: [String: [(index: Int, item: CartItem)]] = [:]
         for (index, item) in cartItems.enumerated() {
-            let key = "\(item.productId)_\(item.unitPrice)"
+            let key = "\(item.productId)_\(item.unitPrice)_\(item.seat)"
             itemsByProduct[key, default: []].append((index, item))
         }
         

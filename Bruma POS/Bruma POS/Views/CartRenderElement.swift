@@ -7,7 +7,7 @@ enum CartRenderElement: Identifiable {
     var id: String {
         switch self {
         case .promotionGroup(let group, _, _):
-            return "promo_\(group.promotionId)"
+            return "promo_\(group.promotionId)_\(group.seat)_\(group.course)"
         case .item(let index, let item, _, _):
             return "item_\(index)_\(item.productId)_\(item.course)_\(item.seat)"
         }

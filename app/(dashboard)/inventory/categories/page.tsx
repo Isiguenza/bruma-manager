@@ -32,6 +32,9 @@ import {
   CheckCircle,
   XCircle,
   Package,
+  ArrowUp,
+  ArrowDown,
+  ArrowCounterClockwise,
 } from "@phosphor-icons/react";
 import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
@@ -64,6 +67,8 @@ export default function CategoriesPage() {
     sortOrder: 0,
     isBeverage: false,
   });
+  const [orderedCategories, setOrderedCategories] = useState<Category[]>([]);
+  const [savingOrder, setSavingOrder] = useState(false);
 
   useEffect(() => {
     fetchCategories();
@@ -75,6 +80,7 @@ export default function CategoriesPage() {
       if (res.ok) {
         const data = await res.json();
         setCategories(data);
+        setOrderedCategories(data);
       }
     } catch (error) {
       toast.error("Error cargando categorías");
@@ -119,6 +125,40 @@ export default function CategoriesPage() {
     } catch (error) {
       toast.error("Error eliminando categoría");
     }
+  }
+
+  function moveCategory(index: number, direction: -1 | 1) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= orderedCategories.length) return;
+    const newArr = [...orderedCategories];
+    [newArr[index], newArr[newIndex]] = [newArr[newIndex], newArr[index]];
+    setOrderedCategories(newArr);
+  }
+
+  async function handleSaveOrder() {
+    setSavingOrder(true);
+    try {
+      const orders = orderedCategories.map((cat, idx) => ({
+        id: cat.id,
+        sortOrder: idx,
+      }));
+      const res = await fetch("/api/categories/reorder", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Orden guardado");
+      fetchCategories();
+    } catch {
+      toast.error("Error guardando orden");
+    } finally {
+      setSavingOrder(false);
+    }
+  }
+
+  function handleResetOrder() {
+    setOrderedCategories(categories);
   }
 
   function handleEdit(category: Category) {
@@ -345,6 +385,78 @@ export default function CategoriesPage() {
       </div>
 
       {/* Divider */}
+      <div className="border-t" />
+
+      {/* Reorder Section */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Orden de categorías</h2>
+            <p className="text-sm text-muted-foreground">
+              Usa las flechas para ordenar. El orden se refleja en el POS.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetOrder}
+              disabled={savingOrder}
+            >
+              <ArrowCounterClockwise className="size-4 mr-1" />
+              Restaurar
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveOrder}
+              disabled={savingOrder}
+            >
+              {savingOrder ? "Guardando..." : "Guardar orden"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="rounded-lg border bg-card">
+          {orderedCategories.map((category, index) => (
+            <div
+              key={category.id}
+              className={`flex items-center gap-3 px-4 py-3 ${
+                index !== orderedCategories.length - 1 ? "border-b" : ""
+              }`}
+            >
+              <div
+                className="size-3 rounded-full flex-shrink-0"
+                style={{ backgroundColor: category.color || "#6B7280" }}
+              />
+              <span className="flex-1 font-medium">{category.name}</span>
+              {category.isBeverage && (
+                <BeerStein className="size-4 text-cyan-500" weight="fill" />
+              )}
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => moveCategory(index, -1)}
+                  disabled={index === 0}
+                >
+                  <ArrowUp className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => moveCategory(index, 1)}
+                  disabled={index === orderedCategories.length - 1}
+                >
+                  <ArrowDown className="size-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="border-t" />
 
       {/* Categories Grid */}
