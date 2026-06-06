@@ -647,9 +647,11 @@ export default function PromotionsPage() {
 
                             {/* Add selector */}
                             {availableOptions.length > 0 && (
-                              <Select
+                              <select
+                                className="h-8 w-full text-sm rounded-md border border-input bg-background px-3 py-1"
                                 value=""
-                                onValueChange={(val) => {
+                                onChange={(e) => {
+                                  const val = e.target.value;
                                   if (!val) return;
                                   const rules = [...formData.comboRules];
                                   if (hasProducts) {
@@ -660,17 +662,14 @@ export default function PromotionsPage() {
                                     rules[idx] = { ...rules[idx], categoryIds: [...current, val], categoryId: undefined };
                                   }
                                   setFormData({ ...formData, comboRules: rules });
+                                  e.target.value = "";
                                 }}
                               >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="+ Agregar..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {availableOptions.map((opt) => (
-                                    <SelectItem key={opt.id} value={opt.id}>{opt.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                                <option value="">+ Agregar...</option>
+                                {availableOptions.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>{opt.name}</option>
+                                ))}
+                              </select>
                             )}
                           </div>
                         )}
