@@ -99,6 +99,13 @@
       "when": 1778286084090,
       "tag": "0013_whole_iron_man",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779286084090,
+      "tag": "0014_add_combo_rules_to_promotions",
+      "breakpoints": true
     }
   ]
 }

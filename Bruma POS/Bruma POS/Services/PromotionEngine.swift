@@ -180,20 +180,29 @@ class PromotionEngine {
             let neededQty = rule.quantity
             var remainingNeeded = neededQty
             
-            if let productId = rule.productId {
-                // Rule requires specific product
-                guard let productItems = qtyByProduct[productId] else { return }
-                var totalAvailable = productItems.reduce(0) { $0 + $1.item.quantity }
-                // Subtract already consumed from this product
+            let productIds = rule.allProductIds
+            let categoryIds = rule.allCategoryIds
+            
+            if !productIds.isEmpty {
+                // Rule requires specific product(s) — any of them (OR logic)
+                var allProductItems: [(index: Int, item: CartItem)] = []
+                for pid in productIds {
+                    if let itemsForProduct = qtyByProduct[pid] {
+                        allProductItems.append(contentsOf: itemsForProduct)
+                    }
+                }
+                guard !allProductItems.isEmpty else { return }
+                
+                var totalAvailable = allProductItems.reduce(0) { $0 + $1.item.quantity }
                 for consumed in consumedItems {
-                    if productItems.contains(where: { $0.index == consumed.index }) {
+                    if allProductItems.contains(where: { $0.index == consumed.index }) {
                         totalAvailable -= consumed.qty
                     }
                 }
                 guard totalAvailable >= remainingNeeded else { return }
                 
-                // Consume from cheapest first
-                let sorted = productItems.sorted { $0.item.unitPrice < $1.item.unitPrice }
+                // Consume from cheapest first across all matching products
+                let sorted = allProductItems.sorted { $0.item.unitPrice < $1.item.unitPrice }
                 for entry in sorted {
                     if remainingNeeded <= 0 { break }
                     let alreadyConsumed = consumedItems.filter { $0.index == entry.index }.reduce(0) { $0 + $1.qty }
@@ -204,9 +213,15 @@ class PromotionEngine {
                         remainingNeeded -= take
                     }
                 }
-            } else if let categoryId = rule.categoryId {
-                // Rule requires items from a category
-                let categoryItems = items.filter { productCategoryMap[$0.item.productId] == categoryId }
+            } else if !categoryIds.isEmpty {
+                // Rule requires items from category(s) — any of them (OR logic)
+                let categoryItems = items.filter { entry in
+                    guard let catIdOpt = productCategoryMap[entry.item.productId],
+                          let catId = catIdOpt else { return false }
+                    return categoryIds.contains(catId)
+                }
+                guard !categoryItems.isEmpty else { return }
+                
                 var totalAvailable = categoryItems.reduce(0) { $0 + $1.item.quantity }
                 for consumed in consumedItems {
                     if categoryItems.contains(where: { $0.index == consumed.index }) {
@@ -215,6 +230,7 @@ class PromotionEngine {
                 }
                 guard totalAvailable >= remainingNeeded else { return }
                 
+                // Consume from cheapest first across all matching categories
                 let sorted = categoryItems.sorted { $0.item.unitPrice < $1.item.unitPrice }
                 for entry in sorted {
                     if remainingNeeded <= 0 { break }

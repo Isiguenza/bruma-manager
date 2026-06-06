@@ -21,6 +21,50 @@ struct Promotion: Codable, Identifiable {
     let priority: Int?
     let comboRules: String? // JSON array: [{productId?, categoryId?, quantity}]
     
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, type, buyQuantity, getQuantity
+        case discountPercentage, discountAmount, applyTo
+        case productIds, categoryId, active
+        case startDate, endDate, daysOfWeek, startTime, endTime
+        case priority, comboRules
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        type = try container.decode(String.self, forKey: .type)
+        buyQuantity = try container.decodeIfPresent(Int.self, forKey: .buyQuantity)
+        getQuantity = try container.decodeIfPresent(Int.self, forKey: .getQuantity)
+        
+        // Handle discountPercentage as String or Double
+        if let stringVal = try? container.decode(String.self, forKey: .discountPercentage) {
+            discountPercentage = Double(stringVal)
+        } else {
+            discountPercentage = try container.decodeIfPresent(Double.self, forKey: .discountPercentage)
+        }
+        
+        // Handle discountAmount as String or Double
+        if let stringVal = try? container.decode(String.self, forKey: .discountAmount) {
+            discountAmount = Double(stringVal)
+        } else {
+            discountAmount = try container.decodeIfPresent(Double.self, forKey: .discountAmount)
+        }
+        
+        applyTo = try container.decode(String.self, forKey: .applyTo)
+        productIds = try container.decodeIfPresent(String.self, forKey: .productIds)
+        categoryId = try container.decodeIfPresent(String.self, forKey: .categoryId)
+        active = try container.decode(Bool.self, forKey: .active)
+        startDate = try container.decodeIfPresent(String.self, forKey: .startDate)
+        endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
+        daysOfWeek = try container.decodeIfPresent(String.self, forKey: .daysOfWeek)
+        startTime = try container.decodeIfPresent(String.self, forKey: .startTime)
+        endTime = try container.decodeIfPresent(String.self, forKey: .endTime)
+        priority = try container.decodeIfPresent(Int.self, forKey: .priority)
+        comboRules = try container.decodeIfPresent(String.self, forKey: .comboRules)
+    }
+    
     var parsedProductIds: [String] {
         guard let productIds = productIds,
               let data = productIds.data(using: .utf8),
@@ -44,9 +88,27 @@ struct Promotion: Codable, Identifiable {
 }
 
 struct ComboRule: Codable {
-    let productId: String?
-    let categoryId: String?
+    let productId: String?         // legacy single product
+    let productIds: [String]?      // multiple product options (OR)
+    let categoryId: String?        // legacy single category
+    let categoryIds: [String]?      // multiple category options (OR)
     let quantity: Int
+    
+    /// All product IDs to check for this rule (legacy + array combined)
+    var allProductIds: [String] {
+        var ids: [String] = []
+        if let productId = productId { ids.append(productId) }
+        if let productIds = productIds { ids.append(contentsOf: productIds) }
+        return ids
+    }
+    
+    /// All category IDs to check for this rule (legacy + array combined)
+    var allCategoryIds: [String] {
+        var ids: [String] = []
+        if let categoryId = categoryId { ids.append(categoryId) }
+        if let categoryIds = categoryIds { ids.append(contentsOf: categoryIds) }
+        return ids
+    }
 }
 
 struct Discount: Codable, Identifiable {

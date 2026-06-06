@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X } from "lucide-react";
 import { Tag, CheckCircle, XCircle, TrendUp } from "@phosphor-icons/react";
 import type { Promotion, Product, Category } from "@/lib/types";
 
@@ -52,7 +52,7 @@ export default function PromotionsPage() {
     startTime: "",
     endTime: "",
     priority: 0,
-    comboRules: [] as { productId?: string; categoryId?: string; quantity: number }[],
+    comboRules: [] as { productId?: string; productIds?: string[]; categoryId?: string; categoryIds?: string[]; quantity: number }[],
   });
 
   useEffect(() => {
@@ -543,105 +543,144 @@ export default function PromotionsPage() {
                     </p>
                   )}
 
-                  {formData.comboRules.map((rule, idx) => (
-                    <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                      <div className="col-span-4 space-y-1">
-                        <Label className="text-xs">Tipo</Label>
-                        <Select
-                          value={rule.productId ? "product" : rule.categoryId ? "category" : ""}
-                          onValueChange={(val) => {
-                            const rules = [...formData.comboRules];
-                            if (val === "product") {
-                              rules[idx] = { ...rules[idx], productId: products[0]?.id, categoryId: undefined };
-                            } else if (val === "category") {
-                              rules[idx] = { ...rules[idx], categoryId: categories[0]?.id, productId: undefined };
-                            }
-                            setFormData({ ...formData, comboRules: rules });
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecciona" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="product">Producto</SelectItem>
-                            <SelectItem value="category">Categoría</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                  {formData.comboRules.map((rule, idx) => {
+                    const hasProducts = (rule.productIds?.length ?? 0) > 0 || !!rule.productId;
+                    const hasCategories = (rule.categoryIds?.length ?? 0) > 0 || !!rule.categoryId;
+                    const ruleType = hasProducts ? "product" : hasCategories ? "category" : "";
+                    const selectedIds = hasProducts
+                      ? (rule.productIds ?? (rule.productId ? [rule.productId] : []))
+                      : (rule.categoryIds ?? (rule.categoryId ? [rule.categoryId] : []));
+                    const availableOptions = hasProducts
+                      ? products.filter((p) => !selectedIds.includes(p.id))
+                      : categories.filter((c) => !selectedIds.includes(c.id));
 
-                      <div className="col-span-5 space-y-1">
-                        <Label className="text-xs">{rule.productId ? "Producto" : "Categoría"}</Label>
-                        {rule.productId ? (
-                          <Select
-                            value={rule.productId}
-                            onValueChange={(val) => {
-                              const rules = [...formData.comboRules];
-                              rules[idx] = { ...rules[idx], productId: val };
+                    return (
+                      <div key={idx} className="space-y-2 border rounded p-3 bg-muted/30">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">Regla {idx + 1}</Badge>
+                            <span className="text-xs text-muted-foreground">
+                              Cantidad requerida:
+                            </span>
+                            <Input
+                              type="number"
+                              min={1}
+                              className="w-16 h-6 text-sm"
+                              value={rule.quantity}
+                              onChange={(e) => {
+                                const rules = [...formData.comboRules];
+                                rules[idx] = { ...rules[idx], quantity: parseInt(e.target.value) || 1 };
+                                setFormData({ ...formData, comboRules: rules });
+                              }}
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive h-6 w-6"
+                            onClick={() => {
+                              const rules = formData.comboRules.filter((_, i) => i !== idx);
                               setFormData({ ...formData, comboRules: rules });
                             }}
                           >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {products.map((p) => (
-                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : rule.categoryId ? (
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+
+                        {/* Type selector */}
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs whitespace-nowrap">Tipo:</Label>
                           <Select
-                            value={rule.categoryId}
+                            value={ruleType}
                             onValueChange={(val) => {
                               const rules = [...formData.comboRules];
-                              rules[idx] = { ...rules[idx], categoryId: val };
+                              if (val === "product") {
+                                rules[idx] = { quantity: rules[idx].quantity, productIds: [] };
+                              } else if (val === "category") {
+                                rules[idx] = { quantity: rules[idx].quantity, categoryIds: [] };
+                              }
                               setFormData({ ...formData, comboRules: rules });
                             }}
                           >
-                            <SelectTrigger>
-                              <SelectValue />
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue placeholder="Selecciona" />
                             </SelectTrigger>
                             <SelectContent>
-                              {categories.map((c) => (
-                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                              ))}
+                              <SelectItem value="product">Producto(s)</SelectItem>
+                              <SelectItem value="category">Categoría(s)</SelectItem>
                             </SelectContent>
                           </Select>
-                        ) : (
-                          <div className="text-sm text-muted-foreground py-2">Selecciona tipo primero</div>
+                        </div>
+
+                        {/* Selected chips */}
+                        {ruleType && (
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap gap-1">
+                              {selectedIds.map((id) => {
+                                const label = hasProducts
+                                  ? products.find((p) => p.id === id)?.name ?? id
+                                  : categories.find((c) => c.id === id)?.name ?? id;
+                                return (
+                                  <Badge key={id} variant="outline" className="gap-1 pr-1">
+                                    {label}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const rules = [...formData.comboRules];
+                                        const newIds = selectedIds.filter((sid) => sid !== id);
+                                        if (hasProducts) {
+                                          rules[idx] = { ...rules[idx], productIds: newIds.length > 0 ? newIds : undefined, productId: undefined };
+                                        } else {
+                                          rules[idx] = { ...rules[idx], categoryIds: newIds.length > 0 ? newIds : undefined, categoryId: undefined };
+                                        }
+                                        setFormData({ ...formData, comboRules: rules });
+                                      }}
+                                      className="hover:text-destructive"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </Badge>
+                                );
+                              })}
+                            </div>
+
+                            {/* Add selector */}
+                            {availableOptions.length > 0 && (
+                              <Select
+                                value=""
+                                onValueChange={(val) => {
+                                  if (!val) return;
+                                  const rules = [...formData.comboRules];
+                                  if (hasProducts) {
+                                    const current = (rules[idx].productIds ?? (rules[idx].productId ? [rules[idx].productId] : []));
+                                    rules[idx] = { ...rules[idx], productIds: [...current, val], productId: undefined };
+                                  } else {
+                                    const current = (rules[idx].categoryIds ?? (rules[idx].categoryId ? [rules[idx].categoryId] : []));
+                                    rules[idx] = { ...rules[idx], categoryIds: [...current, val], categoryId: undefined };
+                                  }
+                                  setFormData({ ...formData, comboRules: rules });
+                                }}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="+ Agregar..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {availableOptions.map((opt) => (
+                                    <SelectItem key={opt.id} value={opt.id}>{opt.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                        )}
+
+                        {!ruleType && (
+                          <p className="text-xs text-muted-foreground">Selecciona tipo primero</p>
                         )}
                       </div>
-
-                      <div className="col-span-2 space-y-1">
-                        <Label className="text-xs">Cantidad</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={rule.quantity}
-                          onChange={(e) => {
-                            const rules = [...formData.comboRules];
-                            rules[idx] = { ...rules[idx], quantity: parseInt(e.target.value) || 1 };
-                            setFormData({ ...formData, comboRules: rules });
-                          }}
-                        />
-                      </div>
-
-                      <div className="col-span-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive"
-                          onClick={() => {
-                            const rules = formData.comboRules.filter((_, i) => i !== idx);
-                            setFormData({ ...formData, comboRules: rules });
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">

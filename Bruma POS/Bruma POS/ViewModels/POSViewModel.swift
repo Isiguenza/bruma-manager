@@ -208,7 +208,11 @@ class POSViewModel: ObservableObject {
     }
     
     var cartSubtotalBeforeDiscounts: Double {
-        cart.filter { !$0.isGuest }.reduce(0) { $0 + $1.unitPrice * Double($1.quantity) }
+        cart.filter { !$0.isGuest }.reduce(0.0) { sum, item in
+            let basePrice = item.originalPrice ?? item.unitPrice
+            let promoDiscount = item.promotionDiscount ?? 0
+            return sum + (basePrice * Double(item.quantity) - promoDiscount)
+        }
     }
     
     var cartRenderElements: [CartRenderElement] {
@@ -292,7 +296,7 @@ class POSViewModel: ObservableObject {
     }
     
     var cartTotal: Double {
-        cartSubtotalBeforeDiscounts - totalPromotionDiscount
+        cartSubtotalBeforeDiscounts
     }
     
     var flexibleDiscountAmount: Double {
@@ -312,8 +316,6 @@ class POSViewModel: ObservableObject {
     }
     
     var totalDiscount: Double {
-        // NOTE: PromotionEngine already modifies unitPrice, so totalPromotionDiscount
-        // is accounted for in cartTotal. We only add flexible/manual discounts here.
         flexibleDiscountAmount
     }
     
@@ -1820,7 +1822,11 @@ class POSViewModel: ObservableObject {
         processing = true
         Task {
             do {
-                let subtotal = cart.reduce(0.0) { $0 + $1.unitPrice * Double($1.quantity) }
+                let subtotal = cart.reduce(0.0) { sum, item in
+                    let basePrice = item.originalPrice ?? item.unitPrice
+                    let promoDiscount = item.promotionDiscount ?? 0
+                    return sum + (basePrice * Double(item.quantity) - promoDiscount)
+                }
                 try await APIService.shared.payOrder(orderId: orderId, body: [
                     "paymentMethod": "platform_delivery",
                     "subtotal": subtotal,
@@ -1846,7 +1852,10 @@ class POSViewModel: ObservableObject {
         let tipData = individualTips[pIdx] ?? IndividualTip()
         let personTotal = assignedItems.reduce(0.0) { sum, ci in
             guard ci < cart.count else { return sum }
-            return sum + cart[ci].unitPrice * Double(cart[ci].quantity)
+            let item = cart[ci]
+            let basePrice = item.originalPrice ?? item.unitPrice
+            let promoDiscount = item.promotionDiscount ?? 0
+            return sum + (basePrice * Double(item.quantity) - promoDiscount)
         }
         let tipAmt = tipData.showCustom ? (Double(tipData.custom) ?? 0) : personTotal * Double(tipData.percentage) / 100
         let finalTotal = personTotal + tipAmt
@@ -1872,7 +1881,10 @@ class POSViewModel: ObservableObject {
                     let assignedItems = itemAssignments[i] ?? []
                     let personSubtotal = assignedItems.reduce(0.0) { sum, ci in
                         guard ci < cart.count else { return sum }
-                        return sum + cart[ci].unitPrice * Double(cart[ci].quantity)
+                        let item = cart[ci]
+                        let basePrice = item.originalPrice ?? item.unitPrice
+                        let promoDiscount = item.promotionDiscount ?? 0
+                        return sum + (basePrice * Double(item.quantity) - promoDiscount)
                     }
                     let tipData = individualTips[i] ?? IndividualTip()
                     let tipAmt = tipData.showCustom ? (Double(tipData.custom) ?? 0) : personSubtotal * Double(tipData.percentage) / 100
@@ -2295,7 +2307,10 @@ class POSViewModel: ObservableObject {
         
         let subtotal = items.reduce(0.0) { sum, ci in
             guard ci < cart.count else { return sum }
-            return sum + cart[ci].unitPrice * Double(cart[ci].quantity)
+            let item = cart[ci]
+            let basePrice = item.originalPrice ?? item.unitPrice
+            let promoDiscount = item.promotionDiscount ?? 0
+            return sum + (basePrice * Double(item.quantity) - promoDiscount)
         }
         
         await PrintService.shared.printSplitTicket(
