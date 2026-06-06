@@ -653,6 +653,7 @@ export const promotions = pgTable("promotions", {
   startTime: time("start_time"),
   endTime: time("end_time"),
   priority: integer("priority").default(0),
+  comboRules: text("combo_rules"), // JSON array: [{productId?, categoryId?, quantity}]
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

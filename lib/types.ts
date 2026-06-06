@@ -335,6 +335,7 @@ export interface Promotion {
   startTime: string | null;
   endTime: string | null;
   priority: number;
+  comboRules: string | null; // JSON array: [{productId?, categoryId?, quantity}]
   createdAt: Date;
   updatedAt: Date;
 }

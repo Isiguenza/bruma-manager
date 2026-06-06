@@ -19,6 +19,7 @@ struct Promotion: Codable, Identifiable {
     let startTime: String?
     let endTime: String?
     let priority: Int?
+    let comboRules: String? // JSON array: [{productId?, categoryId?, quantity}]
     
     var parsedProductIds: [String] {
         guard let productIds = productIds,
@@ -33,6 +34,19 @@ struct Promotion: Codable, Identifiable {
               let days = try? JSONDecoder().decode([Int].self, from: data) else { return [] }
         return days
     }
+    
+    var parsedComboRules: [ComboRule] {
+        guard let comboRules = comboRules,
+              let data = comboRules.data(using: .utf8),
+              let rules = try? JSONDecoder().decode([ComboRule].self, from: data) else { return [] }
+        return rules
+    }
+}
+
+struct ComboRule: Codable {
+    let productId: String?
+    let categoryId: String?
+    let quantity: Int
 }
 
 struct Discount: Codable, Identifiable {

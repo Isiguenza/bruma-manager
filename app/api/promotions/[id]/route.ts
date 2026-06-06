@@ -80,6 +80,13 @@ export async function PATCH(
     if (body.startTime !== undefined) updateData.startTime = body.startTime || null;
     if (body.endTime !== undefined) updateData.endTime = body.endTime || null;
     if (body.priority !== undefined) updateData.priority = body.priority;
+    if (body.comboRules !== undefined) {
+      if (typeof body.comboRules === 'string') {
+        updateData.comboRules = body.comboRules || null;
+      } else {
+        updateData.comboRules = body.comboRules ? JSON.stringify(body.comboRules) : null;
+      }
+    }
 
     const [updatedPromotion] = await db
       .update(promotions)

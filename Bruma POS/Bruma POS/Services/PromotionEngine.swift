@@ -47,7 +47,7 @@ class PromotionEngine {
             case "fixed_discount":
                 applyFixedDiscount(promo: promo, items: items, updatedItems: &updatedItems)
             case "combo":
-                applyCombo(promo: promo, items: items, totalQty: totalQty, updatedItems: &updatedItems)
+                applyCombo(promo: promo, items: items, totalQty: totalQty, updatedItems: &updatedItems, productCategoryMap: productCategoryMap)
             default:
                 break
             }
@@ -144,44 +144,101 @@ class PromotionEngine {
         promo: Promotion,
         items: [(index: Int, item: CartItem)],
         totalQty: Int,
-        updatedItems: inout [CartItem]
+        updatedItems: inout [CartItem],
+        productCategoryMap: [String: String?]
     ) {
-        let buyQty = promo.buyQuantity ?? 2
-        
-        guard totalQty >= buyQty else { return }
+        let rules = promo.parsedComboRules
+        guard rules.count >= 2 else { return }
         
         let discountPercent = promo.discountPercentage ?? 0
         let discountAmt = promo.discountAmount ?? 0
+        guard discountPercent > 0 || discountAmt > 0 else { return }
         
-        // Sort items by price (cheapest first) and apply discount to the buyQty cheapest items
-        let sortedItems = items.sorted { $0.item.unitPrice < $1.item.unitPrice }
-        var remainingToDiscount = buyQty
+        // Group all eligible items by productId for rule matching
+        var qtyByProduct: [String: [(index: Int, item: CartItem)]] = [:]
+        for entry in items {
+            qtyByProduct[entry.item.productId, default: []].append(entry)
+        }
         
-        for entry in sortedItems {
-            guard remainingToDiscount > 0 else { break }
-            let qtyToDiscount = min(entry.item.quantity, remainingToDiscount)
+        // Track items consumed by each rule
+        var consumedItems: [(index: Int, qty: Int)] = []
+        
+        for rule in rules {
+            let neededQty = rule.quantity
+            var remainingNeeded = neededQty
             
-            var updated = updatedItems[entry.index]
-            let originalPrice = entry.item.unitPrice
+            if let productId = rule.productId {
+                // Rule requires specific product
+                guard let productItems = qtyByProduct[productId] else { return }
+                var totalAvailable = productItems.reduce(0) { $0 + $1.item.quantity }
+                // Subtract already consumed from this product
+                for consumed in consumedItems {
+                    if productItems.contains(where: { $0.index == consumed.index }) {
+                        totalAvailable -= consumed.qty
+                    }
+                }
+                guard totalAvailable >= remainingNeeded else { return }
+                
+                // Consume from cheapest first
+                let sorted = productItems.sorted { $0.item.unitPrice < $1.item.unitPrice }
+                for entry in sorted {
+                    if remainingNeeded <= 0 { break }
+                    let alreadyConsumed = consumedItems.filter { $0.index == entry.index }.reduce(0) { $0 + $1.qty }
+                    let available = entry.item.quantity - alreadyConsumed
+                    let take = min(available, remainingNeeded)
+                    if take > 0 {
+                        consumedItems.append((index: entry.index, qty: take))
+                        remainingNeeded -= take
+                    }
+                }
+            } else if let categoryId = rule.categoryId {
+                // Rule requires items from a category
+                let categoryItems = items.filter { productCategoryMap[$0.item.productId] == categoryId }
+                var totalAvailable = categoryItems.reduce(0) { $0 + $1.item.quantity }
+                for consumed in consumedItems {
+                    if categoryItems.contains(where: { $0.index == consumed.index }) {
+                        totalAvailable -= consumed.qty
+                    }
+                }
+                guard totalAvailable >= remainingNeeded else { return }
+                
+                let sorted = categoryItems.sorted { $0.item.unitPrice < $1.item.unitPrice }
+                for entry in sorted {
+                    if remainingNeeded <= 0 { break }
+                    let alreadyConsumed = consumedItems.filter { $0.index == entry.index }.reduce(0) { $0 + $1.qty }
+                    let available = entry.item.quantity - alreadyConsumed
+                    let take = min(available, remainingNeeded)
+                    if take > 0 {
+                        consumedItems.append((index: entry.index, qty: take))
+                        remainingNeeded -= take
+                    }
+                }
+            }
+        }
+        
+        // All rules satisfied — apply discount to consumed items (cheapest first)
+        let sortedConsumed = consumedItems.sorted { updatedItems[$0.index].unitPrice < updatedItems[$1.index].unitPrice }
+        
+        for (index, qty) in sortedConsumed {
+            var updated = updatedItems[index]
+            let originalPrice = updated.unitPrice
             
             if discountPercent > 0 {
                 let discountPerItem = (originalPrice * discountPercent) / 100
                 let newPrice = originalPrice - discountPerItem
-                updated.promotionDiscount = discountPerItem * Double(qtyToDiscount)
+                updated.promotionDiscount = discountPerItem * Double(qty)
                 updated.unitPrice = newPrice
             } else if discountAmt > 0 {
                 let newPrice = max(0, originalPrice - discountAmt)
                 let actualDiscount = originalPrice - newPrice
-                updated.promotionDiscount = actualDiscount * Double(qtyToDiscount)
+                updated.promotionDiscount = actualDiscount * Double(qty)
                 updated.unitPrice = newPrice
             }
             
             updated.promotionId = promo.id
             updated.promotionName = promo.name
             updated.originalPrice = originalPrice
-            updatedItems[entry.index] = updated
-            
-            remainingToDiscount -= qtyToDiscount
+            updatedItems[index] = updated
         }
     }
     

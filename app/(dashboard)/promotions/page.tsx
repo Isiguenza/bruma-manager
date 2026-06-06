@@ -52,6 +52,7 @@ export default function PromotionsPage() {
     startTime: "",
     endTime: "",
     priority: 0,
+    comboRules: [] as { productId?: string; categoryId?: string; quantity: number }[],
   });
 
   useEffect(() => {
@@ -119,6 +120,7 @@ export default function PromotionsPage() {
       startTime: "",
       endTime: "",
       priority: 0,
+      comboRules: [],
     });
     setShowDialog(true);
   }
@@ -143,6 +145,7 @@ export default function PromotionsPage() {
       startTime: promotion.startTime || "",
       endTime: promotion.endTime || "",
       priority: promotion.priority,
+      comboRules: promotion.comboRules ? JSON.parse(promotion.comboRules) : [],
     });
     setShowDialog(true);
   }
@@ -515,16 +518,133 @@ export default function PromotionsPage() {
 
             {formData.type === "combo" && (
               <>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Items requeridos</Label>
-                    <Input
-                      type="number"
-                      value={formData.buyQuantity}
-                      onChange={(e) => setFormData({ ...formData, buyQuantity: parseInt(e.target.value) })}
-                      min="2"
-                    />
+                <div className="space-y-3 border rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base">Items del Combo</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          comboRules: [...formData.comboRules, { quantity: 1 }],
+                        })
+                      }
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Agregar item
+                    </Button>
                   </div>
+
+                  {formData.comboRules.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      Agrega al menos 2 items para formar el combo
+                    </p>
+                  )}
+
+                  {formData.comboRules.map((rule, idx) => (
+                    <div key={idx} className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-4 space-y-1">
+                        <Label className="text-xs">Tipo</Label>
+                        <Select
+                          value={rule.productId ? "product" : rule.categoryId ? "category" : ""}
+                          onValueChange={(val) => {
+                            const rules = [...formData.comboRules];
+                            if (val === "product") {
+                              rules[idx] = { ...rules[idx], productId: products[0]?.id, categoryId: undefined };
+                            } else if (val === "category") {
+                              rules[idx] = { ...rules[idx], categoryId: categories[0]?.id, productId: undefined };
+                            }
+                            setFormData({ ...formData, comboRules: rules });
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecciona" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="product">Producto</SelectItem>
+                            <SelectItem value="category">Categoría</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="col-span-5 space-y-1">
+                        <Label className="text-xs">{rule.productId ? "Producto" : "Categoría"}</Label>
+                        {rule.productId ? (
+                          <Select
+                            value={rule.productId}
+                            onValueChange={(val) => {
+                              const rules = [...formData.comboRules];
+                              rules[idx] = { ...rules[idx], productId: val };
+                              setFormData({ ...formData, comboRules: rules });
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {products.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : rule.categoryId ? (
+                          <Select
+                            value={rule.categoryId}
+                            onValueChange={(val) => {
+                              const rules = [...formData.comboRules];
+                              rules[idx] = { ...rules[idx], categoryId: val };
+                              setFormData({ ...formData, comboRules: rules });
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="text-sm text-muted-foreground py-2">Selecciona tipo primero</div>
+                        )}
+                      </div>
+
+                      <div className="col-span-2 space-y-1">
+                        <Label className="text-xs">Cantidad</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={rule.quantity}
+                          onChange={(e) => {
+                            const rules = [...formData.comboRules];
+                            rules[idx] = { ...rules[idx], quantity: parseInt(e.target.value) || 1 };
+                            setFormData({ ...formData, comboRules: rules });
+                          }}
+                        />
+                      </div>
+
+                      <div className="col-span-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive"
+                          onClick={() => {
+                            const rules = formData.comboRules.filter((_, i) => i !== idx);
+                            setFormData({ ...formData, comboRules: rules });
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>% Descuento</Label>
                     <Input
@@ -546,7 +666,7 @@ export default function PromotionsPage() {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Aplica si el carrito tiene al menos los items seleccionados. El descuento se aplica a los items más baratos del combo.
+                  Aplica solo cuando el carrito contenga TODOS los items del combo. El descuento se aplica a los items más baratos del combo.
                 </p>
               </>
             )}

@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
       startTime,
       endTime,
       priority,
+      comboRules,
     } = body;
 
     // Validation
@@ -83,9 +84,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === "combo") {
-      if (!buyQuantity || buyQuantity < 2) {
+      if (!comboRules || !Array.isArray(comboRules) || comboRules.length < 2) {
         return NextResponse.json(
-          { error: "buyQuantity >= 2 es requerido para tipo combo" },
+          { error: "comboRules debe tener al menos 2 reglas para tipo combo" },
           { status: 400 }
         );
       }
@@ -131,6 +132,7 @@ export async function POST(request: NextRequest) {
         daysOfWeek: daysOfWeek ? JSON.stringify(daysOfWeek) : null,
         startTime: startTime || null,
         endTime: endTime || null,
+        comboRules: comboRules ? JSON.stringify(comboRules) : null,
         priority: priority || 0,
       })
       .returning();
