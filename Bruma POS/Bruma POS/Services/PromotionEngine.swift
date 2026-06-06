@@ -11,20 +11,27 @@ class PromotionEngine {
         
         // Group items by product + price + seat so promos are evaluated independently per seat
         var itemsByProduct: [String: [(index: Int, item: CartItem)]] = [:]
+        var itemsBySeat: [String: [(index: Int, item: CartItem)]] = [:]
         for (index, item) in cartItems.enumerated() {
-            let key = "\(item.productId)_\(item.unitPrice)_\(item.seat)"
-            itemsByProduct[key, default: []].append((index, item))
+            let productKey = "\(item.productId)_\(item.unitPrice)_\(item.seat)"
+            itemsByProduct[productKey, default: []].append((index, item))
+            itemsBySeat[item.seat, default: []].append((index, item))
         }
         
         var updatedItems = cartItems
+        
+        // Track which combos have been applied per seat (only one combo per seat)
+        var comboAppliedSeats: Set<String> = []
         
         for (_, items) in itemsByProduct {
             guard let firstItem = items.first else { continue }
             let realProductId = firstItem.item.productId
             let productCategoryId = productCategoryMap[realProductId] ?? nil
+            let seat = firstItem.item.seat
             
-            // Find applicable promotions
-            let applicablePromos = promotions.filter { promo in
+            // Find applicable promotions (non-combo first)
+            let nonComboPromos = promotions.filter { promo in
+                if promo.type == "combo" { return false }
                 if promo.applyTo == "all_products" { return true }
                 if promo.applyTo == "specific_products" {
                     return promo.parsedProductIds.contains(realProductId)
@@ -35,21 +42,28 @@ class PromotionEngine {
                 return false
             }
             
-            guard let promo = applicablePromos.sorted(by: { ($0.priority ?? 0) > ($1.priority ?? 0) }).first else { continue }
+            if let promo = nonComboPromos.sorted(by: { ($0.priority ?? 0) > ($1.priority ?? 0) }).first {
+                let totalQty = items.reduce(0) { $0 + $1.item.quantity }
+                switch promo.type {
+                case "buy_x_get_y":
+                    applyBuyXGetY(promo: promo, items: items, totalQty: totalQty, updatedItems: &updatedItems)
+                case "percentage_discount":
+                    applyPercentageDiscount(promo: promo, items: items, updatedItems: &updatedItems)
+                case "fixed_discount":
+                    applyFixedDiscount(promo: promo, items: items, updatedItems: &updatedItems)
+                default:
+                    break
+                }
+            }
             
-            let totalQty = items.reduce(0) { $0 + $1.item.quantity }
-            
-            switch promo.type {
-            case "buy_x_get_y":
-                applyBuyXGetY(promo: promo, items: items, totalQty: totalQty, updatedItems: &updatedItems)
-            case "percentage_discount":
-                applyPercentageDiscount(promo: promo, items: items, updatedItems: &updatedItems)
-            case "fixed_discount":
-                applyFixedDiscount(promo: promo, items: items, updatedItems: &updatedItems)
-            case "combo":
-                applyCombo(promo: promo, items: items, totalQty: totalQty, updatedItems: &updatedItems, productCategoryMap: productCategoryMap)
-            default:
-                break
+            // Apply combo if not already applied to this seat
+            if !comboAppliedSeats.contains(seat) {
+                let seatItems = itemsBySeat[seat] ?? []
+                let comboPromos = promotions.filter { $0.type == "combo" }
+                if let combo = comboPromos.sorted(by: { ($0.priority ?? 0) > ($1.priority ?? 0) }).first {
+                    applyCombo(promo: combo, items: seatItems, updatedItems: &updatedItems, productCategoryMap: productCategoryMap)
+                    comboAppliedSeats.insert(seat)
+                }
             }
         }
         
@@ -143,7 +157,6 @@ class PromotionEngine {
     private static func applyCombo(
         promo: Promotion,
         items: [(index: Int, item: CartItem)],
-        totalQty: Int,
         updatedItems: inout [CartItem],
         productCategoryMap: [String: String?]
     ) {
