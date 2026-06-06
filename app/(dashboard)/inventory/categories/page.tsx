@@ -1,6 +1,23 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,19 +39,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { 
-  Plus, 
-  Pencil, 
-  Trash, 
-  FlowArrow, 
+import {
+  Plus,
+  Pencil,
+  Trash,
+  FlowArrow,
   BeerStein,
   FolderOpen,
   CheckCircle,
   XCircle,
   Package,
-  ArrowUp,
-  ArrowDown,
   ArrowCounterClockwise,
+  DotsSixVertical,
 } from "@phosphor-icons/react";
 import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
@@ -52,6 +68,48 @@ const PRESET_COLORS = [
   { name: "Café", value: "#92400E" },
   { name: "Gris", value: "#6B7280" },
 ];
+
+// Sortable category item for drag-and-drop
+function SortableCategoryItem({ category }: { category: Category }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: category.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0 bg-card hover:bg-accent/50 transition-colors"
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
+      >
+        <DotsSixVertical className="size-5" />
+      </button>
+      <div
+        className="size-3 rounded-full flex-shrink-0"
+        style={{ backgroundColor: category.color || "#6B7280" }}
+      />
+      <span className="flex-1 font-medium">{category.name}</span>
+      {category.isBeverage && (
+        <BeerStein className="size-4 text-cyan-500" weight="fill" />
+      )}
+    </div>
+  );
+}
 
 export default function CategoriesPage() {
   const router = useRouter();
@@ -127,12 +185,22 @@ export default function CategoriesPage() {
     }
   }
 
-  function moveCategory(index: number, direction: -1 | 1) {
-    const newIndex = index + direction;
-    if (newIndex < 0 || newIndex >= orderedCategories.length) return;
-    const newArr = [...orderedCategories];
-    [newArr[index], newArr[newIndex]] = [newArr[newIndex], newArr[index]];
-    setOrderedCategories(newArr);
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setOrderedCategories((items) => {
+        const oldIndex = items.findIndex((i) => i.id === active.id);
+        const newIndex = items.findIndex((i) => i.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
   }
 
   async function handleSaveOrder() {
@@ -393,7 +461,7 @@ export default function CategoriesPage() {
           <div>
             <h2 className="text-lg font-semibold">Orden de categorías</h2>
             <p className="text-sm text-muted-foreground">
-              Usa las flechas para ordenar. El orden se refleja en el POS.
+              Arrastra para reordenar. El orden se refleja en el POS.
             </p>
           </div>
           <div className="flex gap-2">
@@ -416,45 +484,25 @@ export default function CategoriesPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card">
-          {orderedCategories.map((category, index) => (
-            <div
-              key={category.id}
-              className={`flex items-center gap-3 px-4 py-3 ${
-                index !== orderedCategories.length - 1 ? "border-b" : ""
-              }`}
-            >
-              <div
-                className="size-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: category.color || "#6B7280" }}
-              />
-              <span className="flex-1 font-medium">{category.name}</span>
-              {category.isBeverage && (
-                <BeerStein className="size-4 text-cyan-500" weight="fill" />
-              )}
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={() => moveCategory(index, -1)}
-                  disabled={index === 0}
-                >
-                  <ArrowUp className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={() => moveCategory(index, 1)}
-                  disabled={index === orderedCategories.length - 1}
-                >
-                  <ArrowDown className="size-4" />
-                </Button>
-              </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={orderedCategories.map((c) => c.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="rounded-lg border bg-card">
+              {orderedCategories.map((category) => (
+                <SortableCategoryItem
+                  key={category.id}
+                  category={category}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       </div>
 
       <div className="border-t" />

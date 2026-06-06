@@ -15,14 +15,12 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    await db.transaction(async (tx) => {
-      for (const { id, sortOrder } of orders) {
-        await tx
-          .update(categories)
-          .set({ sortOrder })
-          .where(eq(categories.id, id));
-      }
-    });
+    for (const { id, sortOrder } of orders) {
+      await db
+        .update(categories)
+        .set({ sortOrder })
+        .where(eq(categories.id, id));
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
