@@ -52,7 +52,7 @@ export default function PromotionsPage() {
     startTime: "",
     endTime: "",
     priority: 0,
-    comboRules: [] as { productId?: string; productIds?: string[]; categoryId?: string; categoryIds?: string[]; quantity: number }[],
+    comboRules: [] as { productId?: string; productIds?: string[]; categoryId?: string; categoryIds?: string[]; quantity: number; type?: "product" | "category" }[],
   });
 
   useEffect(() => {
@@ -528,7 +528,7 @@ export default function PromotionsPage() {
                       onClick={() =>
                         setFormData({
                           ...formData,
-                          comboRules: [...formData.comboRules, { quantity: 1 }],
+                          comboRules: [...formData.comboRules, { quantity: 1, type: undefined }],
                         })
                       }
                     >
@@ -546,7 +546,7 @@ export default function PromotionsPage() {
                   {formData.comboRules.map((rule, idx) => {
                     const hasProducts = (rule.productIds?.length ?? 0) > 0 || !!rule.productId;
                     const hasCategories = (rule.categoryIds?.length ?? 0) > 0 || !!rule.categoryId;
-                    const ruleType = hasProducts ? "product" : hasCategories ? "category" : "";
+                    const ruleType = rule.type ?? (hasProducts ? "product" : hasCategories ? "category" : "");
                     const selectedIds = hasProducts
                       ? (rule.productIds ?? (rule.productId ? [rule.productId] : []))
                       : (rule.categoryIds ?? (rule.categoryId ? [rule.categoryId] : []));
@@ -596,9 +596,9 @@ export default function PromotionsPage() {
                             onValueChange={(val) => {
                               const rules = [...formData.comboRules];
                               if (val === "product") {
-                                rules[idx] = { quantity: rules[idx].quantity, productIds: [] };
+                                rules[idx] = { quantity: rules[idx].quantity, type: "product", productIds: [] };
                               } else if (val === "category") {
-                                rules[idx] = { quantity: rules[idx].quantity, categoryIds: [] };
+                                rules[idx] = { quantity: rules[idx].quantity, type: "category", categoryIds: [] };
                               }
                               setFormData({ ...formData, comboRules: rules });
                             }}
