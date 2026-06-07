@@ -109,6 +109,49 @@ class PrintService {
         _ = try? await URLSession.shared.data(for: request)
     }
     
+    // MARK: - Reprint Order Ticket
+    
+    func reprintOrder(_ order: Order) async {
+        let itemsBySeat: [String: [[String: Any]]] = ["A1": (order.items ?? []).map { item in
+            var dict: [String: Any] = [
+                "name": item.productName,
+                "qty": item.quantity,
+                "total": item.numericSubtotal
+            ]
+            // Try to extract variant info from productName
+            let components = item.productName.split(separator: " - ", maxSplits: 1)
+            if components.count == 2 {
+                dict["name"] = String(components[0])
+                dict["variant"] = String(components[1])
+            }
+            return dict
+        }]
+        
+        let discountData: [String: Any]? = {
+            if let discountAmt = order.discountAmount, let amt = Double(discountAmt), amt > 0 {
+                return [
+                    "name": order.discountName ?? "Descuento",
+                    "amount": Int(amt)
+                ]
+            }
+            return nil
+        }()
+        
+        await printTicket(
+            customerName: order.customerName ?? "",
+            orderNumber: String(order.orderNumber),
+            items: itemsBySeat,
+            subtotal: Int(Double(order.subtotal ?? "0") ?? 0),
+            tip: Int(Double(order.tip ?? "0") ?? 0),
+            total: Int(Double(order.total ?? "0") ?? 0),
+            tableNumber: order.tableNumber ?? "",
+            isDelivery: order.tableId == nil,
+            discount: discountData,
+            paymentMethod: order.paymentMethod,
+            deliveryFee: 0
+        )
+    }
+    
     // MARK: - Print Guest (courtesy ticket)
     
     func printGuestTicket(items: [[String: Any]], orderNumber: String) async {

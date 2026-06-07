@@ -102,7 +102,7 @@ struct DepositModal: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(isValid ? Color.green : Color.gray)
+                            .background(isValid ? Color.accentColor : Color.gray)
                             .cornerRadius(12)
                     }
                     .disabled(!isValid || submitting)

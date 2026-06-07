@@ -5,9 +5,6 @@ struct MainTabView: View {
     @StateObject private var cashVM = CashRegisterViewModel()
     @StateObject private var deliveryVM = DeliveryViewModel()
     
-    @State private var showPinModal = false
-    @State private var cashTabAuthorized = false
-    
     var body: some View {
         ZStack {
             TabView(selection: $vm.selectedTab) {
@@ -24,6 +21,11 @@ struct MainTabView: View {
                         Label("Caja", systemImage: "dollarsign.circle.fill")
                     }
                     .tag(1)
+                    .onChange(of: vm.selectedTab) { _, newValue in
+                        if newValue != 1 {
+                            cashVM.isAuthenticated = false
+                        }
+                    }
                 
                 // Tab 3: Reservas
                 ReservationsView()
@@ -47,29 +49,10 @@ struct MainTabView: View {
                     .tag(4)
             }
             .accentColor(.blue)
-            .onChange(of: vm.selectedTab) { oldValue, newValue in
-                if newValue == 1 && !cashTabAuthorized {
-                    // Intentando acceder a Caja sin autorización
-                    showPinModal = true
-                    // Volver a la tab anterior
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        vm.selectedTab = oldValue
-                    }
-                }
-            }
             
             // Alerta global de delivery (aparece en cualquier tab)
             GlobalDeliveryAlert(vm: deliveryVM)
                 .zIndex(999)
-        }
-        .sheet(isPresented: $showPinModal) {
-            CashRegisterPinModal(vm: vm, onSuccess: {
-                showPinModal = false
-                cashTabAuthorized = true
-                vm.selectedTab = 1
-            }, onCancel: {
-                showPinModal = false
-            })
         }
         .sheet(isPresented: $vm.showDeliveryDialog) {
             DeliveryInfoDialog(vm: vm)

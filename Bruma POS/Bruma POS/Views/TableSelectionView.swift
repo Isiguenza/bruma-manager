@@ -1,9 +1,12 @@
 import SwiftUI
+import Combine
 
 // Clean, minimal design inspired by Bruma_waitress
 struct TableSelectionView: View {
     @ObservedObject var vm: POSViewModel
     @Namespace private var filterNamespace
+    @State private var currentTime = Date()
+    let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     
     var body: some View {
         ZStack {
@@ -12,6 +15,9 @@ struct TableSelectionView: View {
             VStack(spacing: 0) {
                 // Header — same as /bar
                 header
+                
+                // Search bar
+                tableSearchBar
                 
                 // Filter bar
                 filterBar
@@ -53,7 +59,7 @@ struct TableSelectionView: View {
                                     GridItem(.flexible(), spacing: 10)
                                 ], spacing: 10) {
                                     ForEach(vm.filteredTables) { table in
-                                        TableCardView(table: table, hasReadyItems: vm.tablesWithReadyItems.contains(table.id)) {
+                                        TableCardView(table: table, hasReadyItems: vm.tablesWithReadyItems.contains(table.id), currentTime: currentTime) {
                                             vm.handleSelectTable(table)
                                         }
                                     }
@@ -73,6 +79,9 @@ struct TableSelectionView: View {
             InitialGuestCountDialog(vm: vm)
                 .presentationDetents([.height(400)])
                 .presentationDragIndicator(.visible)
+        }
+        .onReceive(timer) { _ in
+            currentTime = Date()
         }
         .sheet(isPresented: $vm.showCustomerNameDialog) {
             CustomerNameSheet(vm: vm)
@@ -249,6 +258,7 @@ struct TableSelectionView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Seleccionar Mesa")
                     .font(.title2.weight(.bold))
+               
                     .foregroundColor(.white)
                 Text("Elige una mesa o crea una orden para llevar")
                     .font(.caption)
@@ -282,6 +292,39 @@ struct TableSelectionView: View {
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 12)
+    }
+    
+    // MARK: - Search Bar
+    
+    private var tableSearchBar: some View {
+        HStack {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.gray)
+            TextField("Buscar mesa...", text: $vm.tableSearchQuery)
+                .foregroundColor(.white)
+            
+            if !vm.tableSearchQuery.isEmpty {
+                Button {
+                    vm.tableSearchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+        .padding(.bottom, 4)
     }
     
     // MARK: - Filter Bar
@@ -448,6 +491,7 @@ struct TableSelectionView: View {
 struct TableCardView: View {
     let table: Table
     let hasReadyItems: Bool
+    let currentTime: Date
     let action: () -> Void
     
     var body: some View {
@@ -463,6 +507,18 @@ struct TableCardView: View {
                             Image(systemName: "chair.fill")
                                 .font(.system(size: 14))
                                 .foregroundColor(.green.opacity(0.6))
+                        } else if table.isOccupied, let guestCount = table.guestCount, guestCount > 0 {
+                            HStack(spacing: 2) {
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 10))
+                                Text("\(guestCount)")
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.white.opacity(0.12))
+                            .clipShape(Capsule())
                         }
                     }
                     
@@ -493,6 +549,11 @@ struct TableCardView: View {
                         Text(tableStatusLabel(table))
                             .font(.caption2.weight(.medium))
                             .foregroundColor(tableStatusColor(table))
+                        if table.isOccupied, let elapsed = occupancyTime(table) {
+                            Text("· \(elapsed)")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                        }
                     }
                     
                     if let reservation = table.nextReservation {
@@ -576,6 +637,33 @@ struct TableCardView: View {
         case "occupied": return Color(red: 1.0, green: 0.45, blue: 0.0).opacity(0.4)
         case "reserved": return Color.purple.opacity(0.3)
         default: return Color.white.opacity(0.1)
+        }
+    }
+    
+    private func occupancyTime(_ table: Table) -> String? {
+        guard let createdAt = table.activeOrder?.createdAt else { return nil }
+        
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = isoFormatter.date(from: createdAt) else {
+            isoFormatter.formatOptions = [.withInternetDateTime]
+            guard let date = isoFormatter.date(from: createdAt) else { return nil }
+            let elapsed = currentTime.timeIntervalSince(date)
+            return formatElapsedTime(elapsed)
+        }
+        let elapsed = currentTime.timeIntervalSince(date)
+        return formatElapsedTime(elapsed)
+    }
+    
+    private func formatElapsedTime(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        
+        if hours > 0 {
+            return "\(hours)h \(remainingMinutes)m"
+        } else {
+            return "\(minutes)m"
         }
     }
 }

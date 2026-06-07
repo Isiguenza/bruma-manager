@@ -234,55 +234,7 @@ struct OrdersHistoryModal: View {
     private func reprintOrder(_ order: Order) {
         reprintingOrderId = order.id
         Task {
-            // Preparar items agrupados
-            let itemsBySeat: [String: [[String: Any]]] = ["A1": (order.items ?? []).map { item in
-                [
-                    "name": item.productName,
-                    "qty": item.quantity,
-                    "total": Double(item.subtotal ?? "0") ?? 0
-                ]
-            }]
-            
-            let discountData: [String: Any]? = {
-                if let discountAmt = order.discountAmount, let amt = Double(discountAmt), amt > 0 {
-                    return [
-                        "name": order.discountName ?? "Descuento",
-                        "amount": Int(amt)
-                    ]
-                }
-                return nil
-            }()
-            
-            let printData: [String: Any] = [
-                "customerName": order.customerName ?? "",
-                "orderNumber": String(order.orderNumber),
-                "items": itemsBySeat,
-                "subtotal": Double(order.subtotal ?? "0") ?? 0,
-                "tip": Double(order.tip ?? "0") ?? 0,
-                "total": Double(order.total ?? "0") ?? 0,
-                "tableNumber": order.tableNumber ?? "",
-                "isDelivery": order.tableId == nil,
-                "paymentMethod": order.paymentMethod ?? "",
-                "discount": discountData as Any
-            ]
-            
-            guard let url = URL(string: "\(APIService.shared.printServerURL)/print") else {
-                reprintingOrderId = nil
-                return
-            }
-            
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try? JSONSerialization.data(withJSONObject: printData)
-            
-            do {
-                _ = try await URLSession.shared.data(for: request)
-                vm.showToast("Ticket reimpreso")
-            } catch {
-                vm.showToast("Error al reimprimir", isError: true)
-            }
-            
+            await PrintService.shared.reprintOrder(order)
             reprintingOrderId = nil
         }
     }

@@ -11,8 +11,12 @@ struct CloseCashRegisterModal: View {
     @State private var submitting = false
     @State private var showDifferenceConfirm = false
     
+    private var finalCashDecimal: Decimal {
+        Decimal(string: finalCash.replacingOccurrences(of: ",", with: "")) ?? 0
+    }
+    
     private var finalCashAmount: Double {
-        Double(finalCash) ?? 0
+        NSDecimalNumber(decimal: finalCashDecimal).doubleValue
     }
     
     private var difference: Double {
@@ -110,7 +114,7 @@ struct CloseCashRegisterModal: View {
                             HStack {
                                 Text(vm.formatCurrency(difference))
                                     .font(.title.bold())
-                                    .foregroundColor(hasDifference ? (difference > 0 ? .green : .red) : .white)
+                                    .foregroundColor(hasDifference ? (difference > 0 ? Color.accentColor : .red) : .white)
                                 
                                 Spacer()
                                 
@@ -120,7 +124,7 @@ struct CloseCashRegisterModal: View {
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 6)
-                                        .background(difference > 0 ? Color.green.opacity(0.3) : Color.red.opacity(0.3))
+                                        .background(difference > 0 ? Color.accentColor.opacity(0.3) : Color.red.opacity(0.3))
                                         .cornerRadius(8)
                                 }
                             }
@@ -129,7 +133,7 @@ struct CloseCashRegisterModal: View {
                             .cornerRadius(12)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(hasDifference ? (difference > 0 ? Color.green : Color.red) : Color(white: 0.15), lineWidth: 1)
+                                    .stroke(hasDifference ? (difference > 0 ? Color.accentColor : Color.red) : Color(white: 0.15), lineWidth: 1)
                             )
                         }
                     }
@@ -175,7 +179,7 @@ struct CloseCashRegisterModal: View {
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 16)
-                                .background(isValid ? Color.red : Color.gray)
+                                .background(isValid ? Color.accentColor : Color.gray)
                                 .cornerRadius(12)
                         }
                         .disabled(!isValid || submitting)

@@ -30,6 +30,7 @@ class POSViewModel: ObservableObject {
     @Published var selectedTable: Table?
     @Published var tablesWithReadyItems: Set<String> = []
     @Published var tableFilter: TableFilter = .all
+    @Published var tableSearchQuery = ""
     
     enum TableFilter: String, CaseIterable {
         case all = "Todas"
@@ -39,12 +40,26 @@ class POSViewModel: ObservableObject {
     }
     
     var filteredTables: [Table] {
+        var result = tables
+        
+        // Filter by status
         switch tableFilter {
-        case .all: return tables
-        case .available: return tables.filter { $0.isAvailable }
-        case .occupied: return tables.filter { $0.isOccupied }
-        case .reserved: return tables.filter { $0.isReserved }
+        case .all: break
+        case .available: result = result.filter { $0.isAvailable }
+        case .occupied: result = result.filter { $0.isOccupied }
+        case .reserved: result = result.filter { $0.isReserved }
         }
+        
+        // Filter by search
+        if !tableSearchQuery.isEmpty {
+            let query = tableSearchQuery.lowercased()
+            result = result.filter {
+                $0.number.lowercased().contains(query) ||
+                ($0.name?.lowercased().contains(query) ?? false)
+            }
+        }
+        
+        return result
     }
     
     // MARK: - Delivery

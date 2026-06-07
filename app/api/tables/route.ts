@@ -55,7 +55,13 @@ export async function GET() {
         }
 
         return {
-          ...table,
+          id: table.id,
+          number: table.number,
+          name: table.name,
+          capacity: table.capacity,
+          guest_count: table.guestCount,
+          status: table.status,
+          active: table.active,
           next_reservation: nextReservation || null,
           active_order: activeOrder ? {
             id: activeOrder.id,
@@ -63,6 +69,7 @@ export async function GET() {
             status: activeOrder.status,
             total: activeOrder.total,
             item_count: itemCount,
+            created_at: activeOrder.createdAt,
           } : null,
         };
       })
