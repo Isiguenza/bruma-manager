@@ -345,18 +345,12 @@ app.post('/print', async (req, res) => {
       content += commands.feedLine;
       
       for (const [promoName, items] of Object.entries(byPromo)) {
-        content += commands.bold;
-        content += `\u25C6 ${promoName}\n`;
-        content += commands.boldOff;
-        
-        for (const item of items) {
-          const promoItemText = `- ${item.qty}x ${item.name}`;
-          const promoItemPrice = `-$${Math.round(item.promotionDiscount)}`;
-          const promoItemSpaces = Math.max(1, 48 - promoItemText.length - promoItemPrice.length);
-          content += promoItemText + " ".repeat(promoItemSpaces) + promoItemPrice + "\n";
-        }
-        
-        content += commands.feedLine;
+        const totalQty = items.reduce((sum, item) => sum + (item.qty || 1), 0);
+        const totalDiscount = items.reduce((sum, item) => sum + Math.round(item.promotionDiscount || 0), 0);
+        const promoLine = `${totalQty}x ${promoName}`;
+        const promoPrice = `-$${totalDiscount}`;
+        const promoSpaces = Math.max(1, 48 - promoLine.length - promoPrice.length);
+        content += promoLine + " ".repeat(promoSpaces) + promoPrice + "\n";
       }
       
       content += "────────────────────────────────────────────────\n";

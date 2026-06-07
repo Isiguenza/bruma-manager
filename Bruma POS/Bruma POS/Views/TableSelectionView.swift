@@ -498,11 +498,24 @@ struct TableCardView: View {
         Button(action: action) {
             ZStack {
                 VStack(spacing: 6) {
-                    HStack {
+                    HStack(spacing: 6) {
                         Text(table.number)
                             .font(.system(size: 28, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                         Spacer()
+                        if hasReadyItems {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 10))
+                                Text("Listo")
+                                    .font(.system(size: 9, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color(red: 1.0, green: 0.45, blue: 0.0))
+                            .clipShape(Capsule())
+                        }
                         if table.isAvailable {
                             Image(systemName: "chair.fill")
                                 .font(.system(size: 14))
@@ -560,27 +573,6 @@ struct TableCardView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(10)
                 
-                // Prominent ready badge
-                if hasReadyItems {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            HStack(spacing: 3) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 10))
-                                Text("Listo")
-                                    .font(.system(size: 9, weight: .bold))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color(red: 1.0, green: 0.45, blue: 0.0))
-                            .clipShape(Capsule())
-                        }
-                        Spacer()
-                    }
-                    .padding(6)
-                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 115)
