@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { orders, orderItems, cashRegisters, cashRegisterTransactions, productIngredients, ingredients } from "@/lib/db/schema";
-import { eq, desc, inArray, sql, and, gte } from "drizzle-orm";
+import { eq, desc, inArray, sql, and, or, gte } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,9 +23,9 @@ export async function GET(request: NextRequest) {
       const statuses = status.split(",") as ("pending" | "preparing" | "ready" | "delivered" | "cancelled")[];
       console.log("📊 Filtrando por statuses:", statuses);
       if (statuses.length === 1) {
-        whereClauses.push(eq(orders.status, statuses[0]));
+        whereClauses.push(sql`${orders.status} = ${statuses[0]}`);
       } else {
-        whereClauses.push(inArray(orders.status, statuses));
+        whereClauses.push(or(...statuses.map(s => sql`${orders.status} = ${s}`)));
       }
     }
     
@@ -50,8 +50,8 @@ export async function GET(request: NextRequest) {
     if (startDate) {
       console.log("📅 Filtrando desde fecha:", startDate);
       whereClauses.push(gte(orders.createdAt, new Date(startDate)));
-    } else if (status) {
-      // Para Dispatch/cocina: si se filtra por status activo y no hay startDate,
+    } else if (status && !tableId) {
+      // Para Dispatch/cocina: si se filtra por status activo y no hay startDate ni tableId,
       // limitar automáticamente al día actual para evitar traer órdenes viejas
       const statuses = status.split(",") as string[];
       const activeKitchenStatuses = ["pending", "preparing", "ready"];

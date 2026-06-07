@@ -667,6 +667,8 @@ class POSViewModel: ObservableObject {
             Task {
                 loading = true
                 selectedTable = table
+                cart = [] // Clear cart to avoid stale data from previous table
+                currentOrderId = nil
                 guestCount = table.guestCount ?? 1
                 activeSeat = guestCount > 0 ? "A1" : "C"
                 
