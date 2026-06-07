@@ -522,6 +522,11 @@ class POSViewModel: ObservableObject {
     func refreshTables() async {
         if let t = try? await APIService.shared.fetchTables() {
             tables = t.filter { $0.active }
+            for table in tables.prefix(3) {
+                print("[Tables] #\(table.number) status=\(table.status) guest=\(table.guestCount ?? -1) occupied=\(table.isOccupied) activeOrder=\(table.activeOrder != nil)")
+            }
+        } else {
+            print("[Tables] fetchTables failed or returned nil")
         }
         if let readyIds = try? await APIService.shared.fetchTablesWithReadyItems() {
             tablesWithReadyItems = readyIds

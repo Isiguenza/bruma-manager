@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { tables, reservations, orders, orderItems } from "@/lib/db/schema";
-import { eq, and, gte, count, sql } from "drizzle-orm";
+import { eq, and, gte, count, sql, desc } from "drizzle-orm";
 
 // GET /api/tables - Obtener todas las mesas
 export async function GET() {
@@ -31,7 +31,7 @@ export async function GET() {
           }
         });
 
-        // Fetch active order for this table (pending payment)
+        // Fetch active order for this table (pending payment) — most recent first
         const [activeOrder] = await db
           .select()
           .from(orders)
@@ -41,16 +41,21 @@ export async function GET() {
               eq(orders.paymentStatus, "pending")
             )
           )
-          .orderBy(orders.createdAt)
+          .orderBy(desc(orders.createdAt))
           .limit(1);
 
-        // Get item count for the active order
+        // Get item count for the active order (exclude voided items)
         let itemCount = 0;
         if (activeOrder) {
           const [result] = await db
             .select({ count: count() })
             .from(orderItems)
-            .where(eq(orderItems.orderId, activeOrder.id));
+            .where(
+              and(
+                eq(orderItems.orderId, activeOrder.id),
+                eq(orderItems.voided, false)
+              )
+            );
           itemCount = result?.count ?? 0;
         }
 

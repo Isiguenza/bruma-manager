@@ -522,17 +522,7 @@ struct TableCardView: View {
                         }
                     }
                     
-                    if table.isOccupied, let activeOrder = table.activeOrder, let totalStr = activeOrder.total {
-                        let total = Double(totalStr) ?? 0
-                        HStack(alignment: .firstTextBaseline, spacing: 1) {
-                            Text("$")
-                                .font(.system(size: 14, weight: .medium))
-                            Text("\(Int(total))")
-                                .font(.system(size: 20, weight: .bold))
-                            Text(".\(String(format: "%02d", Int((total - Double(Int(total))) * 100)))")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundColor(.white)
+                    if table.isOccupied, let activeOrder = table.activeOrder {
                         Text("\(activeOrder.itemCount ?? 0) items")
                             .font(.caption2)
                             .foregroundColor(.orange.opacity(0.8))
@@ -658,9 +648,17 @@ struct TableCardView: View {
     private func formatElapsedTime(_ seconds: TimeInterval) -> String {
         let minutes = Int(seconds) / 60
         let hours = minutes / 60
+        let days = hours / 24
+        let remainingHours = hours % 24
         let remainingMinutes = minutes % 60
         
-        if hours > 0 {
+        if days > 0 {
+            if remainingHours > 0 {
+                return "\(days)d \(remainingHours)h"
+            } else {
+                return "\(days)d"
+            }
+        } else if hours > 0 {
             return "\(hours)h \(remainingMinutes)m"
         } else {
             return "\(minutes)m"

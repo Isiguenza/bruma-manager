@@ -18,13 +18,6 @@ struct Table: Codable, Identifiable {
     var displayName: String {
         name ?? "Mesa \(number)"
     }
-    
-    enum CodingKeys: String, CodingKey {
-        case id, number, name, capacity, status, active
-        case activeOrder = "active_order"
-        case guestCount = "guest_count"
-        case nextReservation = "next_reservation"
-    }
 }
 
 struct NextReservation: Codable {
@@ -40,14 +33,4 @@ struct ActiveOrder: Codable {
     let itemCount: Int?
     let items: [OrderItem]?
     let createdAt: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case orderNumber = "order_number"
-        case status
-        case total
-        case itemCount = "item_count"
-        case items
-        case createdAt = "created_at"
-    }
 }
