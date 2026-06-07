@@ -547,10 +547,10 @@ export default function PromotionsPage() {
                     const hasProducts = (rule.productIds?.length ?? 0) > 0 || !!rule.productId;
                     const hasCategories = (rule.categoryIds?.length ?? 0) > 0 || !!rule.categoryId;
                     const ruleType = rule.type ?? (hasProducts ? "product" : hasCategories ? "category" : "");
-                    const selectedIds = hasProducts
+                    const selectedIds = ruleType === "product"
                       ? (rule.productIds ?? (rule.productId ? [rule.productId] : []))
                       : (rule.categoryIds ?? (rule.categoryId ? [rule.categoryId] : []));
-                    const availableOptions = hasProducts
+                    const availableOptions = ruleType === "product"
                       ? products.filter((p) => !selectedIds.includes(p.id))
                       : categories.filter((c) => !selectedIds.includes(c.id));
 
@@ -618,7 +618,7 @@ export default function PromotionsPage() {
                           <div className="space-y-1">
                             <div className="flex flex-wrap gap-1">
                               {selectedIds.map((id) => {
-                                const label = hasProducts
+                                const label = ruleType === "product"
                                   ? products.find((p) => p.id === id)?.name ?? id
                                   : categories.find((c) => c.id === id)?.name ?? id;
                                 return (
@@ -629,7 +629,7 @@ export default function PromotionsPage() {
                                       onClick={() => {
                                         const rules = [...formData.comboRules];
                                         const newIds = selectedIds.filter((sid) => sid !== id);
-                                        if (hasProducts) {
+                                        if (ruleType === "product") {
                                           rules[idx] = { ...rules[idx], productIds: newIds.length > 0 ? newIds : undefined, productId: undefined };
                                         } else {
                                           rules[idx] = { ...rules[idx], categoryIds: newIds.length > 0 ? newIds : undefined, categoryId: undefined };
@@ -654,7 +654,7 @@ export default function PromotionsPage() {
                                   const val = e.target.value;
                                   if (!val) return;
                                   const rules = [...formData.comboRules];
-                                  if (hasProducts) {
+                                  if (ruleType === "product") {
                                     const current = (rules[idx].productIds ?? (rules[idx].productId ? [rules[idx].productId] : []));
                                     rules[idx] = { ...rules[idx], productIds: [...current, val], productId: undefined };
                                   } else {
@@ -673,7 +673,7 @@ export default function PromotionsPage() {
                             )}
 
                             {/* Variant selector for products with variants */}
-                            {hasProducts && selectedIds.length > 0 && (
+                            {ruleType === "product" && selectedIds.length > 0 && (
                               <div className="pt-1">
                                 {(() => {
                                   const allVariants = selectedIds.flatMap((id) => {
