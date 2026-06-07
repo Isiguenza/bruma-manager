@@ -1932,7 +1932,7 @@ class POSViewModel: ObservableObject {
             let key = "\(item.productId)-\(item.unitPrice)-\(item.promotionId ?? "none")"
             if var existing = seatGroups[seat]?[key] {
                 existing.qty += item.quantity
-                existing.total = Double(existing.qty) * existing.price
+                existing.total = Double(existing.qty) * (existing.originalPrice ?? existing.price)
                 if let pd = item.promotionDiscount {
                     existing.promotionDiscount = (existing.promotionDiscount ?? 0) + pd
                 }
@@ -1942,7 +1942,7 @@ class POSViewModel: ObservableObject {
                     name: item.productName,
                     qty: item.quantity,
                     price: item.unitPrice,
-                    total: Double(item.quantity) * item.unitPrice,
+                    total: Double(item.quantity) * (item.originalPrice ?? item.unitPrice),
                     promotionName: item.promotionName,
                     promotionDiscount: item.promotionDiscount,
                     originalPrice: item.originalPrice,
@@ -1951,12 +1951,12 @@ class POSViewModel: ObservableObject {
             }
         }
         
-        // Use originalPrice * qty - promotionDiscount so buy_x_get_y partial-qty promos are correct.
-        // For promos that modify unitPrice (percentage/fixed), originalPrice * qty - promoDiscount gives same result.
+        // Calculate subtotal from original prices, promo discounts as global line
         let subtotal = seatGroups.values.flatMap { $0.values }.filter { !($0.isGuest ?? false) }.reduce(0.0) { sum, item in
-            let basePrice = item.originalPrice ?? item.price
-            let promoDiscount = item.promotionDiscount ?? 0
-            return sum + (basePrice * Double(item.qty) - promoDiscount)
+            return sum + ((item.originalPrice ?? item.price) * Double(item.qty))
+        }
+        let totalPromoDiscount = seatGroups.values.flatMap { $0.values }.filter { !($0.isGuest ?? false) }.reduce(0.0) { sum, item in
+            return sum + (item.promotionDiscount ?? 0)
         }
         
         let discountData: [String: Any]? = selectedDiscount.map { d in
@@ -1964,7 +1964,7 @@ class POSViewModel: ObservableObject {
         }
         
         let discountAmt = discountData?["amount"] as? Int ?? 0
-        let subWithDiscount = subtotal - Double(discountAmt)
+        let subWithDiscount = subtotal - totalPromoDiscount - Double(discountAmt)
         let tip = showCustomTip ? (Double(customTip) ?? 0) : subWithDiscount * Double(tipPercentage) / 100
         let tipPlusDelivery = tip + deliveryFeeAmount
         let total = subWithDiscount + tipPlusDelivery
@@ -1972,14 +1972,13 @@ class POSViewModel: ObservableObject {
         var itemsBySeat: [String: [[String: Any]]] = [:]
         for (seat, items) in seatGroups {
             itemsBySeat[seat] = items.values.map { item in
+                let originalTotal = Int((item.originalPrice ?? item.price) * Double(item.qty))
                 var dict: [String: Any] = [
                     "name": item.name,
                     "qty": item.qty,
-                    "total": Int(item.total)
+                    "total": originalTotal
                 ]
                 if let pn = item.promotionName { dict["promotionName"] = pn }
-                if let pd = item.promotionDiscount { dict["promotionDiscount"] = Int(pd) }
-                if let op = item.originalPrice { dict["originalPrice"] = Int(op * Double(item.qty)) }
                 if let ig = item.isGuest, ig { dict["isGuest"] = true }
                 return dict
             }
@@ -2008,23 +2007,26 @@ class POSViewModel: ObservableObject {
         for item in cart {
             let seat = item.seat.isEmpty ? "C" : item.seat
             if itemsBySeat[seat] == nil { itemsBySeat[seat] = [] }
+            // Show original price, discount will be shown as a global line
+            let originalTotal = Int(Double(item.quantity) * (item.originalPrice ?? item.unitPrice))
             var dict: [String: Any] = [
                 "name": item.productName,
                 "qty": item.quantity,
-                "total": Int(Double(item.quantity) * item.unitPrice)
+                "total": originalTotal
             ]
             if let pn = item.promotionName { dict["promotionName"] = pn }
-            if let op = item.originalPrice { dict["originalPrice"] = Int(op * Double(item.quantity)) }
-            if let pd = item.promotionDiscount { dict["promotionDiscount"] = Int(pd) }
             itemsBySeat[seat]?.append(dict)
         }
         
         let subtotal = cart.filter { !$0.isGuest }.reduce(0.0) { sum, item in
-            let basePrice = item.originalPrice ?? item.unitPrice
-            let promoDiscount = item.promotionDiscount ?? 0
-            return sum + (basePrice * Double(item.quantity) - promoDiscount)
+            return sum + ((item.originalPrice ?? item.unitPrice) * Double(item.quantity))
         }
-        let preTicketTotal = subtotal + deliveryFeeAmount
+        let totalDiscount = cart.filter { !$0.isGuest }.reduce(0.0) { sum, item in
+            return sum + (item.promotionDiscount ?? 0)
+        }
+        let preTicketTotal = subtotal - totalDiscount + deliveryFeeAmount
+        
+        let discountData: [String: Any]? = totalDiscount > 0 ? ["name": "Promociones", "amount": Int(totalDiscount)] : nil
         
         await PrintService.shared.printTicket(
             customerName: customerName,
@@ -2035,7 +2037,7 @@ class POSViewModel: ObservableObject {
             total: Int(preTicketTotal),
             tableNumber: selectedTable?.number ?? "",
             isDelivery: selectedTable == nil,
-            discount: nil,
+            discount: discountData,
             paymentMethod: nil,
             deliveryFee: Int(deliveryFeeAmount)
         )
@@ -2164,50 +2166,24 @@ class POSViewModel: ObservableObject {
             
             for item in cart {
                 let originalTotal = Double(item.quantity) * (item.originalPrice ?? item.unitPrice)
-                let itemTotal = Double(item.quantity) * item.unitPrice
                 let itemDiscount = item.promotionDiscount ?? 0
                 
-                subtotal += itemTotal
+                subtotal += originalTotal
                 totalDiscount += itemDiscount
                 
-                // Show item line
+                // Show item line with original price
                 let qtyName = "\(item.quantity)x \(item.productName)"
+                let price = formatCurrency(originalTotal)
+                qtyName.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: itemAttributes)
+                let priceSize = price.size(withAttributes: itemAttributes)
+                price.draw(at: CGPoint(x: pageWidth - margin - priceSize.width, y: yPosition), withAttributes: itemAttributes)
+                yPosition += 15
                 
-                // If item has promotion, show original price as strikethrough
-                if item.promotionId != nil && item.originalPrice != nil {
-                    // Name with strikethrough original price
-                    qtyName.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: itemAttributes)
-                    
-                    // Draw original price with strikethrough
-                    let origPriceStr = formatCurrency(originalTotal)
-                    let origSize = origPriceStr.size(withAttributes: itemAttributes)
-                    origPriceStr.draw(at: CGPoint(x: pageWidth - margin - origSize.width, y: yPosition), withAttributes: itemAttributes)
-                    // Strikethrough line
-                    let strikePath = UIBezierPath()
-                    strikePath.move(to: CGPoint(x: pageWidth - margin - origSize.width, y: yPosition + origSize.height / 2))
-                    strikePath.addLine(to: CGPoint(x: pageWidth - margin, y: yPosition + origSize.height / 2))
-                    UIColor.gray.setStroke()
-                    strikePath.lineWidth = 0.5
-                    strikePath.stroke()
-                    
-                    yPosition += 15
-                    
-                    // Show promotion discount line with promo name
-                    if itemDiscount > 0 {
-                        let promoLine = item.promotionName != nil ? "  > \(item.promotionName!)" : "  > Descuento"
-                        let discountStr = "-\(formatCurrency(itemDiscount))"
-                        promoLine.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: promoAttributes)
-                        let discountSize = discountStr.size(withAttributes: discountAttributes)
-                        discountStr.draw(at: CGPoint(x: pageWidth - margin - discountSize.width, y: yPosition), withAttributes: discountAttributes)
-                        yPosition += 12
-                    }
-                } else {
-                    // Normal item - no promo
-                    let price = formatCurrency(itemTotal)
-                    qtyName.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: itemAttributes)
-                    let priceSize = price.size(withAttributes: itemAttributes)
-                    price.draw(at: CGPoint(x: pageWidth - margin - priceSize.width, y: yPosition), withAttributes: itemAttributes)
-                    yPosition += 15
+                // Show promo name if applicable
+                if item.promotionId != nil && item.promotionName != nil {
+                    let promoLine = "  > \(item.promotionName!)"
+                    promoLine.draw(at: CGPoint(x: margin, y: yPosition), withAttributes: promoAttributes)
+                    yPosition += 12
                 }
                 
                 // Notas
@@ -2301,24 +2277,21 @@ class POSViewModel: ObservableObject {
         for itemIndex in items {
             guard itemIndex < cart.count else { continue }
             let item = cart[itemIndex]
+            let originalTotal = Int(Double(item.quantity) * (item.originalPrice ?? item.unitPrice))
             var dict: [String: Any] = [
                 "name": item.productName,
                 "qty": item.quantity,
-                "price": item.unitPrice,
-                "total": Double(item.quantity) * item.unitPrice
+                "price": item.originalPrice ?? item.unitPrice,
+                "total": originalTotal
             ]
             if let pn = item.promotionName { dict["promotionName"] = pn }
-            if let op = item.originalPrice { dict["originalPrice"] = Int(op * Double(item.quantity)) }
-            if let pd = item.promotionDiscount { dict["promotionDiscount"] = Int(pd) }
             ticketItems.append(dict)
         }
         
         let subtotal = items.reduce(0.0) { sum, ci in
             guard ci < cart.count else { return sum }
             let item = cart[ci]
-            let basePrice = item.originalPrice ?? item.unitPrice
-            let promoDiscount = item.promotionDiscount ?? 0
-            return sum + (basePrice * Double(item.quantity) - promoDiscount)
+            return sum + ((item.originalPrice ?? item.unitPrice) * Double(item.quantity))
         }
         
         await PrintService.shared.printSplitTicket(

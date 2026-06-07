@@ -106,7 +106,10 @@ struct CartItemRow: View {
                 }
             }
             
-            let itemTotal = item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
+            // When inside a promotion group, show original price (discount is shown at group level)
+            let itemTotal = isInsidePromotionGroup
+                ? item.unitPrice * Double(item.quantity)
+                : item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
             
             // Status + price for sent items
             if item.sentToKitchen {
@@ -167,7 +170,7 @@ struct CartItemRow: View {
                     
                     // Price total aligned with controls
                     VStack(alignment: .trailing, spacing: 2) {
-                        if let origPrice = item.originalPrice, (item.promotionDiscount ?? 0) > 0 {
+                        if !isInsidePromotionGroup, let origPrice = item.originalPrice, (item.promotionDiscount ?? 0) > 0 {
                             Text(vm.formatCurrency(origPrice * Double(item.quantity)))
                                 .font(.caption2)
                                 .foregroundColor(Color(white: 0.4))

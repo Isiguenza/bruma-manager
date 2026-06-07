@@ -254,23 +254,30 @@ class PromotionEngine {
             }
         }
         
-        // All rules satisfied — apply discount to consumed items (cheapest first)
+        // All rules satisfied — calculate discount on total of consumed items
         let sortedConsumed = consumedItems.sorted { updatedItems[$0.index].unitPrice < updatedItems[$1.index].unitPrice }
+        
+        // Calculate total original price of consumed items for percentage discount
+        var consumedOriginalTotal: Double = 0
+        for (index, qty) in sortedConsumed {
+            consumedOriginalTotal += updatedItems[index].unitPrice * Double(qty)
+        }
         
         for (index, qty) in sortedConsumed {
             var updated = updatedItems[index]
             let originalPrice = updated.unitPrice
             
             if discountPercent > 0 {
-                let discountPerItem = (originalPrice * discountPercent) / 100
-                let newPrice = originalPrice - discountPerItem
-                updated.promotionDiscount = discountPerItem * Double(qty)
-                updated.unitPrice = newPrice
+                // Discount is on the total; distribute proportionally per item
+                let itemOriginalTotal = originalPrice * Double(qty)
+                let itemShare = consumedOriginalTotal > 0 ? itemOriginalTotal / consumedOriginalTotal : 0
+                let totalDiscount = (consumedOriginalTotal * discountPercent) / 100
+                let itemDiscount = totalDiscount * itemShare
+                updated.promotionDiscount = itemDiscount
             } else if discountAmt > 0 {
-                let newPrice = max(0, originalPrice - discountAmt)
-                let actualDiscount = originalPrice - newPrice
-                updated.promotionDiscount = actualDiscount * Double(qty)
-                updated.unitPrice = newPrice
+                // Fixed amount: discount cheapest items first
+                let discountPerItem = min(originalPrice, discountAmt)
+                updated.promotionDiscount = discountPerItem * Double(qty)
             }
             
             updated.promotionId = promo.id

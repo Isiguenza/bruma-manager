@@ -809,13 +809,14 @@ struct GuestItemsDialog: View {
                                         }
                                     }
                                     
+                                    let itemTotal = item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
                                     if item.isGuest {
-                                        Text(vm.formatCurrency(item.unitPrice * Double(item.quantity)))
+                                        Text(vm.formatCurrency(itemTotal))
                                             .font(.caption)
                                             .foregroundColor(.gray)
                                             .strikethrough()
                                     } else {
-                                        Text(vm.formatCurrency(item.unitPrice * Double(item.quantity)))
+                                        Text(vm.formatCurrency(itemTotal))
                                             .font(.caption)
                                             .foregroundColor(.gray)
                                     }

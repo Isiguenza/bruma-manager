@@ -131,7 +131,8 @@ struct SplitAssignView: View {
                                     
                                     Spacer()
                                     
-                                    Text(vm.formatCurrency(item.unitPrice * Double(item.quantity)))
+                                    let itemTotal = item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
+                                    Text(vm.formatCurrency(itemTotal))
                                         .font(.subheadline.bold())
                                         .foregroundColor(.blue)
                                 }
