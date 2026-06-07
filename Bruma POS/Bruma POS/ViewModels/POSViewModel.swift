@@ -1960,8 +1960,7 @@ class POSViewModel: ObservableObject {
         }
         
         let manualDiscountAmt = selectedDiscount != nil ? Int(flexibleDiscountAmount) : 0
-        let totalDiscountAmount = Int(totalPromoDiscount) + manualDiscountAmt
-        let discountData: [String: Any]? = totalDiscountAmount > 0 ? ["name": "Descuentos", "amount": totalDiscountAmount] : nil
+        let discountData: [String: Any]? = manualDiscountAmt > 0 ? ["name": selectedDiscount?.name ?? "Descuento", "amount": manualDiscountAmt] : nil
         
         let subWithDiscount = subtotal - totalPromoDiscount - Double(manualDiscountAmt)
         let tip = showCustomTip ? (Double(customTip) ?? 0) : subWithDiscount * Double(tipPercentage) / 100
@@ -1978,6 +1977,7 @@ class POSViewModel: ObservableObject {
                     "total": originalTotal
                 ]
                 if let pn = item.promotionName { dict["promotionName"] = pn }
+                if let pd = item.promotionDiscount, pd > 0 { dict["promotionDiscount"] = pd }
                 if let ig = item.isGuest, ig { dict["isGuest"] = true }
                 return dict
             }
@@ -2014,6 +2014,7 @@ class POSViewModel: ObservableObject {
                 "total": originalTotal
             ]
             if let pn = item.promotionName { dict["promotionName"] = pn }
+            if let pd = item.promotionDiscount, pd > 0 { dict["promotionDiscount"] = pd }
             itemsBySeat[seat]?.append(dict)
         }
         
@@ -2025,8 +2026,6 @@ class POSViewModel: ObservableObject {
         }
         let preTicketTotal = subtotal - totalDiscount + deliveryFeeAmount
         
-        let discountData: [String: Any]? = totalDiscount > 0 ? ["name": "Promociones", "amount": Int(totalDiscount)] : nil
-        
         await PrintService.shared.printTicket(
             customerName: customerName,
             orderNumber: "PRE-TICKET",
@@ -2036,7 +2035,7 @@ class POSViewModel: ObservableObject {
             total: Int(preTicketTotal),
             tableNumber: selectedTable?.number ?? "",
             isDelivery: selectedTable == nil,
-            discount: discountData,
+            discount: nil,
             paymentMethod: nil,
             deliveryFee: Int(deliveryFeeAmount)
         )

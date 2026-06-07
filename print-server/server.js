@@ -285,11 +285,6 @@ app.post('/print', async (req, res) => {
       const itemSpaces = Math.max(1, 48 - qtyName.length - price.length);
       content += qtyName + " ".repeat(itemSpaces) + price + "\n";
       
-      // Agregar promoción si existe (solo nombre, sin precio - el descuento total va al final)
-      if (item.promotionName) {
-        content += `  >> ${item.promotionName}\n`;
-      }
-      
       // Agregar indicador de invitado si existe
       if (item.isGuest) {
         content += `  \u21b3 Invitado\n`;
@@ -328,7 +323,47 @@ app.post('/print', async (req, res) => {
       content += commands.feedLine;
     }
     
-    // Descuento (si hay)
+    // PROMOCIONES - grouped by promotion name
+    const promoItems = allItems.filter(item => item.promotionName && item.promotionDiscount > 0);
+    if (promoItems.length > 0) {
+      // Group by promotion name
+      const byPromo = {};
+      for (const item of promoItems) {
+        if (!byPromo[item.promotionName]) {
+          byPromo[item.promotionName] = [];
+        }
+        byPromo[item.promotionName].push(item);
+      }
+      
+      content += commands.feedLine;
+      content += commands.alignCenter;
+      content += commands.bold;
+      content += "PROMOCIONES\n";
+      content += commands.boldOff;
+      content += commands.alignLeft;
+      content += "────────────────────────────────────────────────\n";
+      content += commands.feedLine;
+      
+      for (const [promoName, items] of Object.entries(byPromo)) {
+        content += commands.bold;
+        content += `\u25C6 ${promoName}\n`;
+        content += commands.boldOff;
+        
+        for (const item of items) {
+          const promoItemText = `- ${item.qty}x ${item.name}`;
+          const promoItemPrice = `-$${Math.round(item.promotionDiscount)}`;
+          const promoItemSpaces = Math.max(1, 48 - promoItemText.length - promoItemPrice.length);
+          content += promoItemText + " ".repeat(promoItemSpaces) + promoItemPrice + "\n";
+        }
+        
+        content += commands.feedLine;
+      }
+      
+      content += "────────────────────────────────────────────────\n";
+      content += commands.feedLine;
+    }
+    
+    // Descuento manual (si hay)
     if (discount && discount.amount > 0) {
       const discountLabel = `${discount.name}:`;
       const discountStr = `-$${discount.amount}`;
@@ -338,8 +373,6 @@ app.post('/print', async (req, res) => {
     }
     
     // Total en negritas y más grande
-    content += commands.feedLine;
-    content += "────────────────────────────────────────────────\n";
     content += commands.feedLine;
     content += commands.bold;
     content += commands.textSizeDouble;
