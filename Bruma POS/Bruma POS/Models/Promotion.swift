@@ -93,6 +93,7 @@ struct ComboRule: Codable {
     let categoryId: String?        // legacy single category
     let categoryIds: [String]?      // multiple category options (OR)
     let quantity: Int
+    let variantNames: [String]?    // specific variant names to match (optional)
     
     /// All product IDs to check for this rule (legacy + array combined)
     var allProductIds: [String] {
@@ -108,6 +109,21 @@ struct ComboRule: Codable {
         if let categoryId = categoryId { ids.append(categoryId) }
         if let categoryIds = categoryIds { ids.append(contentsOf: categoryIds) }
         return ids
+    }
+    
+    /// Check if a cart item matches this rule considering variant names
+    func matchesItem(_ item: CartItem) -> Bool {
+        // Check product ID match
+        if !allProductIds.isEmpty {
+            guard allProductIds.contains(item.productId) else { return false }
+            // If variant names specified, item must have a matching variant
+            if let variantNames = variantNames, !variantNames.isEmpty {
+                guard let itemVariant = item.variantName else { return false }
+                return variantNames.contains(itemVariant)
+            }
+            return true
+        }
+        return false
     }
 }
 

@@ -52,7 +52,7 @@ export default function PromotionsPage() {
     startTime: "",
     endTime: "",
     priority: 0,
-    comboRules: [] as { productId?: string; productIds?: string[]; categoryId?: string; categoryIds?: string[]; quantity: number; type?: "product" | "category" }[],
+    comboRules: [] as { productId?: string; productIds?: string[]; categoryId?: string; categoryIds?: string[]; quantity: number; type?: "product" | "category"; variantNames?: string[] }[],
   });
 
   useEffect(() => {
@@ -670,6 +670,60 @@ export default function PromotionsPage() {
                                   <option key={opt.id} value={opt.id}>{opt.name}</option>
                                 ))}
                               </select>
+                            )}
+
+                            {/* Variant selector for products with variants */}
+                            {hasProducts && selectedIds.length > 0 && (
+                              <div className="pt-1">
+                                {(() => {
+                                  const allVariants = selectedIds.flatMap((id) => {
+                                    const product = products.find((p) => p.id === id);
+                                    if (!product?.hasVariants || !product.variants) return [];
+                                    try {
+                                      return JSON.parse(product.variants) as Array<{ name: string; price: string }>;
+                                    } catch {
+                                      return [];
+                                    }
+                                  });
+                                  const uniqueVariants = Array.from(new Map(allVariants.map((v) => [v.name, v])).values());
+                                  if (uniqueVariants.length === 0) return null;
+                                  return (
+                                    <div className="space-y-1">
+                                      <Label className="text-xs">Variantes permitidas:</Label>
+                                      <div className="flex flex-wrap gap-2">
+                                        {uniqueVariants.map((variant) => {
+                                          const isSelected = (rule.variantNames ?? []).includes(variant.name);
+                                          return (
+                                            <label key={variant.name} className="flex items-center gap-1 text-xs cursor-pointer">
+                                              <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={(e) => {
+                                                  const rules = [...formData.comboRules];
+                                                  const current = rules[idx].variantNames ?? [];
+                                                  if (e.target.checked) {
+                                                    rules[idx] = { ...rules[idx], variantNames: [...current, variant.name] };
+                                                  } else {
+                                                    rules[idx] = { ...rules[idx], variantNames: current.filter((n) => n !== variant.name) };
+                                                  }
+                                                  setFormData({ ...formData, comboRules: rules });
+                                                }}
+                                                className="h-3 w-3 rounded"
+                                              />
+                                              {variant.name} <span className="text-muted-foreground">(${variant.price})</span>
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                      {(rule.variantNames?.length ?? 0) > 0 && (
+                                        <p className="text-xs text-muted-foreground">
+                                          Solo items con variantes seleccionadas califican.
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
                             )}
                           </div>
                         )}

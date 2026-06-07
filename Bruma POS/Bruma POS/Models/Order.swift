@@ -112,6 +112,9 @@ struct CartItem: Identifiable {
     var orderStatus: String? // "pending", "preparing", "ready", "delivered"
     var deliveredToTable: Bool
     
+    // Variant field
+    var variantName: String?
+    
     // Promotion fields
     var promotionId: String?
     var promotionName: String?
@@ -148,7 +151,14 @@ struct CartItem: Identifiable {
     }
     
     static func fromOrderItem(_ item: OrderItem, orderId: String) -> CartItem {
-        CartItem(
+        // Parse variant name from productName if it follows "Product - Variant" format
+        var variantName: String? = nil
+        let components = item.productName.split(separator: " - ", maxSplits: 1)
+        if components.count == 2 {
+            variantName = String(components[1])
+        }
+        
+        return CartItem(
             productId: item.productId,
             productName: item.productName,
             unitPrice: item.numericUnitPrice,
@@ -169,6 +179,11 @@ struct CartItem: Identifiable {
             isBeverage: false,
             orderStatus: nil,
             deliveredToTable: item.deliveredToTable ?? false,
+            variantName: variantName,
+            promotionId: nil,
+            promotionName: nil,
+            originalPrice: nil,
+            promotionDiscount: nil,
             isGuest: item.isGuest ?? false
         )
     }

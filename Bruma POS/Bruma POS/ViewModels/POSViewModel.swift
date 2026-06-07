@@ -963,6 +963,7 @@ class POSViewModel: ObservableObject {
             sentToKitchen: false,
             isBeverage: isBev,
             deliveredToTable: false,
+            variantName: nil,
             isGuest: false
         )
         
@@ -1020,6 +1021,7 @@ class POSViewModel: ObservableObject {
                 sentToKitchen: false,
                 isBeverage: isBev,
                 deliveredToTable: false,
+                variantName: variantName,
                 isGuest: false
             )
             pendingCartItem = newItem
@@ -1128,6 +1130,8 @@ class POSViewModel: ObservableObject {
         
         let isBev = product.category?.isBeverage ?? false
         
+        let variantName = stepSelections["_variantName"] as? String
+        
         let newItem = CartItem(
             productId: product.id,
             productName: displayName,
@@ -1146,6 +1150,7 @@ class POSViewModel: ObservableObject {
             sentToKitchen: false,
             isBeverage: isBev,
             deliveredToTable: false,
+            variantName: variantName,
             isGuest: false
         )
         
@@ -1324,6 +1329,7 @@ class POSViewModel: ObservableObject {
                         isBeverage: newProduct.category?.isBeverage ?? false,
                         orderStatus: item.orderStatus,
                         deliveredToTable: item.deliveredToTable,
+                        variantName: nil,
                         isGuest: item.isGuest
                     )
                     cart[index] = updatedItem
@@ -1362,6 +1368,7 @@ class POSViewModel: ObservableObject {
                         isBeverage: item.isBeverage,
                         orderStatus: item.orderStatus,
                         deliveredToTable: item.deliveredToTable,
+                        variantName: nil,
                         isGuest: item.isGuest
                     )
                     
@@ -1385,6 +1392,7 @@ class POSViewModel: ObservableObject {
                             isBeverage: newProduct.category?.isBeverage ?? false,
                             orderStatus: item.orderStatus,
                             deliveredToTable: false,
+                            variantName: nil,
                             isGuest: item.isGuest
                         )
                         cart.append(newCartItem)

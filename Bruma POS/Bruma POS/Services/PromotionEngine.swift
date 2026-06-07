@@ -185,10 +185,19 @@ class PromotionEngine {
             
             if !productIds.isEmpty {
                 // Rule requires specific product(s) — any of them (OR logic)
+                // Filter by variant names if specified
                 var allProductItems: [(index: Int, item: CartItem)] = []
                 for pid in productIds {
                     if let itemsForProduct = qtyByProduct[pid] {
-                        allProductItems.append(contentsOf: itemsForProduct)
+                        if let variantNames = rule.variantNames, !variantNames.isEmpty {
+                            let filtered = itemsForProduct.filter { entry in
+                                guard let itemVariant = entry.item.variantName else { return false }
+                                return variantNames.contains(itemVariant)
+                            }
+                            allProductItems.append(contentsOf: filtered)
+                        } else {
+                            allProductItems.append(contentsOf: itemsForProduct)
+                        }
                     }
                 }
                 guard !allProductItems.isEmpty else { return }
