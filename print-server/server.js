@@ -285,12 +285,9 @@ app.post('/print', async (req, res) => {
       const itemSpaces = Math.max(1, 48 - qtyName.length - price.length);
       content += qtyName + " ".repeat(itemSpaces) + price + "\n";
       
-      // Agregar promoción si existe
-      if (item.promotionName && item.promotionDiscount) {
-        const promoText = `  \u21b3 ${item.promotionName}`;
-        const promoPrice = `-$${item.promotionDiscount}`;
-        const promoSpaces = Math.max(1, 48 - promoText.length - promoPrice.length);
-        content += promoText + " ".repeat(promoSpaces) + promoPrice + "\n";
+      // Agregar promoción si existe (solo nombre, sin precio - el descuento total va al final)
+      if (item.promotionName) {
+        content += `  >> ${item.promotionName}\n`;
       }
       
       // Agregar indicador de invitado si existe

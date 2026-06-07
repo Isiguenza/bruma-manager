@@ -191,7 +191,8 @@ class PromotionEngine {
                     if let itemsForProduct = qtyByProduct[pid] {
                         if let variantNames = rule.variantNames, !variantNames.isEmpty {
                             let filtered = itemsForProduct.filter { entry in
-                                guard let itemVariant = entry.item.variantName else { return false }
+                                // Products without variants (no variantName) always qualify
+                                guard let itemVariant = entry.item.variantName else { return true }
                                 return variantNames.contains(itemVariant)
                             }
                             allProductItems.append(contentsOf: filtered)

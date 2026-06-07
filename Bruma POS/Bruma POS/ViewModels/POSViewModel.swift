@@ -1959,12 +1959,11 @@ class POSViewModel: ObservableObject {
             return sum + (item.promotionDiscount ?? 0)
         }
         
-        let discountData: [String: Any]? = selectedDiscount.map { d in
-            ["name": d.name, "amount": Int(flexibleDiscountAmount)]
-        }
+        let manualDiscountAmt = selectedDiscount != nil ? Int(flexibleDiscountAmount) : 0
+        let totalDiscountAmount = Int(totalPromoDiscount) + manualDiscountAmt
+        let discountData: [String: Any]? = totalDiscountAmount > 0 ? ["name": "Descuentos", "amount": totalDiscountAmount] : nil
         
-        let discountAmt = discountData?["amount"] as? Int ?? 0
-        let subWithDiscount = subtotal - totalPromoDiscount - Double(discountAmt)
+        let subWithDiscount = subtotal - totalPromoDiscount - Double(manualDiscountAmt)
         let tip = showCustomTip ? (Double(customTip) ?? 0) : subWithDiscount * Double(tipPercentage) / 100
         let tipPlusDelivery = tip + deliveryFeeAmount
         let total = subWithDiscount + tipPlusDelivery
