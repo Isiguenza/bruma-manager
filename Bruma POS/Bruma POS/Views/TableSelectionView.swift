@@ -251,6 +251,7 @@ struct TableSelectionView: View {
         }
     }
     
+    
     // MARK: - Header (clean style)
     
     private var header: some View {

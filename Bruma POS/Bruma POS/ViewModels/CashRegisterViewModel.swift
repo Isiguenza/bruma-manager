@@ -54,6 +54,9 @@ class CashRegisterViewModel: ObservableObject {
     @Published var showQuickCount = false
     @Published var quickCashInput = ""
     
+    // MARK: - Corte
+    @Published var showCorte = false
+    
     var quickCashDifference: Double {
         let counted = Double(quickCashInput.replacingOccurrences(of: ",", with: "")) ?? 0
         return counted - expectedCash

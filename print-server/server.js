@@ -1106,6 +1106,143 @@ app.post('/print-comanda', async (req, res) => {
   }
 });
 
+// Endpoint para imprimir corte
+app.post('/print-corte', async (req, res) => {
+  try {
+    const {
+      registerName,
+      openedAt,
+      closedAt,
+      sales,
+      tips,
+      commissions,
+      movements,
+      summary
+    } = req.body;
+
+    let content = "";
+    content += commands.init;
+    content += commands.alignCenter;
+    content += commands.bold;
+    content += commands.textSizeDouble;
+    content += "BRUMA\n";
+    content += commands.textSizeNormal;
+    content += commands.boldOff;
+    content += "Mariscos y Cocteles\n";
+    content += commands.feedLine;
+    content += commands.feedLine;
+    
+    // Título
+    content += commands.bold;
+    content += commands.textSizeDouble;
+    content += "CORTE\n";
+    content += commands.textSizeNormal;
+    content += commands.boldOff;
+    content += commands.feedLine;
+    
+    // Fecha
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Mexico_City' });
+    const timeStr = now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Mexico_City' });
+    content += `${dateStr} ${timeStr}\n`;
+    content += commands.feedLine;
+    
+    // VENTAS
+    content += commands.alignLeft;
+    content += commands.bold;
+    content += "VENTAS\n";
+    content += commands.boldOff;
+    content += "--------------------------------\n";
+    if (sales.cash > 0) content += `Efectivo:      $${Math.round(sales.cash)}\n`;
+    if (sales.card > 0) {
+      content += `Tarjeta:       $${Math.round(sales.card)}\n`;
+      if (sales.netCard !== sales.card) {
+        content += `  Neto real:   $${Math.round(sales.netCard)}\n`;
+      }
+    }
+    if (sales.transfer > 0) content += `Transferencia: $${Math.round(sales.transfer)}\n`;
+    content += "--------------------------------\n";
+    content += `Total bruto:   $${Math.round(sales.total)}\n`;
+    if (sales.netCard && sales.netCard !== sales.card) {
+      content += `Total neto:    $${Math.round(sales.cash + sales.transfer + sales.netCard)}\n`;
+    }
+    content += commands.feedLine;
+    
+    // PROPINAS
+    content += commands.bold;
+    content += "PROPINAS\n";
+    content += commands.boldOff;
+    content += "--------------------------------\n";
+    if (tips.cash > 0) content += `Efectivo:      $${Math.round(tips.cash)}\n`;
+    if (tips.card > 0) {
+      content += `Tarjeta:       $${Math.round(tips.card)}\n`;
+      if (tips.netCard !== tips.card) {
+        content += `  Neto real:   $${Math.round(tips.netCard)}\n`;
+      }
+    }
+    if (tips.transfer > 0) content += `Transferencia: $${Math.round(tips.transfer)}\n`;
+    content += "--------------------------------\n";
+    content += `Total bruto:   $${Math.round(tips.total)}\n`;
+    content += commands.feedLine;
+    
+    // COMISIONES
+    if (commissions && commissions.total > 0) {
+      content += commands.bold;
+      content += "COMISIONES BANCARIAS\n";
+      content += commands.boldOff;
+      content += `Tasa: ${(commissions.rateWithIVA * 100).toFixed(2)}%\n`;
+      content += `Total: -$${Math.round(commissions.total)}\n`;
+      content += commands.feedLine;
+    }
+    
+    // MOVIMIENTOS DE CAJA
+    content += commands.bold;
+    content += "MOVIMIENTOS DE CAJA\n";
+    content += commands.boldOff;
+    content += "--------------------------------\n";
+    if (movements.deposits.total > 0) {
+      content += `Depósitos:     $${Math.round(movements.deposits.total)} (${movements.deposits.count})\n`;
+    }
+    if (movements.withdrawals.total > 0) {
+      content += `Sangrías:     -$${Math.round(movements.withdrawals.total)} (${movements.withdrawals.count})\n`;
+    }
+    content += commands.feedLine;
+    
+    // RESUMEN
+    content += commands.bold;
+    content += "RESUMEN\n";
+    content += commands.boldOff;
+    content += "--------------------------------\n";
+    content += `Órdenes:       ${summary.totalOrders}\n`;
+    if (summary.splitOrders > 0) content += `Pagos divididos: ${summary.splitOrders}\n`;
+    content += `Efectivo esperado: $${Math.round(summary.expectedCash)}\n`;
+    if (summary.finalCash) {
+      content += `Efectivo contado:  $${Math.round(summary.finalCash)}\n`;
+      const diff = summary.finalCash - summary.expectedCash;
+      if (diff >= 0) {
+        content += `Diferencia:    +$${Math.round(diff)}\n`;
+      } else {
+        content += `Faltante:      -$${Math.round(Math.abs(diff))}\n`;
+      }
+    }
+    content += commands.feedLine;
+    
+    // Footer
+    content += commands.alignCenter;
+    content += "===============================\n";
+    content += commands.feedLine;
+    content += commands.feedLine;
+    content += commands.feed;
+    content += commands.cut;
+
+    await sendToPrinter(content);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error printing corte:", error);
+    res.status(500).json({ error: "Error al imprimir corte" });
+  }
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ 

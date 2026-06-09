@@ -11,6 +11,13 @@ struct CashRegister: Codable, Identifiable {
     let cashSales: String
     let terminalSales: String
     let transferSales: String
+    let totalTips: String?
+    let cashTips: String?
+    let cardTips: String?
+    let transferTips: String?
+    let cardCommission: String?
+    let netCardSales: String?
+    let netCardTips: String?
     let deposits: String
     let withdrawals: String
     let status: String // "open" | "closed"

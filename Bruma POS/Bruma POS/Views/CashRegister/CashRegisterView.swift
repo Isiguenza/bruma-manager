@@ -265,6 +265,10 @@ struct CashRegisterView: View {
                         shareSummary(register: register)
                     }
                     
+                    actionButton(title: "Corte", icon: "doc.text.fill", iconColor: .yellow) {
+                        vm.showCorte = true
+                    }
+                    
                     actionButton(title: "Resumen", icon: "printer.fill", iconColor: .blue) {
                         Task {
                             await printSummary(register: register)
@@ -305,6 +309,9 @@ struct CashRegisterView: View {
         }
         .sheet(isPresented: $vm.showQuickCount) {
             quickCashCountSheet(register: register)
+        }
+        .sheet(isPresented: $vm.showCorte) {
+            CorteView(registerId: register.id, register: register)
         }
         .alert("Eliminar Orden", isPresented: $showDeleteConfirm) {
             TextField("Motivo de eliminación", text: $deleteReason)

@@ -148,9 +148,11 @@ class POSViewModel: ObservableObject {
     @Published var tipPercentage = 0
     @Published var customTip = ""
     @Published var showCustomTip = false
+    @Published var tipPaymentMethod: String?
     @Published var processing = false
     @Published var paymentCompleted = false
     @Published var confirmingOrder = false
+    @Published var splitPayments: [SplitPayment] = []
     
     // Reset payment state when switching tables/orders
     func resetPaymentState() {
@@ -161,6 +163,8 @@ class POSViewModel: ObservableObject {
         tipPercentage = 0
         customTip = ""
         showCustomTip = false
+        tipPaymentMethod = nil
+        splitPayments = []
         processing = false
         paymentCompleted = false
         confirmingOrder = false
@@ -1786,6 +1790,7 @@ class POSViewModel: ObservableObject {
                     "loyaltyStamps": 1,
                     "userId": employeeId ?? "",
                     "tip": tipWithDelivery,
+                    "tipPaymentMethod": tipPaymentMethod ?? "cash",
                     "subtotal": cartTotalWithDiscount,
                     "discount": totalDiscount
                 ])
@@ -1810,6 +1815,7 @@ class POSViewModel: ObservableObject {
                     "loyaltyStamps": 1,
                     "userId": employeeId ?? "",
                     "tip": tipWithDelivery,
+                    "tipPaymentMethod": tipPaymentMethod ?? "transfer",
                     "subtotal": cartTotalWithDiscount,
                     "discount": totalDiscount
                 ])
@@ -1834,6 +1840,7 @@ class POSViewModel: ObservableObject {
                     "loyaltyStamps": 1,
                     "userId": employeeId ?? "",
                     "tip": tipWithDelivery,
+                    "tipPaymentMethod": tipPaymentMethod ?? "terminal_mercadopago",
                     "subtotal": cartTotalWithDiscount,
                     "discount": totalDiscount
                 ])
@@ -1842,6 +1849,36 @@ class POSViewModel: ObservableObject {
                 showToast("Pago con tarjeta registrado")
             } catch {
                 showToast("Error procesando pago", isError: true)
+            }
+            processing = false
+        }
+    }
+    
+    func handlePaySplit() {
+        guard let orderId = currentOrderId else { return }
+        guard !splitPayments.isEmpty else { return }
+        processing = true
+        Task {
+            do {
+                let paymentsData = splitPayments.map { payment in
+                    var dict: [String: Any] = [
+                        "paymentMethod": payment.paymentMethod,
+                        "amount": payment.amount,
+                        "tip": payment.tip,
+                        "sequenceNumber": payment.sequenceNumber
+                    ]
+                    if let tipMethod = payment.tipPaymentMethod {
+                        dict["tipPaymentMethod"] = tipMethod
+                    }
+                    return dict
+                }
+                
+                try await APIService.shared.payOrderSplit(orderId: orderId, payments: paymentsData)
+                paymentCompleted = true
+                await handlePrint()
+                showToast("Pago dividido registrado")
+            } catch {
+                showToast("Error procesando pago dividido", isError: true)
             }
             processing = false
         }
@@ -2347,6 +2384,8 @@ class POSViewModel: ObservableObject {
         tipPercentage = 0
         customTip = ""
         showCustomTip = false
+        tipPaymentMethod = nil
+        splitPayments = []
         splitBillMode = false
         itemAssignments = [:]
         individualPayments = [:]

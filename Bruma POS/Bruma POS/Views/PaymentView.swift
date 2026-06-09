@@ -16,6 +16,8 @@ struct PaymentView: View {
                 paymentConfirmation
             case "done":
                 paymentDone
+            case "split-payment":
+                SplitPaymentView(vm: vm)
             case "split-assign":
                 SplitAssignView(vm: vm)
             case "split-overview":
@@ -124,6 +126,7 @@ struct PaymentView: View {
                     vm.paymentStep = "payment"
                     vm.paymentMethod = nil
                     vm.cashReceived = ""
+                    vm.splitPayments = []
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "creditcard.fill")
@@ -136,6 +139,25 @@ struct PaymentView: View {
                     .foregroundColor(.green)
                     .cornerRadius(14)
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.green.opacity(0.4), lineWidth: 1.5))
+                }
+                
+                // Pago Dividido (multiple methods)
+                Button {
+                    vm.paymentStep = "split-payment"
+                    vm.splitPayments = []
+                    vm.paymentMethod = nil
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "creditcard.and.123")
+                        Text("Pago Dividido")
+                            .font(.headline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(Color.purple.opacity(0.15))
+                    .foregroundColor(.purple)
+                    .cornerRadius(14)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.purple.opacity(0.3), lineWidth: 1))
                 }
                 
                 // Dividir Cuenta
@@ -270,6 +292,11 @@ struct PaymentView: View {
                 } else {
                     // Payment methods
                     paymentMethodButtons
+                    
+                    // Tip payment method selector (when not cash and tip > 0)
+                    if vm.paymentMethod != nil && vm.paymentMethod != "cash" && vm.tipAmount > 0 {
+                        tipPaymentMethodSelector
+                    }
                     
                     // Cash input
                     if vm.paymentMethod == "cash" {
@@ -455,6 +482,53 @@ struct PaymentView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(vm.paymentMethod == method ? color.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+    
+    // MARK: - Tip Payment Method Selector
+    
+    private var tipPaymentMethodSelector: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("¿Cómo se pagará la propina?")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.gray)
+            
+            HStack(spacing: 12) {
+                tipMethodCard(method: vm.paymentMethod ?? "terminal_mercadopago", label: "En tarjeta", icon: "creditcard.fill", color: .blue)
+                tipMethodCard(method: "cash", label: "En efectivo", icon: "banknote.fill", color: .green)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.white.opacity(0.05))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        )
+    }
+    
+    private func tipMethodCard(method: String, label: String, icon: String, color: Color) -> some View {
+        Button {
+            vm.tipPaymentMethod = method
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                    .foregroundColor(vm.tipPaymentMethod == method || (vm.tipPaymentMethod == nil && method == vm.paymentMethod) ? color : color.opacity(0.6))
+                Text(label)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(vm.tipPaymentMethod == method || (vm.tipPaymentMethod == nil && method == vm.paymentMethod) ? .white : .gray)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(vm.tipPaymentMethod == method || (vm.tipPaymentMethod == nil && method == vm.paymentMethod) ? color.opacity(0.15) : Color.white.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(vm.tipPaymentMethod == method || (vm.tipPaymentMethod == nil && method == vm.paymentMethod) ? color.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1.5)
             )
         }
         .buttonStyle(.plain)

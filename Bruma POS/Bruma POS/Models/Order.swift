@@ -18,6 +18,7 @@ struct Order: Codable, Identifiable {
     let splitBillData: String?
     let paymentMethod: String?
     let tip: String?
+    let tipPaymentMethod: String?
     let discountAmount: String?
     let discountName: String?
     

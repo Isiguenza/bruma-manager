@@ -20,7 +20,7 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { paymentMethod, loyaltyCardId, loyaltyStamps, userId, tip, subtotal: frontendSubtotal, discount, customTimestamp } = body;
+    const { paymentMethod, loyaltyCardId, loyaltyStamps, userId, tip, tipPaymentMethod, subtotal: frontendSubtotal, discount, customTimestamp } = body;
 
     // Get the order
     const order = await db.query.orders.findFirst({
@@ -52,6 +52,7 @@ export async function POST(
         status: "delivered",
         subtotal: orderSubtotal.toString(),
         tip: tipAmount.toString(),
+        tipPaymentMethod: tipPaymentMethod || paymentMethod || null,
         total: newTotal.toString(),
         discountAmount: discount ? discount.toString() : null,
         loyaltyCardId: loyaltyCardId || null,
@@ -96,6 +97,7 @@ export async function POST(
       const updateData: Record<string, any> = {
         totalSales: sql`COALESCE(${cashRegisters.totalSales}, 0) + ${newTotal}`,
         totalOrders: sql`COALESCE(${cashRegisters.totalOrders}, 0) + 1`,
+        totalTips: sql`COALESCE(${cashRegisters.totalTips}, 0) + ${tipAmount}`,
       };
       if (paymentMethod === "cash") {
         updateData.cashSales = sql`COALESCE(${cashRegisters.cashSales}, 0) + ${newTotal}`;
@@ -109,6 +111,16 @@ export async function POST(
       } else if (paymentMethod === "platform_delivery") {
         // Platform delivery: registrar en transferSales (ya que el dinero viene de la plataforma)
         updateData.transferSales = sql`COALESCE(${cashRegisters.transferSales}, 0) + ${newTotal}`;
+      }
+      
+      // Track tips by method
+      const finalTipMethod = tipPaymentMethod || paymentMethod || "cash";
+      if (finalTipMethod === "cash") {
+        updateData.cashTips = sql`COALESCE(${cashRegisters.cashTips}, 0) + ${tipAmount}`;
+      } else if (finalTipMethod === "terminal_mercadopago" || finalTipMethod === "card") {
+        updateData.cardTips = sql`COALESCE(${cashRegisters.cardTips}, 0) + ${tipAmount}`;
+      } else if (finalTipMethod === "transfer") {
+        updateData.transferTips = sql`COALESCE(${cashRegisters.transferTips}, 0) + ${tipAmount}`;
       }
       await db
         .update(cashRegisters)

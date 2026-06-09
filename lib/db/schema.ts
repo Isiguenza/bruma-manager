@@ -282,6 +282,7 @@ export const orders = pgTable("orders", {
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   source: varchar("source", { length: 50 }).default("pos"), // "pos", "uber_eats", "rappi", etc.
   deliveryOrderId: uuid("delivery_order_id"),
+  tipPaymentMethod: paymentMethodEnum("tip_payment_method"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -336,6 +337,9 @@ export const orderPayments = pgTable("order_payments", {
   reference: varchar("reference", { length: 255 }),
   mercadopagoPaymentIntentId: text("mercadopago_payment_intent_id"),
   mercadopagoPaymentId: text("mercadopago_payment_id"),
+  tip: decimal("tip", { precision: 10, scale: 2 }).default("0"),
+  tipPaymentMethod: paymentMethodEnum("tip_payment_method"),
+  sequenceNumber: integer("sequence_number").default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   completedAt: timestamp("completed_at"),
 });
@@ -377,6 +381,13 @@ export const cashRegisters = pgTable("cash_registers", {
   transferSales: decimal("transfer_sales", { precision: 10, scale: 2 }).default("0"),
   withdrawals: decimal("withdrawals", { precision: 10, scale: 2 }).default("0"),
   deposits: decimal("deposits", { precision: 10, scale: 2 }).default("0"),
+  totalTips: decimal("total_tips", { precision: 10, scale: 2 }).default("0"),
+  cashTips: decimal("cash_tips", { precision: 10, scale: 2 }).default("0"),
+  cardTips: decimal("card_tips", { precision: 10, scale: 2 }).default("0"),
+  transferTips: decimal("transfer_tips", { precision: 10, scale: 2 }).default("0"),
+  cardCommission: decimal("card_commission", { precision: 10, scale: 2 }).default("0"),
+  netCardSales: decimal("net_card_sales", { precision: 10, scale: 2 }).default("0"),
+  netCardTips: decimal("net_card_tips", { precision: 10, scale: 2 }).default("0"),
   totalOrders: integer("total_orders").default(0),
   difference: decimal("difference", { precision: 10, scale: 2 }),
   tolerance: decimal("tolerance", { precision: 10, scale: 2 }).default("10"),

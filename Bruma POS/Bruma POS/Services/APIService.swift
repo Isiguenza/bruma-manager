@@ -481,4 +481,21 @@ class APIService {
         let url = URL(string: "\(baseURL)/api/orders/history?registerId=\(registerId)")!
         return try await request(url)
     }
+    
+    // MARK: - Corte
+    
+    func fetchCorte(registerId: String) async throws -> CorteData {
+        let url = URL(string: "\(baseURL)/api/cash-register/\(registerId)/corte")!
+        return try await request(url)
+    }
+    
+    // MARK: - Split Payments
+    
+    func payOrderSplit(orderId: String, payments: [[String: Any]]) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/pay-split")!
+        let (_, http) = try await requestRaw(url, method: "POST", body: ["payments": payments])
+        if !(200...299).contains(http.statusCode) {
+            throw APIError.serverError
+        }
+    }
 }
