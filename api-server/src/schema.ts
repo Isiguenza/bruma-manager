@@ -829,3 +829,8 @@ export const userProfilesRelations = relations(userProfiles, ({ many }) => ({
   orders: many(orders),
   cashRegisters: many(cashRegisters),
 }));
+
+// Aliases for backward compatibility with api-server code
+export const employees = userProfiles;
+export const inventory = inventoryProducts;
+
