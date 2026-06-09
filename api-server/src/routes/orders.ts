@@ -99,10 +99,18 @@ router.post("/orders", async (req, res) => {
       return res.status(400).json({ error: "orderType es requerido" });
     }
 
+    // Generate order number (max existing + 1)
+    const maxOrderResult = await db
+      .select({ max: sql<number>`COALESCE(MAX(${schema.orders.orderNumber}), 0)` })
+      .from(schema.orders);
+    const nextOrderNumber = (maxOrderResult[0]?.max ?? 0) + 1;
+    console.log("🛎️ [POST /api/orders] next orderNumber:", nextOrderNumber);
+
     // Create order
     const [newOrder] = await db
       .insert(schema.orders)
       .values({
+        orderNumber: nextOrderNumber,
         tableId: tableId || null,
         tableNumber: tableNumber || null,
         orderType,

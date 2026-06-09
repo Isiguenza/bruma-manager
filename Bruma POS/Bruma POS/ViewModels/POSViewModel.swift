@@ -1665,7 +1665,8 @@ class POSViewModel: ObservableObject {
                     var body: [String: Any] = [
                         "items": itemDicts,
                         "status": "preparing",
-                        "employeeId": employeeId ?? ""
+                        "employeeId": employeeId ?? "",
+                        "orderType": "dine_in"
                     ]
                     if let table = selectedTable { body["tableId"] = table.id }
                     if !customerName.isEmpty {
