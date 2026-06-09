@@ -1,14 +1,28 @@
 services:
+  api-server:
+    build: ./api-server
+    network_mode: host
+    env_file: .env
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+      - CORS_ORIGIN=http://192.168.0.152:3000,http://localhost:3000
+    restart: unless-stopped
+
   nextjs:
     build:
       context: .
       args:
         - NEXT_PUBLIC_PRINT_SERVER_URL=http://192.168.0.152:3001
+        - NEXT_PUBLIC_API_URL=http://192.168.0.152:4000
     network_mode: host
     env_file: .env
     environment:
       - NEXT_PUBLIC_PRINT_SERVER_URL=http://192.168.0.152:3001
+      - NEXT_PUBLIC_API_URL=http://192.168.0.152:4000
     restart: unless-stopped
+    depends_on:
+      - api-server
 
   print-server:
     build: ./print-server
