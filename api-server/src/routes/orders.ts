@@ -190,7 +190,7 @@ router.post("/orders/:id/items", async (req, res) => {
       productName: item.productName,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
-      subtotal: item.subtotal,
+      subtotal: item.subtotal || (item.quantity * item.unitPrice).toString(),
       notes: item.notes || null,
       frostingId: item.frostingId || null,
       frostingName: item.frostingName || null,
@@ -277,6 +277,32 @@ router.patch("/orders/:id/status", async (req, res) => {
   } catch (error) {
     console.error("Error updating order status:", error);
     res.status(500).json({ error: "Error al actualizar estado" });
+  }
+});
+
+// DELETE /api/orders/:id
+router.delete("/orders/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Primero eliminar los items de la orden (foreign key constraint)
+    await db.delete(schema.orderItems).where(eq(schema.orderItems.orderId, id));
+
+    // Luego eliminar la orden
+    const [deletedOrder] = await db
+      .delete(schema.orders)
+      .where(eq(schema.orders.id, id))
+      .returning();
+
+    if (!deletedOrder) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
+
+    emitOrderUpdated({ id, deleted: true });
+    res.json({ success: true, message: "Orden eliminada" });
+  } catch (error) {
+    console.error("Error deleting order:", error);
+    res.status(500).json({ error: "Error al eliminar orden" });
   }
 });
 

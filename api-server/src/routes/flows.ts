@@ -81,18 +81,12 @@ router.get("/products/:id/flow", async (req, res) => {
       });
     }
 
-    const categoryFlow = await db.query.categoryFlows.findFirst({
-      where: eq(schema.categoryFlows.categoryId, product.categoryId),
-      with: {
-        steps: {
-          with: {
-            options: true,
-          },
-          orderBy: (steps, { asc }) => [asc(steps.order)],
-        },
-      },
-    });
-
+    const [categoryFlow] = await db
+      .select()
+      .from(schema.categoryFlows)
+      .where(eq(schema.categoryFlows.categoryId, product.categoryId))
+      .limit(1);
+    
     if (!categoryFlow) {
       return res.json({
         productId: id,
@@ -102,10 +96,16 @@ router.get("/products/:id/flow", async (req, res) => {
       });
     }
 
-    res.json({
+    const categoryFlowSteps = await db
+      .select()
+      .from(schema.categoryFlowSteps)
+      .where(eq(schema.categoryFlowSteps.flowId, categoryFlow.id))
+      .orderBy(schema.categoryFlowSteps.order);
+
+    return res.json({
       productId: id,
-      useDefaultFlow: categoryFlow.useDefaultFlow,
-      steps: categoryFlow.steps,
+      useDefaultFlow: false,
+      steps: categoryFlowSteps,
       source: "category",
     });
   } catch (error) {
