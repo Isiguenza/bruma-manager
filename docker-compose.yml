@@ -1,6 +1,8 @@
 services:
   api-server:
-    build: ./api-server
+    build:
+      context: .
+      dockerfile: ./api-server/Dockerfile
     network_mode: host
     env_file: .env
     environment:

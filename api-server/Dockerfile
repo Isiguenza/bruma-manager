@@ -3,12 +3,12 @@ FROM node:22-slim AS builder
 WORKDIR /app
 
 # Copy package files
-COPY package.json package-lock.json* ./
+COPY api-server/package.json api-server/package-lock.json* ./
 RUN npm install
 
-# Copy source and schema from parent
-COPY . .
-COPY ../lib/db/schema.ts ./lib/db/schema.ts
+# Copy source and schema
+COPY api-server/ .
+COPY lib/db/schema.ts ./lib/db/schema.ts
 
 # Build TypeScript
 RUN npm run build
