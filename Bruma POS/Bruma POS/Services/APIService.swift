@@ -301,6 +301,20 @@ class APIService {
         return try await request(url, method: "POST", body: ["items": items])
     }
     
+    func sendToKitchen(orderId: String) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/send-to-kitchen")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let (_, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw APIError.serverError
+        }
+    }
+    
     func fetchOrder(orderId: String) async throws -> Order {
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)")!
         return try await request(url)

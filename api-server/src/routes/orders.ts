@@ -87,6 +87,7 @@ router.post("/orders", async (req, res) => {
       platformName,
       cashRegisterId,
       employeeId,
+      status,
       items,
     } = req.body;
 
@@ -108,7 +109,7 @@ router.post("/orders", async (req, res) => {
         platformName: platformName || null,
         cashRegisterId: cashRegisterId || null,
         employeeId: employeeId || null,
-        status: "pending",
+        status: status || "pending",
         paymentStatus: "pending",
         subtotal: "0",
         tax: "0",
@@ -125,11 +126,10 @@ router.post("/orders", async (req, res) => {
         productName: item.productName,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
-        subtotal: item.subtotal,
+        subtotal: item.subtotal || (item.quantity * item.unitPrice).toString(),
         notes: item.notes || null,
         frostingId: item.frostingId || null,
         frostingName: item.frostingName || null,
-        status: "pending",
       }));
 
       await db.insert(schema.orderItems).values(orderItems);
@@ -303,6 +303,38 @@ router.delete("/orders/:id", async (req, res) => {
   } catch (error) {
     console.error("Error deleting order:", error);
     res.status(500).json({ error: "Error al eliminar orden" });
+  }
+});
+
+// POST /api/orders/:id/send-to-kitchen
+router.post("/orders/:id/send-to-kitchen", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Update order status to preparing
+    const [updatedOrder] = await db
+      .update(schema.orders)
+      .set({ status: "preparing" })
+      .where(eq(schema.orders.id, id))
+      .returning();
+
+    if (!updatedOrder) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
+
+    // Get complete order with items
+    const completeOrder = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, id),
+      with: {
+        items: true,
+      },
+    });
+
+    emitOrderUpdated(completeOrder);
+    res.json({ success: true, order: completeOrder });
+  } catch (error) {
+    console.error("Error sending to kitchen:", error);
+    res.status(500).json({ error: "Error al enviar a cocina" });
   }
 });
 
@@ -631,8 +663,7 @@ router.post("/order-items/batch-ready", async (req, res) => {
     await db
       .update(schema.orderItems)
       .set({
-        status: "ready",
-        readyAt: new Date().toISOString(),
+        deliveredToTable: true,
       })
       .where(inArray(schema.orderItems.id, itemIds));
 

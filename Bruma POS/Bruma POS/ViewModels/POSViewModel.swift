@@ -1638,6 +1638,9 @@ class POSViewModel: ObservableObject {
                     let itemDicts = unsentItems.map { itemToDict($0) }
                     let updated = try await APIService.shared.addItemsToOrder(orderId: orderId, items: itemDicts)
                     
+                    // Send to kitchen (mark as preparing)
+                    try await APIService.shared.sendToKitchen(orderId: orderId)
+                    
                     // Mark all unsent as sent
                     for i in cart.indices {
                         if !cart[i].sentToKitchen {
