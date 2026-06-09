@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { drizzle, NeonHttpDatabase } from "drizzle-orm/neon-http";
-import * as schema from "../../lib/db/schema";
+import * as schema from "./schema";
 
 let _db: NeonHttpDatabase<typeof schema> | null = null;
 

@@ -14,6 +14,6 @@
     "types": ["node"],
     "noImplicitAny": false
   },
-  "include": ["src/**/*", "../lib/db/schema.ts"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
