@@ -34,6 +34,9 @@ app.use(express.urlencoded({ extended: true }));
 // Request logging
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path}`);
+  if (req.method === "POST" || req.method === "PATCH") {
+    console.log("📦 Body:", JSON.stringify(req.body).substring(0, 500));
+  }
   next();
 });
 

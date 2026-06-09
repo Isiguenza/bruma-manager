@@ -75,6 +75,7 @@ router.get("/orders/:id", async (req, res) => {
 
 // POST /api/orders
 router.post("/orders", async (req, res) => {
+  console.log("🛎️ [POST /api/orders] Request body:", JSON.stringify(req.body, null, 2));
   try {
     const {
       tableId,
@@ -91,7 +92,10 @@ router.post("/orders", async (req, res) => {
       items,
     } = req.body;
 
+    console.log("🛎️ [POST /api/orders] status:", status, "orderType:", orderType, "items count:", items?.length);
+
     if (!orderType) {
+      console.log("🛎️ [POST /api/orders] ERROR: orderType missing");
       return res.status(400).json({ error: "orderType es requerido" });
     }
 
@@ -161,7 +165,8 @@ router.post("/orders", async (req, res) => {
     emitOrderNew(completeOrder);
     res.json(completeOrder);
   } catch (error) {
-    console.error("Error creating order:", error);
+    console.error("🛎️ [POST /api/orders] ERROR:", error);
+    console.error("🛎️ [POST /api/orders] ERROR stack:", (error as Error).stack);
     res.status(500).json({ error: "Error al crear orden" });
   }
 });

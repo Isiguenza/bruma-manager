@@ -1696,6 +1696,8 @@ class POSViewModel: ObservableObject {
                 
                 showToast("Enviado a cocina (\(unsentItems.count) items)")
             } catch {
+                print("❌ [handleSendToKitchen] ERROR: \(error)")
+                print("❌ [handleSendToKitchen] ERROR localized: \(error.localizedDescription)")
                 showToast("Error enviando a cocina", isError: true)
             }
             submitting = false
