@@ -5,6 +5,9 @@ import Combine
 @MainActor
 class POSViewModel: ObservableObject {
     
+    // MARK: - WebSocket
+    private let socketService = SocketService.shared
+    
     // MARK: - App State
     enum AppScreen { case dashboard, tableSelection, pos }
     @Published var currentScreen: AppScreen = .dashboard
@@ -389,6 +392,79 @@ class POSViewModel: ObservableObject {
     
     init() {
         restoreSession()
+        setupSocketCallbacks()
+        socketService.connect()
+    }
+    
+    private func setupSocketCallbacks() {
+        socketService.onTableUpdated = { [weak self] tableId in
+            Task { @MainActor in
+                await self?.refreshTable(tableId: tableId)
+            }
+        }
+        
+        socketService.onOrderUpdated = { [weak self] orderId in
+            Task { @MainActor in
+                await self?.refreshOrderFromSocket()
+            }
+        }
+        
+        socketService.onOrderPaid = { [weak self] orderId in
+            Task { @MainActor in
+                self?.showToast("Orden cobrada")
+                await self?.refreshOrderFromSocket()
+            }
+        }
+        
+        socketService.onCashRegisterOpened = { [weak self] in
+            Task { @MainActor in
+                self?.cashRegisterOpen = true
+                self?.showToast("Caja abierta")
+            }
+        }
+        
+        socketService.onCashRegisterClosed = { [weak self] in
+            Task { @MainActor in
+                self?.cashRegisterOpen = false
+                self?.showToast("Caja cerrada", isError: true)
+            }
+        }
+    }
+    
+    private func refreshTable(tableId: String) async {
+        guard let index = tables.firstIndex(where: { $0.id == tableId }) else { return }
+        do {
+            let updated = try await APIService.shared.fetchTableDetail(tableId: tableId)
+            tables[index] = updated
+        } catch {
+            print("Error refreshing table: \(error)")
+        }
+    }
+    
+    private func refreshOrderFromSocket() async {
+        guard let table = selectedTable else { return }
+        do {
+            let orders = try await APIService.shared.fetchOrdersByTable(tableId: table.id)
+            let activeOrders = orders.filter { $0.paymentStatus != "paid" && $0.status != "completed" }
+            
+            if let mainOrder = activeOrders.first {
+                currentOrderId = mainOrder.id
+                var allItems: [CartItem] = []
+                for order in activeOrders {
+                    if let items = order.items {
+                        for item in items where !(item.voided ?? false) {
+                            var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
+                            cartItem.orderStatus = order.status
+                            allItems.append(cartItem)
+                        }
+                    }
+                }
+                cart = allItems
+                applyPromotions()
+            }
+        } catch {
+            print("Error refreshing order from socket: \(error)")
+        }
     }
     
     deinit {

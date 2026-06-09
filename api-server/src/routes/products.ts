@@ -55,7 +55,7 @@ router.get("/products/:id", async (req, res) => {
 router.get("/categories", async (req, res) => {
   try {
     const categories = await db.query.categories.findMany({
-      orderBy: desc(schema.categories.order),
+      orderBy: (categories, { asc }) => [asc(categories.sortOrder)],
     });
 
     res.json(categories);

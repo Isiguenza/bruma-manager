@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		164911A12FD8AE4D002FC108 /* SocketIO in Frameworks */ = {isa = PBXBuildFile; productRef = 164911A02FD8AE4D002FC108 /* SocketIO */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		1641BC982FA5AC8C00C91260 /* Bruma_waitress.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bruma_waitress.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				164911A12FD8AE4D002FC108 /* SocketIO in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = Bruma_waitress;
 			packageProductDependencies = (
+				164911A02FD8AE4D002FC108 /* SocketIO */,
 			);
 			productName = Bruma_waitress;
 			productReference = 1641BC982FA5AC8C00C91260 /* Bruma_waitress.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 1641BC8F2FA5AC8C00C91260;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1649119F2FD8AE4D002FC108 /* XCRemoteSwiftPackageReference "socket" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1641BC992FA5AC8C00C91260 /* Products */;
 			projectDirPath = "";
@@ -338,6 +347,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1649119F2FD8AE4D002FC108 /* XCRemoteSwiftPackageReference "socket" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/socketio/socket.io-client-swift";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		164911A02FD8AE4D002FC108 /* SocketIO */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1649119F2FD8AE4D002FC108 /* XCRemoteSwiftPackageReference "socket" */;
+			productName = SocketIO;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1641BC902FA5AC8C00C91260 /* Project object */;
 }

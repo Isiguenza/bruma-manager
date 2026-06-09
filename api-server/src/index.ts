@@ -50,6 +50,10 @@ import employeesRouter from "./routes/employees";
 import promotionsRouter from "./routes/promotions";
 import loyaltyRouter from "./routes/loyalty";
 import inventoryRouter from "./routes/inventory";
+import flowsRouter from "./routes/flows";
+import extrasRouter from "./routes/extras";
+import discountsRouter from "./routes/discounts";
+import reservationsRouter from "./routes/reservations";
 
 app.use("/api", authRouter);
 app.use("/api", cashRegisterRouter);
@@ -60,6 +64,10 @@ app.use("/api", employeesRouter);
 app.use("/api", promotionsRouter);
 app.use("/api", loyaltyRouter);
 app.use("/api", inventoryRouter);
+app.use("/api", flowsRouter);
+app.use("/api", extrasRouter);
+app.use("/api", discountsRouter);
+app.use("/api", reservationsRouter);
 
 // 404 handler
 app.use((req, res) => {

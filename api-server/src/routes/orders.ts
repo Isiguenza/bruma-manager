@@ -622,4 +622,32 @@ router.post("/order-items/batch-ready", async (req, res) => {
   }
 });
 
+// GET /api/orders/history?registerId=...
+router.get("/orders/history", async (req, res) => {
+  try {
+    const { registerId } = req.query;
+
+    if (!registerId) {
+      return res.status(400).json({ error: "registerId es requerido" });
+    }
+
+    const orders = await db.query.orders.findMany({
+      where: and(
+        eq(schema.orders.cashRegisterId, registerId as string),
+        eq(schema.orders.paymentStatus, "paid")
+      ),
+      with: {
+        items: true,
+        table: true,
+      },
+      orderBy: desc(schema.orders.createdAt),
+    });
+
+    res.json(orders);
+  } catch (error) {
+    console.error("Error fetching orders history:", error);
+    res.status(500).json({ error: "Error al obtener historial de órdenes" });
+  }
+});
+
 export default router;

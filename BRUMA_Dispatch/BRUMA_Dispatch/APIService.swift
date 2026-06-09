@@ -18,10 +18,9 @@ class APIService {
         var baseURL: String {
             switch self {
             case .development:
-                return "https://admin.cocinabruma.com.mx"
+                return "http://192.168.0.227:4000"
             case .production:
-                // IMPORTANTE: Cambiar por tu dominio de producción
-                return "https://drinksespantapajaros.com.mx"
+                return "https://api.cocinabruma.com.mx"
             }
         }
     }

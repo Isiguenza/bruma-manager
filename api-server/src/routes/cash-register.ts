@@ -397,4 +397,92 @@ router.get("/cash-register/:id/corte", async (req, res) => {
   }
 });
 
+// GET /api/cash-register/:id/report
+router.get("/cash-register/:id/report", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const register = await db.query.cashRegisters.findFirst({
+      where: eq(schema.cashRegisters.id, id),
+    });
+
+    if (!register) {
+      return res.status(404).json({ error: "Caja no encontrada" });
+    }
+
+    // Get all transactions for this register
+    const transactions = await db.query.cashRegisterTransactions.findMany({
+      where: eq(schema.cashRegisterTransactions.registerId, id),
+      orderBy: desc(schema.cashRegisterTransactions.createdAt),
+    });
+
+    // Get all orders paid during this register
+    const orders = await db.query.orders.findMany({
+      where: and(
+        eq(schema.orders.cashRegisterId, id),
+        eq(schema.orders.paymentStatus, "paid")
+      ),
+      with: {
+        items: true,
+      },
+    });
+
+    // Calculate totals
+    const totalSales = orders.reduce((sum, order) => sum + parseFloat(order.total), 0);
+    const totalCash = orders
+      .filter((o) => o.paymentMethod === "cash")
+      .reduce((sum, order) => sum + parseFloat(order.total), 0);
+    const totalCard = orders
+      .filter((o) => o.paymentMethod === "card")
+      .reduce((sum, order) => sum + parseFloat(order.total), 0);
+    const totalTransfer = orders
+      .filter((o) => o.paymentMethod === "transfer")
+      .reduce((sum, order) => sum + parseFloat(order.total), 0);
+
+    const deposits = transactions.filter((t) => t.type === "deposit");
+    const withdrawals = transactions.filter((t) => t.type === "withdrawal");
+
+    const totalDeposits = deposits.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    const totalWithdrawals = withdrawals.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+    const report = {
+      register: {
+        id: register.id,
+        openedAt: register.openedAt,
+        closedAt: register.closedAt,
+        openedBy: register.openedBy,
+        closedBy: register.closedBy,
+        status: register.status,
+        initialCash: parseFloat(register.initialCash),
+        finalCash: register.finalCash ? parseFloat(register.finalCash) : null,
+      },
+      sales: {
+        totalOrders: orders.length,
+        totalSales,
+        cash: totalCash,
+        card: totalCard,
+        transfer: totalTransfer,
+      },
+      transactions: {
+        deposits: {
+          count: deposits.length,
+          total: totalDeposits,
+          items: deposits,
+        },
+        withdrawals: {
+          count: withdrawals.length,
+          total: totalWithdrawals,
+          items: withdrawals,
+        },
+      },
+      expectedCash: parseFloat(register.initialCash) + totalCash + totalDeposits - totalWithdrawals,
+    };
+
+    res.json(report);
+  } catch (error) {
+    console.error("Error generating cash register report:", error);
+    res.status(500).json({ error: "Error al generar reporte de caja" });
+  }
+});
+
 export default router;

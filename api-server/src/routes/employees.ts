@@ -15,7 +15,7 @@ router.get("/employees", async (req, res) => {
       whereConditions.push(eq(schema.employees.active, true));
     }
 
-    const employees = await db.query.employees.findMany({
+    const employees = await db.query.userProfiles.findMany({
       where: whereConditions.length > 0 ? whereConditions[0] : undefined,
     });
 

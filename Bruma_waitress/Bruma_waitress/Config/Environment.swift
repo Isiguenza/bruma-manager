@@ -14,7 +14,7 @@ enum AppEnvironment {
         case .development:
             return "http://192.168.0.227:3000" // Mac local server
         case .production:
-            return "http://192.168.0.152:3000" // Producción local
+            return "https://api.cocinabruma.com.mx" // Nuevo backend Express
         }
     }
     

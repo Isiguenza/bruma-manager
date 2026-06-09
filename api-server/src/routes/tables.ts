@@ -85,6 +85,20 @@ router.patch("/tables/:id", async (req, res) => {
     if (section !== undefined) updates.section = section;
     if (status !== undefined) updates.status = status;
 
+    // Si no hay nada que actualizar, retornar la mesa actual
+    if (Object.keys(updates).length === 0) {
+      const [currentTable] = await db
+        .select()
+        .from(schema.tables)
+        .where(eq(schema.tables.id, id))
+        .limit(1);
+      
+      if (!currentTable) {
+        return res.status(404).json({ error: "Mesa no encontrada" });
+      }
+      return res.json(currentTable);
+    }
+
     const [updatedTable] = await db
       .update(schema.tables)
       .set(updates)

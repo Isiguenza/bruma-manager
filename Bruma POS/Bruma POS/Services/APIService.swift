@@ -131,12 +131,12 @@ class APIService {
     
     func updateTable(tableId: String, body: [String: Any]) async throws -> Table {
         let url = URL(string: "\(baseURL)/api/tables/\(tableId)")!
-        return try await request(url, method: "PUT", body: body)
+        return try await request(url, method: "PATCH", body: body)
     }
     
     func updateTableStatus(tableId: String, status: String) async throws {
         let url = URL(string: "\(baseURL)/api/tables/\(tableId)")!
-        let _: Table = try await request(url, method: "PUT", body: ["status": status])
+        let _: Table = try await request(url, method: "PATCH", body: ["status": status])
     }
     
     // MARK: - Orders

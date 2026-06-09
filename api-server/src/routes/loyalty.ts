@@ -177,4 +177,99 @@ router.post("/loyalty-cards/:id/redeem-points", async (req, res) => {
   }
 });
 
+// GET /api/loyalty/search?barcode=...
+router.get("/loyalty/search", async (req, res) => {
+  try {
+    const { barcode } = req.query;
+
+    if (!barcode) {
+      return res.status(400).json({ error: "barcode es requerido" });
+    }
+
+    const card = await db.query.loyaltyCards.findFirst({
+      where: eq(schema.loyaltyCards.barcodeValue, barcode as string),
+    });
+
+    if (!card) {
+      return res.status(404).json({ error: "Tarjeta no encontrada" });
+    }
+
+    res.json(card);
+  } catch (error) {
+    console.error("Error searching loyalty card:", error);
+    res.status(500).json({ error: "Error al buscar tarjeta" });
+  }
+});
+
+// GET /api/loyalty-cards/barcode/:barcode
+router.get("/loyalty-cards/barcode/:barcode", async (req, res) => {
+  try {
+    const { barcode } = req.params;
+
+    const card = await db.query.loyaltyCards.findFirst({
+      where: eq(schema.loyaltyCards.barcodeValue, barcode),
+    });
+
+    if (!card) {
+      return res.status(404).json({ error: "Tarjeta no encontrada" });
+    }
+
+    res.json(card);
+  } catch (error) {
+    console.error("Error fetching loyalty card by barcode:", error);
+    res.status(500).json({ error: "Error al obtener tarjeta" });
+  }
+});
+
+// POST /api/loyalty-cards/:id/stamp
+router.post("/loyalty-cards/:id/stamp", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const card = await db.query.loyaltyCards.findFirst({
+      where: eq(schema.loyaltyCards.id, id),
+    });
+
+    if (!card) {
+      return res.status(404).json({ error: "Tarjeta no encontrada" });
+    }
+
+    const newStamps = card.stamps + 1;
+    const newTotalStamps = card.totalStamps + 1;
+    let newRewardsAvailable = card.rewardsAvailable;
+
+    // Check if customer earned a reward
+    if (newStamps >= card.stampsPerReward) {
+      newRewardsAvailable += 1;
+      const remainingStamps = newStamps - card.stampsPerReward;
+
+      const [updatedCard] = await db
+        .update(schema.loyaltyCards)
+        .set({
+          stamps: remainingStamps,
+          totalStamps: newTotalStamps,
+          rewardsAvailable: newRewardsAvailable,
+        })
+        .where(eq(schema.loyaltyCards.id, id))
+        .returning();
+
+      return res.json(updatedCard);
+    }
+
+    const [updatedCard] = await db
+      .update(schema.loyaltyCards)
+      .set({
+        stamps: newStamps,
+        totalStamps: newTotalStamps,
+      })
+      .where(eq(schema.loyaltyCards.id, id))
+      .returning();
+
+    res.json(updatedCard);
+  } catch (error) {
+    console.error("Error adding stamp:", error);
+    res.status(500).json({ error: "Error al agregar sello" });
+  }
+});
+
 export default router;
