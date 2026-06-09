@@ -36,15 +36,7 @@ export async function GET(
       .from(orders)
       .where(eq(orders.cashRegisterId, id));
 
-    // Get all split payments for orders in this register
-    const splitPayments = await db.select()
-      .from(orderPayments)
-      .where(
-        eq(orderPayments.orderId, registerOrders.map(o => o.id).join(','))
-      );
-
-    // Actually we need to query split payments per order - let me do it differently
-    // We'll get order IDs and then query split payments
+    // Get order IDs for split payment queries
     const orderIds = registerOrders.map(o => o.id);
 
     // Calculate sales and tips by method
