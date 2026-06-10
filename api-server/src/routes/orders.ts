@@ -372,6 +372,7 @@ router.post("/orders/:id/pay", async (req, res) => {
     const updates: any = {
       paymentMethod,
       paymentStatus: "paid",
+      status: "completed",
       paidAt: new Date().toISOString(),
       amountPaid: amountPaid || order.total,
       tip: tip || "0",
@@ -473,6 +474,7 @@ router.post("/orders/:id/pay-split", async (req, res) => {
 
     const updates: any = {
       paymentStatus: "paid",
+      status: "completed",
       paidAt: new Date().toISOString(),
       amountPaid: totalPaid.toString(),
       tip: totalTip.toString(),

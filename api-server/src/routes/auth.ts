@@ -13,8 +13,8 @@ router.post("/employees/verify-pin", async (req, res) => {
       return res.status(400).json({ error: "PIN debe tener 4 dígitos" });
     }
 
-    const employee = await db.query.employees.findFirst({
-      where: eq(schema.employees.pin, pin),
+    const employee = await db.query.userProfiles.findFirst({
+      where: eq(schema.userProfiles.pinHash, pin),
     });
 
     if (!employee || !employee.active) {
