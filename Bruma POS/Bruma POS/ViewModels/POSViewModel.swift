@@ -735,6 +735,7 @@ class POSViewModel: ObservableObject {
     func handleSelectTable(_ table: Table) {
         lastActivity = Date()
         
+        print("🏠 handleTableSelect: table=\(table.id) (\(table.number)), status=\(table.status)")
         // Reset payment state for new table/order
         resetPaymentState()
         selectedEmployee = nil
@@ -797,6 +798,7 @@ class POSViewModel: ObservableObject {
                 loading = false
             }
         } else if table.isReserved {
+            print("🏠 Mesa RESERVADA - estableciendo selectedTable")
             selectedTable = table
             guestCount = table.guestCount ?? 1
             tempGuestCount = guestCount
@@ -807,16 +809,20 @@ class POSViewModel: ObservableObject {
             activeCourse = 1
             activeSeat = guestCount > 0 ? "A1" : "C"
             
+            print("✅ selectedTable ahora es: \(selectedTable?.id ?? "nil")")
             currentScreen = .pos
         } else {
             // Available table — ask for guest count
+            print("🏠 Mesa DISPONIBLE - estableciendo selectedTable y mostrando diálogo")
             selectedTable = table
             tempGuestCount = table.guestCount ?? 2
+            print("✅ selectedTable ahora es: \(selectedTable?.id ?? "nil")")
             showInitialGuestDialog = true
         }
     }
     
     func confirmInitialGuestCount() {
+        print("✅ confirmInitialGuestCount: guestCount=\(tempGuestCount), selectedTable=\(selectedTable?.id ?? "nil")")
         guestCount = tempGuestCount
         activeSeat = "A1"
         showInitialGuestDialog = false
@@ -826,6 +832,7 @@ class POSViewModel: ObservableObject {
         currentOrderId = nil
         activeCourse = 1
         
+        print("✅ Navegando a POS con selectedTable=\(selectedTable?.id ?? "nil")")
         currentScreen = .pos
         
         if let table = selectedTable {
@@ -1627,8 +1634,15 @@ class POSViewModel: ObservableObject {
     // MARK: - Send to Kitchen
     
     func handleSendToKitchen() {
+        guard !submitting else {
+            print("⚠️ handleSendToKitchen: already submitting, ignoring")
+            return
+        }
+        
         let unsentItems = cart.filter { !$0.sentToKitchen }
         guard !unsentItems.isEmpty else { return }
+        
+        print("🔥 handleSendToKitchen: currentOrderId=\(currentOrderId ?? "nil"), selectedTable=\(selectedTable?.id ?? "nil"), items=\(unsentItems.count)")
         
         submitting = true
         Task {
@@ -1661,6 +1675,9 @@ class POSViewModel: ObservableObject {
                     await printComanda(items: unsentItems, orderId: orderId)
                 } else {
                     // Create new order
+                    print("🔥 Creating NEW order - tableId=\(selectedTable?.id ?? "nil")")
+                    print("🔥 selectedTable object: \(String(describing: selectedTable))")
+                    print("🔥 isEmployeeOrder: \(isEmployeeOrder), isHomeDelivery: \(isHomeDelivery)")
                     let itemDicts = unsentItems.map { itemToDict($0) }
                     var body: [String: Any] = [
                         "items": itemDicts,
@@ -1668,7 +1685,12 @@ class POSViewModel: ObservableObject {
                         "employeeId": employeeId ?? "",
                         "orderType": "dine_in"
                     ]
-                    if let table = selectedTable { body["tableId"] = table.id }
+                    if let table = selectedTable {
+                        body["tableId"] = table.id
+                        print("✅ tableId agregado al body: \(table.id)")
+                    } else {
+                        print("❌❌❌ selectedTable is nil - order will be takeaway!")
+                    }
                     if !customerName.isEmpty {
                         let nameToSend = isHomeDelivery ? "\(customerName) [ENVIO]" : customerName
                         body["customerName"] = nameToSend

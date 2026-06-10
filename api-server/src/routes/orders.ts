@@ -79,25 +79,14 @@ router.post("/orders", async (req, res) => {
   try {
     const {
       tableId,
-      tableNumber,
-      orderType,
       customerName,
-      deliveryAddress,
-      deliveryPhone,
-      platformOrderId,
-      platformName,
       cashRegisterId,
       employeeId,
       status,
       items,
     } = req.body;
 
-    console.log("🛎️ [POST /api/orders] status:", status, "orderType:", orderType, "items count:", items?.length);
-
-    if (!orderType) {
-      console.log("🛎️ [POST /api/orders] ERROR: orderType missing");
-      return res.status(400).json({ error: "orderType es requerido" });
-    }
+    console.log("🛎️ [POST /api/orders] status:", status, "tableId:", tableId, "items count:", items?.length);
 
     // Generate order number (max existing + 1)
     const maxOrderResult = await db
@@ -106,29 +95,25 @@ router.post("/orders", async (req, res) => {
     const nextOrderNumber = (maxOrderResult[0]?.max ?? 0) + 1;
     console.log("🛎️ [POST /api/orders] next orderNumber:", nextOrderNumber);
 
-    // Create order
+    // Create order (only insert fields that exist in schema)
     const [newOrder] = await db
       .insert(schema.orders)
       .values({
         orderNumber: nextOrderNumber,
         tableId: tableId || null,
-        tableNumber: tableNumber || null,
-        orderType,
         customerName: customerName || null,
-        deliveryAddress: deliveryAddress || null,
-        deliveryPhone: deliveryPhone || null,
-        platformOrderId: platformOrderId || null,
-        platformName: platformName || null,
         cashRegisterId: cashRegisterId || null,
-        employeeId: employeeId || null,
+        userId: employeeId || null,
+        guestCount: req.body.guestCount || 1,
         status: status || "pending",
         paymentStatus: "pending",
         subtotal: "0",
-        tax: "0",
         total: "0",
         tip: "0",
       })
       .returning();
+    
+    console.log("🛎️ [POST /api/orders] Created order:", newOrder.id, "tableId:", newOrder.tableId);
 
     // Create order items if provided
     if (items && items.length > 0) {
@@ -683,6 +668,18 @@ router.post("/order-items/batch-ready", async (req, res) => {
     const readyItems = await db.query.orderItems.findMany({
       where: inArray(schema.orderItems.id, itemIds),
     });
+
+    // Get the order to emit update to POS
+    if (readyItems.length > 0) {
+      const firstItem = readyItems[0];
+      const order = await db.query.orders.findFirst({
+        where: eq(schema.orders.id, firstItem.orderId),
+        with: { items: true },
+      });
+      if (order) {
+        emitOrderUpdated(order);
+      }
+    }
 
     emitOrderItemsReady(readyItems);
     res.json({ success: true, count: readyItems.length });

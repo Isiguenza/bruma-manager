@@ -70,8 +70,8 @@ class SocketService: ObservableObject {
     }
     
     private func joinRooms() {
-        // Join kitchen room to receive new orders
-        socket?.emit("join", ["room": "room:kitchen"])
-        print("🏠 Joined room: kitchen")
+        // Join dispatch room to receive new orders
+        socket?.emit("join", "room:dispatch")
+        print("🏠 Joined room: dispatch")
     }
 }

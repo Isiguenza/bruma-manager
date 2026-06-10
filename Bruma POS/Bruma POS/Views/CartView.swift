@@ -427,7 +427,7 @@ struct CartView: View {
             
             if !vm.cart.isEmpty && vm.cart.contains(where: { !$0.sentToKitchen }) {
                 Button {
-                    Task { vm.handleSendToKitchen() }
+                    vm.handleSendToKitchen()
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "frying.pan")

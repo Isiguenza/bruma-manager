@@ -18,7 +18,7 @@ class APIService {
         var baseURL: String {
             switch self {
             case .development:
-                return "http://192.168.0.227:4000"
+                return "https://api.cocinabruma.com.mx"
             case .production:
                 return "https://api.cocinabruma.com.mx"
             }
@@ -27,7 +27,7 @@ class APIService {
     
     // Cambiar a .production cuando estés listo para usar en producción
     private let environment: Environment = .development
-    private var baseURL: String {
+    var baseURL: String {
         environment.baseURL
     }
     

@@ -25,6 +25,7 @@ class OrdersViewModel: ObservableObject {
     init() {
         Task {
             await startPolling()
+            setupSocketCallbacks()
         }
     }
     
@@ -33,6 +34,26 @@ class OrdersViewModel: ObservableObject {
         timer = nil
         uiTimer?.invalidate()
         uiTimer = nil
+    }
+    
+    @MainActor
+    private func setupSocketCallbacks() {
+        SocketService.shared.connect(baseURL: APIService.shared.baseURL)
+        
+        SocketService.shared.onNewOrder = { [weak self] in
+            Task { @MainActor in
+                print("📦 Dispatch: New order received via WebSocket")
+                self?.soundPlayer.playNotification()
+                await self?.fetchOrders()
+            }
+        }
+        
+        SocketService.shared.onOrderUpdated = { [weak self] orderId in
+            Task { @MainActor in
+                print("📦 Dispatch: Order updated via WebSocket: \(orderId)")
+                await self?.fetchOrders()
+            }
+        }
     }
     
     // Start polling for orders every 3 seconds

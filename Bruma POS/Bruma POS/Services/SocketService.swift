@@ -61,21 +61,30 @@ class SocketService: ObservableObject {
         // Business events
         socket?.on("order:updated") { [weak self] data, ack in
             guard let dict = data.first as? [String: Any],
-                  let orderId = dict["orderId"] as? String else { return }
+                  let orderId = dict["id"] as? String else {
+                print("⚠️ order:updated received but no id field found")
+                return
+            }
             print("📦 Order updated: \(orderId)")
             self?.onOrderUpdated?(orderId)
         }
         
         socket?.on("order:paid") { [weak self] data, ack in
             guard let dict = data.first as? [String: Any],
-                  let orderId = dict["orderId"] as? String else { return }
+                  let orderId = dict["id"] as? String else {
+                print("⚠️ order:paid received but no id field found")
+                return
+            }
             print("💰 Order paid: \(orderId)")
             self?.onOrderPaid?(orderId)
         }
         
         socket?.on("table:updated") { [weak self] data, ack in
             guard let dict = data.first as? [String: Any],
-                  let tableId = dict["tableId"] as? String else { return }
+                  let tableId = dict["id"] as? String else {
+                print("⚠️ table:updated received but no id field found")
+                return
+            }
             print("🪑 Table updated: \(tableId)")
             self?.onTableUpdated?(tableId)
         }
