@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, schema } from "../db";
-import { eq, and, or, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, or, desc, inArray, sql, isNull } from "drizzle-orm";
 import {
   emitOrderNew,
   emitOrderUpdated,
@@ -14,7 +14,7 @@ const router = Router();
 // GET /api/orders
 router.get("/orders", async (req, res) => {
   try {
-    const { paymentStatus, status, tableId, cashRegisterId } = req.query;
+    const { paymentStatus, status, tableId, cashRegisterId, noTable } = req.query;
 
     let whereConditions: any[] = [];
 
@@ -29,6 +29,11 @@ router.get("/orders", async (req, res) => {
 
     if (tableId) {
       whereConditions.push(eq(schema.orders.tableId, tableId as string));
+    }
+
+    // Filter for takeout/delivery orders (no table)
+    if (noTable === "true") {
+      whereConditions.push(isNull(schema.orders.tableId));
     }
 
     if (cashRegisterId) {
