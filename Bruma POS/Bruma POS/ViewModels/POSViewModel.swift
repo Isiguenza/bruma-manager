@@ -409,6 +409,7 @@ class POSViewModel: ObservableObject {
         
         socketService.onOrderUpdated = { [weak self] orderId in
             Task { @MainActor in
+                print("📦 [Socket] order:updated received for \(orderId)")
                 await self?.refreshOrderFromSocket()
                 await self?.refreshReadyItemsAndDelivery()
             }
@@ -624,8 +625,12 @@ class POSViewModel: ObservableObject {
     }
     
     private func refreshReadyItemsAndDelivery() async {
+        print("🔄 [refreshReadyItemsAndDelivery] Checking for ready items...")
         if let readyIds = try? await APIService.shared.fetchTablesWithReadyItems() {
+            print("✅ [refreshReadyItemsAndDelivery] Tables with ready items: \(readyIds)")
             tablesWithReadyItems = readyIds
+        } else {
+            print("❌ [refreshReadyItemsAndDelivery] Failed to fetch ready items")
         }
         if let orders = try? await APIService.shared.fetchDeliveryOrders() {
             separateDeliveryOrders(orders)

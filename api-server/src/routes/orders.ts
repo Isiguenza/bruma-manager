@@ -685,10 +685,12 @@ router.post("/order-items/batch-ready", async (req, res) => {
         with: { items: true },
       });
       
-      // If all items are deliveredToTable, mark order as ready
+      // If all non-voided items are deliveredToTable, mark order as ready
       if (order && order.items) {
-        const allDelivered = order.items.every((item: any) => item.deliveredToTable);
-        if (allDelivered && order.items.length > 0) {
+        const activeItems = order.items.filter((item: any) => !item.voided);
+        const allDelivered = activeItems.length > 0 && activeItems.every((item: any) => item.deliveredToTable);
+        console.log("🛎️ batch-ready: order", order.id, "has", activeItems.length, "active items, allDelivered=", allDelivered);
+        if (allDelivered) {
           await db
             .update(schema.orders)
             .set({ status: "ready" })
@@ -698,7 +700,7 @@ router.post("/order-items/batch-ready", async (req, res) => {
             where: eq(schema.orders.id, order.id),
             with: { items: true },
           });
-          console.log("🛎️ Order", order?.id, "marked as ready (all items delivered)");
+          console.log("🛎️ Order", order?.id, "marked as ready (all active items delivered)");
         }
       }
       
