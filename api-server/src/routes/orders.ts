@@ -132,6 +132,8 @@ router.post("/orders", async (req, res) => {
         notes: item.notes || null,
         frostingId: item.frostingId || null,
         frostingName: item.frostingName || null,
+        seat: item.seat || "C",
+        course: item.course || 1,
       }));
 
       await db.insert(schema.orderItems).values(orderItems);
@@ -197,7 +199,8 @@ router.post("/orders/:id/items", async (req, res) => {
       notes: item.notes || null,
       frostingId: item.frostingId || null,
       frostingName: item.frostingName || null,
-      status: "pending",
+      seat: item.seat || "C",
+      course: item.course || 1,
     }));
 
     await db.insert(schema.orderItems).values(orderItems);

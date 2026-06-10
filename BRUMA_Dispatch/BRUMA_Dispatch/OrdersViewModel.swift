@@ -56,13 +56,14 @@ class OrdersViewModel: ObservableObject {
         }
     }
     
-    // Start polling for orders every 3 seconds
+    // Polling backup every 30s, WebSocket is primary
     func startPolling() async {
         await fetchOrders()
         
-        // Timer para actualizar órdenes cada 3 segundos
-        timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        // Backup polling - only runs if WebSocket fails
+        timer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
+                print("🔄 Dispatch: Backup poll (WebSocket should handle real-time)")
                 await self?.fetchOrders()
             }
         }

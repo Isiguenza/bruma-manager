@@ -63,7 +63,10 @@ class SocketService: ObservableObject {
         
         socket?.on("order:updated") { [weak self] data, ack in
             guard let dict = data.first as? [String: Any],
-                  let orderId = dict["orderId"] as? String else { return }
+                  let orderId = dict["id"] as? String else {
+                print("⚠️ order:updated received but no id field found")
+                return
+            }
             print("📦 Order updated: \(orderId)")
             self?.onOrderUpdated?(orderId)
         }
