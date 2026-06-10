@@ -15,11 +15,11 @@ router.get("/employees", async (req, res) => {
       whereConditions.push(eq(schema.employees.active, true));
     }
 
-    const employees = await db.query.userProfiles.findMany({
+    const employeesList = await db.query.userProfiles.findMany({
       where: whereConditions.length > 0 ? whereConditions[0] : undefined,
     });
 
-    res.json(employees);
+    res.json(employeesList);
   } catch (error) {
     console.error("Error fetching employees:", error);
     res.status(500).json({ error: "Error al obtener empleados" });
@@ -31,8 +31,8 @@ router.get("/employees/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const employee = await db.query.employees.findFirst({
-      where: eq(schema.employees.id, id),
+    const employee = await db.query.userProfiles.findFirst({
+      where: eq(schema.userProfiles.id, id),
     });
 
     if (!employee) {
@@ -56,12 +56,14 @@ router.post("/employees", async (req, res) => {
     }
 
     const [newEmployee] = await db
-      .insert(schema.employees)
+      .insert(schema.userProfiles)
       .values({
         name,
-        pin,
+        pinHash: pin,
         role,
         active: active !== undefined ? active : true,
+        authUserId: `employee_${Date.now()}`,
+        email: `employee_${Date.now()}@bruma.local`,
       })
       .returning();
 
@@ -78,10 +80,14 @@ router.patch("/employees/:id", async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
+    const { pin, ...otherUpdates } = updates;
+    const updateData: any = { ...otherUpdates };
+    if (pin !== undefined) updateData.pinHash = pin;
+
     const [updatedEmployee] = await db
-      .update(schema.employees)
-      .set(updates)
-      .where(eq(schema.employees.id, id))
+      .update(schema.userProfiles)
+      .set(updateData)
+      .where(eq(schema.userProfiles.id, id))
       .returning();
 
     if (!updatedEmployee) {
@@ -101,8 +107,8 @@ router.delete("/employees/:id", async (req, res) => {
     const { id } = req.params;
 
     const [deletedEmployee] = await db
-      .delete(schema.employees)
-      .where(eq(schema.employees.id, id))
+      .delete(schema.userProfiles)
+      .where(eq(schema.userProfiles.id, id))
       .returning();
 
     if (!deletedEmployee) {

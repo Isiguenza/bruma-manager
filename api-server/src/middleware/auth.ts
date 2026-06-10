@@ -9,11 +9,11 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
 
 // Optional: PIN verification helper (used in routes)
 export async function verifyEmployeePin(pin: string, db: any): Promise<any> {
-  const { employees } = await import("../db");
+  const { schema } = await import("../db");
   const { eq } = await import("drizzle-orm");
   
-  const employee = await db.query.employees.findFirst({
-    where: eq(employees.schema.employees.pin, pin),
+  const employee = await db.query.userProfiles.findFirst({
+    where: eq(schema.userProfiles.pinHash, pin),
   });
   
   if (!employee || !employee.active) {
