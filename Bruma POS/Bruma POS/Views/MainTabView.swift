@@ -57,14 +57,7 @@ struct MainTabView: View {
         .sheet(isPresented: $vm.showDeliveryDialog) {
             DeliveryInfoDialog(vm: vm)
         }
-        .task {
-            // Polling global para delivery orders
-            await deliveryVM.loadOrders(showLoading: false)
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 10_000_000_000)
-                await deliveryVM.loadOrders(showLoading: false)
-            }
-        }
+        // DeliveryView maneja su propio polling, no necesitamos duplicar aqui
     }
     
 }

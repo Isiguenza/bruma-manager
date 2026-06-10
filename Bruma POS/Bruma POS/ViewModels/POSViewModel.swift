@@ -62,7 +62,10 @@ class POSViewModel: ObservableObject {
             }
         }
         
-        return result
+        // Sort by number numerically (not alphabetically so "10" comes after "9")
+        return result.sorted {
+            (Int($0.number) ?? 0) < (Int($1.number) ?? 0)
+        }
     }
     
     // MARK: - Delivery
@@ -400,12 +403,14 @@ class POSViewModel: ObservableObject {
         socketService.onTableUpdated = { [weak self] tableId in
             Task { @MainActor in
                 await self?.refreshTable(tableId: tableId)
+                await self?.refreshReadyItemsAndDelivery()
             }
         }
         
         socketService.onOrderUpdated = { [weak self] orderId in
             Task { @MainActor in
                 await self?.refreshOrderFromSocket()
+                await self?.refreshReadyItemsAndDelivery()
             }
         }
         
@@ -413,6 +418,7 @@ class POSViewModel: ObservableObject {
             Task { @MainActor in
                 self?.showToast("Orden cobrada")
                 await self?.refreshOrderFromSocket()
+                await self?.refreshReadyItemsAndDelivery()
             }
         }
         
@@ -588,12 +594,13 @@ class POSViewModel: ObservableObject {
         pin = ""
     }
     
-    // MARK: - Polling
+    // MARK: - Polling (backup only, WebSocket is primary)
     
     func startPolling() {
         tablePollingTimer?.invalidate()
-        tablePollingTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        tablePollingTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
+                print("🔄 Backup poll (WebSocket handles real-time)")
                 await self?.refreshTables()
             }
         }
@@ -608,6 +615,15 @@ class POSViewModel: ObservableObject {
         } else {
             print("[Tables] fetchTables failed or returned nil")
         }
+        if let readyIds = try? await APIService.shared.fetchTablesWithReadyItems() {
+            tablesWithReadyItems = readyIds
+        }
+        if let orders = try? await APIService.shared.fetchDeliveryOrders() {
+            separateDeliveryOrders(orders)
+        }
+    }
+    
+    private func refreshReadyItemsAndDelivery() async {
         if let readyIds = try? await APIService.shared.fetchTablesWithReadyItems() {
             tablesWithReadyItems = readyIds
         }

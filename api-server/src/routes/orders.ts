@@ -680,10 +680,28 @@ router.post("/order-items/batch-ready", async (req, res) => {
     // Get the order to emit update to POS
     if (readyItems.length > 0) {
       const firstItem = readyItems[0];
-      const order = await db.query.orders.findFirst({
+      let order = await db.query.orders.findFirst({
         where: eq(schema.orders.id, firstItem.orderId),
         with: { items: true },
       });
+      
+      // If all items are deliveredToTable, mark order as ready
+      if (order && order.items) {
+        const allDelivered = order.items.every((item: any) => item.deliveredToTable);
+        if (allDelivered && order.items.length > 0) {
+          await db
+            .update(schema.orders)
+            .set({ status: "ready" })
+            .where(eq(schema.orders.id, order.id));
+          // Re-fetch to get updated status
+          order = await db.query.orders.findFirst({
+            where: eq(schema.orders.id, order.id),
+            with: { items: true },
+          });
+          console.log("🛎️ Order", order?.id, "marked as ready (all items delivered)");
+        }
+      }
+      
       if (order) {
         emitOrderUpdated(order);
       }
