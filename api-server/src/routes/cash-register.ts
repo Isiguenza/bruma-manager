@@ -80,13 +80,61 @@ router.post("/cash-register/:id/close", async (req, res) => {
       return res.status(400).json({ error: "La caja ya está cerrada" });
     }
 
+    // Calculate totals from paid orders linked to this register
+    const paidOrders = await db.query.orders.findMany({
+      where: and(
+        eq(schema.orders.cashRegisterId, id),
+        eq(schema.orders.paymentStatus, "paid")
+      ),
+    });
+
+    const cashSales = paidOrders
+      .filter(o => o.paymentMethod === "cash")
+      .reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
+
+    const terminalSales = paidOrders
+      .filter(o => o.paymentMethod === "terminal_mercadopago" || o.paymentMethod === "card")
+      .reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
+
+    const transferSales = paidOrders
+      .filter(o => o.paymentMethod === "transfer")
+      .reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
+
+    const totalSales = cashSales + terminalSales + transferSales;
+
+    // Get deposits and withdrawals from transactions
+    const transactions = await db.query.cashRegisterTransactions.findMany({
+      where: eq(schema.cashRegisterTransactions.registerId, id),
+    });
+
+    const withdrawals = transactions
+      .filter(t => t.type === "withdrawal")
+      .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+    const deposits = transactions
+      .filter(t => t.type === "deposit")
+      .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+    const expectedCash = parseFloat(register.initialCash) + cashSales - withdrawals + deposits;
+    const difference = parseFloat(finalCash.toString()) - expectedCash;
+
     const [closedRegister] = await db
       .update(schema.cashRegisters)
       .set({
-        finalCash: finalCash.toString(),
+        finalCash: parseFloat(finalCash.toString()).toFixed(2),
         closedBy,
         closedAt: new Date(),
+        status: "closed",
         notes: notes || null,
+        totalSales: totalSales.toFixed(2),
+        cashSales: cashSales.toFixed(2),
+        terminalSales: terminalSales.toFixed(2),
+        transferSales: transferSales.toFixed(2),
+        expectedCash: expectedCash.toFixed(2),
+        difference: difference.toFixed(2),
+        totalOrders: paidOrders.length,
+        withdrawals: withdrawals.toFixed(2),
+        deposits: deposits.toFixed(2),
       })
       .where(eq(schema.cashRegisters.id, id))
       .returning();
