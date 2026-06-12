@@ -452,6 +452,10 @@ router.post("/orders/:id/pay", async (req, res) => {
       tipPaymentMethod,
       loyaltyCardId,
       employeeId,
+      discount,
+      discountName,
+      discountId,
+      subtotal,
     } = req.body;
 
     if (!paymentMethod) {
@@ -472,7 +476,7 @@ router.post("/orders/:id/pay", async (req, res) => {
     });
 
     const tipAmount = parseFloat(tip || "0");
-    const subtotalAmount = parseFloat(order.subtotal);
+    const subtotalAmount = subtotal ? parseFloat(subtotal) : parseFloat(order.subtotal);
     const totalWithTip = (subtotalAmount + tipAmount).toString();
 
     const updates: any = {
@@ -483,8 +487,15 @@ router.post("/orders/:id/pay", async (req, res) => {
       amountPaid: amountPaid || totalWithTip,
       tip: tip || "0",
       tipPaymentMethod: tipPaymentMethod || paymentMethod,
+      subtotal: subtotalAmount.toString(),
       total: totalWithTip,
     };
+
+    if (discount && parseFloat(discount) > 0) {
+      updates.discountAmount = discount.toString();
+      updates.discountName = discountName || "Descuento";
+      if (discountId) updates.discountId = discountId;
+    }
 
     if (openRegister) {
       updates.cashRegisterId = openRegister.id;
@@ -551,7 +562,7 @@ router.post("/orders/:id/pay", async (req, res) => {
 router.post("/orders/:id/pay-split", async (req, res) => {
   try {
     const { id } = req.params;
-    const { payments, loyaltyCardId, employeeId } = req.body;
+    const { payments, loyaltyCardId, employeeId, discount, discountName, discountId, subtotal } = req.body;
 
     console.log(`[pay-split] Order ID: ${id}`);
     console.log(`[pay-split] Body:`, JSON.stringify(req.body, null, 2));
@@ -582,7 +593,7 @@ router.post("/orders/:id/pay-split", async (req, res) => {
       0
     );
     const totalPaid = totalAmounts + totalTips;
-    const orderTotal = parseFloat(order.subtotal || order.total);
+    const orderTotal = subtotal ? parseFloat(subtotal) : parseFloat(order.subtotal || order.total);
 
     console.log(`[pay-split] totalAmounts=${totalAmounts}, totalTips=${totalTips}, totalPaid=${totalPaid}, orderTotal=${orderTotal}`);
     console.log(`[pay-split] Payments breakdown:`, payments.map((p: any) => `${p.paymentMethod} amount=${p.amount} tip=${p.tip}`));
@@ -623,8 +634,15 @@ router.post("/orders/:id/pay-split", async (req, res) => {
       paidAt: new Date(),
       amountPaid: totalPaid.toString(),
       tip: totalTips.toString(),
+      subtotal: orderTotal.toString(),
       total: totalWithTip,
     };
+
+    if (discount && parseFloat(discount) > 0) {
+      updates.discountAmount = discount.toString();
+      updates.discountName = discountName || "Descuento";
+      if (discountId) updates.discountId = discountId;
+    }
 
     if (openRegister) {
       updates.cashRegisterId = openRegister.id;

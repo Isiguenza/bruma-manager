@@ -2186,7 +2186,9 @@ class POSViewModel: ObservableObject {
                     "tip": tipWithDelivery,
                     "tipPaymentMethod": tipPaymentMethod ?? "cash",
                     "subtotal": cartTotalWithDiscount,
-                    "discount": totalDiscount
+                    "discount": totalDiscount,
+                    "discountName": selectedDiscount?.name ?? "Descuento",
+                    "discountId": selectedDiscount?.id ?? ""
                 ])
                 paymentCompleted = true
                 await handlePrint(paymentMethod: "cash")
@@ -2211,7 +2213,9 @@ class POSViewModel: ObservableObject {
                     "tip": tipWithDelivery,
                     "tipPaymentMethod": tipPaymentMethod ?? "transfer",
                     "subtotal": cartTotalWithDiscount,
-                    "discount": totalDiscount
+                    "discount": totalDiscount,
+                    "discountName": selectedDiscount?.name ?? "Descuento",
+                    "discountId": selectedDiscount?.id ?? ""
                 ])
                 paymentCompleted = true
                 await handlePrint(paymentMethod: "transfer")
@@ -2236,7 +2240,9 @@ class POSViewModel: ObservableObject {
                     "tip": tipWithDelivery,
                     "tipPaymentMethod": tipPaymentMethod ?? "terminal_mercadopago",
                     "subtotal": cartTotalWithDiscount,
-                    "discount": totalDiscount
+                    "discount": totalDiscount,
+                    "discountName": selectedDiscount?.name ?? "Descuento",
+                    "discountId": selectedDiscount?.id ?? ""
                 ])
                 paymentCompleted = true
                 await handlePrint(paymentMethod: "card")
@@ -2267,7 +2273,15 @@ class POSViewModel: ObservableObject {
                     return dict
                 }
                 
-                try await APIService.shared.payOrderSplit(orderId: orderId, payments: paymentsData, employeeId: employeeId)
+                try await APIService.shared.payOrderSplit(
+                    orderId: orderId,
+                    payments: paymentsData,
+                    employeeId: employeeId,
+                    discount: totalDiscount > 0 ? totalDiscount : nil,
+                    discountName: selectedDiscount?.name,
+                    discountId: selectedDiscount?.id,
+                    subtotal: cartTotalWithDiscount > 0 ? cartTotalWithDiscount : nil
+                )
                 paymentCompleted = true
                 await handlePrint()
                 showToast("Pago dividido registrado")
@@ -2290,9 +2304,12 @@ class POSViewModel: ObservableObject {
                 }
                 try await APIService.shared.payOrder(orderId: orderId, body: [
                     "paymentMethod": "platform_delivery",
-                    "subtotal": subtotal,
+                    "subtotal": cartTotalWithDiscount,
                     "tip": 0,
-                    "employeeId": employeeId ?? ""
+                    "employeeId": employeeId ?? "",
+                    "discount": totalDiscount,
+                    "discountName": selectedDiscount?.name ?? "Descuento",
+                    "discountId": selectedDiscount?.id ?? ""
                 ])
                 await handlePrint()
                 showToast("Orden entregada a repartidor")
@@ -2399,7 +2416,14 @@ class POSViewModel: ObservableObject {
                     return dict
                 }
                 
-                try await APIService.shared.payOrderSplit(orderId: orderId, payments: paymentsData)
+                try await APIService.shared.payOrderSplit(
+                    orderId: orderId,
+                    payments: paymentsData,
+                    discount: totalDiscount > 0 ? totalDiscount : nil,
+                    discountName: selectedDiscount?.name,
+                    discountId: selectedDiscount?.id,
+                    subtotal: cartTotalWithDiscount > 0 ? cartTotalWithDiscount : nil
+                )
                 paymentCompleted = true
                 await handlePrint()
                 showToast("Pago dividido completado")

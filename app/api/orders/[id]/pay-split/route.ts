@@ -22,7 +22,7 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { payments } = body;
+    const { payments, discount, discountName, discountId, subtotal: frontendSubtotal } = body;
 
     if (!payments || !Array.isArray(payments) || payments.length === 0) {
       return NextResponse.json(
@@ -46,7 +46,7 @@ export async function POST(
     }
 
     // Validate total
-    const orderTotal = parseFloat(order.total);
+    const orderTotal = frontendSubtotal ? parseFloat(frontendSubtotal) : parseFloat(order.total);
     const totalPaid = payments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
 
     if (Math.abs(totalPaid - orderTotal) > 0.01) {
@@ -94,16 +94,25 @@ export async function POST(
     }
 
     // Mark order as paid
+    const updateData: Record<string, any> = {
+      paymentMethod: "split",
+      paymentStatus: "paid",
+      status: "delivered",
+      subtotal: orderTotal.toString(),
+      tip: totalTip.toString(),
+      total: (orderTotal + totalTip).toString(),
+      updatedAt: new Date(),
+    };
+
+    if (discount && parseFloat(discount) > 0) {
+      updateData.discountAmount = discount.toString();
+      updateData.discountName = discountName || "Descuento";
+      if (discountId) updateData.discountId = discountId;
+    }
+
     await db
       .update(orders)
-      .set({
-        paymentMethod: "split",
-        paymentStatus: "paid",
-        status: "delivered",
-        tip: totalTip.toString(),
-        total: (orderTotal + totalTip).toString(),
-        updatedAt: new Date(),
-      })
+      .set(updateData)
       .where(eq(orders.id, id));
 
     // Mark all items as delivered

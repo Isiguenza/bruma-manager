@@ -545,11 +545,21 @@ class APIService {
     
     // MARK: - Split Payments
     
-    func payOrderSplit(orderId: String, payments: [[String: Any]], employeeId: String? = nil) async throws {
+    func payOrderSplit(orderId: String, payments: [[String: Any]], employeeId: String? = nil, discount: Double? = nil, discountName: String? = nil, discountId: String? = nil, subtotal: Double? = nil) async throws {
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)/pay-split")!
         var body: [String: Any] = ["payments": payments]
         if let empId = employeeId, !empId.isEmpty {
             body["employeeId"] = empId
+        }
+        if let d = discount, d > 0 {
+            body["discount"] = d
+            body["discountName"] = discountName ?? "Descuento"
+            if let did = discountId, !did.isEmpty {
+                body["discountId"] = did
+            }
+        }
+        if let s = subtotal {
+            body["subtotal"] = s
         }
         let (_, http) = try await requestRaw(url, method: "POST", body: body)
         if !(200...299).contains(http.statusCode) {

@@ -20,7 +20,7 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { paymentMethod, loyaltyCardId, loyaltyStamps, userId, tip, tipPaymentMethod, subtotal: frontendSubtotal, discount, customTimestamp } = body;
+    const { paymentMethod, loyaltyCardId, loyaltyStamps, userId, tip, tipPaymentMethod, subtotal: frontendSubtotal, discount, discountName, discountId, customTimestamp } = body;
 
     // Get the order
     const order = await db.query.orders.findFirst({
@@ -55,6 +55,8 @@ export async function POST(
         tipPaymentMethod: tipPaymentMethod || paymentMethod || null,
         total: newTotal.toString(),
         discountAmount: discount ? discount.toString() : null,
+        discountName: discount ? (discountName || "Descuento") : null,
+        discountId: discountId || null,
         loyaltyCardId: loyaltyCardId || null,
         userId: userId || null,
         updatedAt: timestamp,
