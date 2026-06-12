@@ -8,6 +8,7 @@ class PrintService {
     
     // MARK: - Print Comanda (kitchen ticket)
     
+    @discardableResult
     func printComanda(
         tableNumber: String?,
         orderNumber: String,
@@ -15,8 +16,11 @@ class PrintService {
         items: [[String: Any]],
         isDelivery: Bool = false,
         guestCount: Int? = nil
-    ) async {
-        guard let url = URL(string: "\(printServerURL)/print-comanda") else { return }
+    ) async -> Bool {
+        guard let url = URL(string: "\(printServerURL)/print-comanda") else {
+            print("❌ PrintService: invalid print-comanda URL: \(printServerURL)")
+            return false
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -32,7 +36,15 @@ class PrintService {
         if let gc = guestCount { body["guestCount"] = gc }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("🖨️ printComanda → \(code)")
+            return code >= 200 && code < 300
+        } catch {
+            print("❌ PrintService printComanda error: \(error.localizedDescription)")
+            return false
+        }
     }
     
     // MARK: - Print Ticket (payment ticket)
@@ -51,7 +63,10 @@ class PrintService {
         splitPayments: [[String: Any]]? = nil,
         deliveryFee: Int = 0
     ) async {
-        guard let url = URL(string: "\(printServerURL)/print") else { return }
+        guard let url = URL(string: "\(printServerURL)/print") else {
+            print("❌ PrintService: invalid print URL: \(printServerURL)")
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -73,7 +88,13 @@ class PrintService {
         if deliveryFee > 0 { body["deliveryFee"] = deliveryFee }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("🖨️ printTicket → \(code)")
+        } catch {
+            print("❌ PrintService printTicket error: \(error.localizedDescription)")
+        }
     }
     
     // MARK: - Print Split Ticket (individual split bill ticket)
@@ -89,7 +110,10 @@ class PrintService {
         paymentMethod: String?,
         splitInfo: String
     ) async {
-        guard let url = URL(string: "\(printServerURL)/print-split") else { return }
+        guard let url = URL(string: "\(printServerURL)/print-split") else {
+            print("❌ PrintService: invalid print-split URL: \(printServerURL)")
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -108,7 +132,13 @@ class PrintService {
         if let pm = paymentMethod { body["paymentMethod"] = pm }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("🖨️ printSplitTicket → \(code)")
+        } catch {
+            print("❌ PrintService printSplitTicket error: \(error.localizedDescription)")
+        }
     }
     
     // MARK: - Reprint Order Ticket
@@ -182,7 +212,10 @@ class PrintService {
         total: Double,
         paymentMethod: String?
     ) async {
-        guard let url = URL(string: "\(printServerURL)/print-seat-bill") else { return }
+        guard let url = URL(string: "\(printServerURL)/print-seat-bill") else {
+            print("❌ PrintService: invalid print-seat-bill URL: \(printServerURL)")
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -201,13 +234,22 @@ class PrintService {
         if let disc = discount { body["discount"] = disc }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("🖨️ printSeatBill → \(code)")
+        } catch {
+            print("❌ PrintService printSeatBill error: \(error.localizedDescription)")
+        }
     }
     
     // MARK: - Print Guest (courtesy ticket)
     
     func printGuestTicket(items: [[String: Any]], orderNumber: String) async {
-        guard let url = URL(string: "\(printServerURL)/print-guest") else { return }
+        guard let url = URL(string: "\(printServerURL)/print-guest") else {
+            print("❌ PrintService: invalid print-guest URL: \(printServerURL)")
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -219,6 +261,12 @@ class PrintService {
         ]
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("🖨️ printGuestTicket → \(code)")
+        } catch {
+            print("❌ PrintService printGuestTicket error: \(error.localizedDescription)")
+        }
     }
 }

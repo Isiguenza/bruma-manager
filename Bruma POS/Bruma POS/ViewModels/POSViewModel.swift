@@ -2033,6 +2033,7 @@ class POSViewModel: ObservableObject {
     }
     
     private func printComanda(items: [CartItem], orderId: String) async {
+        print("🖨️ printComanda called — orderId=\(orderId) items=\(items.count) printServerURL=\(APIService.shared.printServerURL)")
         // Group items for comanda
         let comandaItems: [[String: Any]] = items.map { item in
             var dict: [String: Any] = [
@@ -2416,11 +2417,13 @@ class POSViewModel: ObservableObject {
     
     func handlePrint(paymentMethod: String? = nil) async {
         let sentItems = cart.filter { $0.sentToKitchen }
-        guard !sentItems.isEmpty else { return }
+        let itemsToPrint = sentItems.isEmpty ? cart : sentItems
+        print("🖨️ handlePrint called — sentItems=\(sentItems.count) totalCart=\(cart.count) itemsToPrint=\(itemsToPrint.count)")
+        guard !itemsToPrint.isEmpty else { return }
         
         // Group by seat then product
         var seatGroups: [String: [String: TicketItem]] = [:]
-        for item in sentItems {
+        for item in itemsToPrint {
             let seat = item.seat.isEmpty ? "C" : item.seat
             if seatGroups[seat] == nil { seatGroups[seat] = [:] }
             let key = "\(item.productId)-\(item.unitPrice)-\(item.promotionId ?? "none")"

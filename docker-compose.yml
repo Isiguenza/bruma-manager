@@ -29,6 +29,8 @@ services:
   print-server:
     build: ./print-server
     # network_mode: host  # Only works on Linux, use docker-compose.override.yml for macOS
+    ports:
+      - "3001:3001"
     # USB device only available on Linux hosts, ignored on macOS
     # devices:
     #   - /dev/usb/lp1:/dev/usb/lp1
