@@ -2,53 +2,127 @@ import SwiftUI
 
 // MARK: - Guest Count Dialog
 
+private struct DialogBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color(white: 0.1))
+                        .shadow(color: .black.opacity(0.5), radius: 20)
+                )
+        }
+    }
+}
+
+private struct StepperButton: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Circle()
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
+            )
+    }
+}
+
+private struct QuickPickPill: ViewModifier {
+    let isSelected: Bool
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(
+                    isSelected ? .regular.tint(.blue).interactive() : .regular.interactive(),
+                    in: .capsule
+                )
+        } else {
+            content
+                .background(
+                    Capsule()
+                        .fill(isSelected ? Color.blue : Color(white: 0.12))
+                )
+        }
+    }
+}
+
+private struct NotesTextFieldBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.white.opacity(0.03))
+                        
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        )
+                )
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color(white: 0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color(white: 0.15), lineWidth: 1)
+                        )
+                )
+        }
+    }
+}
+
 struct GuestCountDialog: View {
     @ObservedObject var vm: POSViewModel
     let isInitial: Bool
-    
+    @State private var dragOffset: CGFloat = 0
+
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 24) {
             Text(isInitial ? "¿Cuántas personas?" : "Número de Personas")
                 .font(.title2.bold())
                 .foregroundColor(.white)
-            
+
             // Counter
-            HStack(spacing: 24) {
+            HStack(spacing: 32) {
                 Button {
                     vm.tempGuestCount = max(1, vm.tempGuestCount - 1)
                 } label: {
                     Image(systemName: "minus")
-                        .font(.title2.bold())
-                        .frame(width: 64, height: 64)
-                        .background(Color(white: 0.12))
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(white: 0.25)))
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 56, height: 56)
+                        .modifier(StepperButton())
                 }
-                
+                .buttonStyle(.plain)
+
                 Text("\(vm.tempGuestCount)")
-                    .font(.system(size: 64, weight: .bold))
+                    .font(.system(size: 56, weight: .bold))
                     .foregroundColor(.white)
                     .frame(width: 100)
-                
+                    .contentTransition(.numericText())
+                    .animation(.default, value: vm.tempGuestCount)
+
                 Button {
                     vm.tempGuestCount += 1
                 } label: {
                     Image(systemName: "plus")
-                        .font(.title2.bold())
-                        .frame(width: 64, height: 64)
-                        .background(Color(white: 0.12))
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(white: 0.25)))
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 56, height: 56)
+                        .modifier(StepperButton())
                 }
+                .buttonStyle(.plain)
             }
-            
+
             if isInitial {
                 Text("Puedes cambiarlo después desde el botón de personas")
                     .font(.caption)
                     .foregroundColor(.gray)
-                
+
                 // Quick picks
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
                     ForEach([1, 2, 3, 4, 5, 6, 8, 10], id: \.self) { n in
@@ -57,28 +131,30 @@ struct GuestCountDialog: View {
                         } label: {
                             Text("\(n)")
                                 .font(.headline)
+                                .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 48)
-                                .background(vm.tempGuestCount == n ? Color.blue : Color(white: 0.12))
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
+                                .frame(height: 44)
+                                .modifier(QuickPickPill(isSelected: vm.tempGuestCount == n))
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
-            
+
             HStack(spacing: 12) {
                 if !isInitial {
                     Button("Cancelar") {
                         vm.showGuestCountDialog = false
                     }
+                    .font(.headline)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
-                    .background(Color(white: 0.12))
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                    .buttonStyle(.plain)
                 }
-                
+
+                let unchanged = !isInitial && vm.tempGuestCount == vm.guestCount
                 Button("Confirmar") {
                     if isInitial {
                         vm.confirmInitialGuestCount()
@@ -86,44 +162,110 @@ struct GuestCountDialog: View {
                         vm.confirmGuestCount()
                     }
                 }
+                .font(.headline)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                .font(.headline)
+                .background(Capsule().fill(unchanged ? Color.blue.opacity(0.3) : Color.blue))
+                .disabled(unchanged)
+                .buttonStyle(.plain)
             }
         }
         .padding(24)
         .frame(maxWidth: 400)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.1))
-                .shadow(color: .black.opacity(0.5), radius: 20)
+        .modifier(DialogBackground())
+        .offset(y: max(0, dragOffset))
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    if value.translation.height > 0 {
+                        dragOffset = value.translation.height
+                    }
+                }
+                .onEnded { value in
+                    if value.translation.height > 80 {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            dragOffset = 600
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            if isInitial {
+                                vm.showInitialGuestDialog = false
+                            } else {
+                                vm.showGuestCountDialog = false
+                            }
+                            dragOffset = 0
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                            dragOffset = 0
+                        }
+                    }
+                }
         )
     }
 }
 
-// MARK: - Variant Dialog
+// MARK: - Product Add Dialog (Variants + Notes combined)
 
-struct VariantDialog: View {
+private enum ProductAddMode {
+    case variants
+    case notes
+}
+
+struct ProductAddDialog: View {
     @ObservedObject var vm: POSViewModel
-    
+    @State private var mode: ProductAddMode
+
+    init(vm: POSViewModel) {
+        self.vm = vm
+        self._mode = State(initialValue: vm.showVariantDialog ? .variants : .notes)
+    }
+
+    private var productName: String {
+        vm.selectedProductForVariant?.name ?? vm.pendingCartItem?.productName ?? ""
+    }
+
     var body: some View {
-        VStack(spacing: 16) {
-            Text(vm.selectedProductForVariant?.name ?? "")
+        VStack(spacing: 20) {
+            Text(productName)
                 .font(.title2.bold())
                 .foregroundColor(.white)
-            
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+
+            ZStack {
+                variantsSection
+                    .opacity(mode == .variants ? 1 : 0)
+                notesSection
+                    .opacity(mode == .notes ? 1 : 0)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: mode == .notes ? 480 : 400)
+        .modifier(DialogBackground())
+        .animation(.spring(response: 0.4, dampingFraction: 0.82), value: mode)
+        .onChange(of: vm.showNotesDialog) { _, newValue in
+            if newValue {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                    mode = .notes
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var variantsSection: some View {
+        VStack(spacing: 12) {
             Text("Selecciona una opción:")
                 .font(.subheadline)
                 .foregroundColor(.gray)
-            
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             if let product = vm.selectedProductForVariant {
                 ForEach(product.parsedVariants) { variant in
                     let isPlatform = vm.isPlatformDelivery
                     let price = isPlatform ? variant.numericPlatformPrice : variant.numericPrice
-                    
+
                     Button {
                         vm.handleAddVariant(variant.name, price: variant.price, platformPrice: variant.platformPrice)
                     } label: {
@@ -136,7 +278,6 @@ struct VariantDialog: View {
                                 Text(vm.formatCurrency(price))
                                     .font(.title3.bold())
                                     .foregroundColor(.white)
-                                
                                 if isPlatform && variant.platformPrice != nil {
                                     Image(systemName: "motorcycle")
                                         .font(.caption)
@@ -146,45 +287,34 @@ struct VariantDialog: View {
                         }
                         .padding(16)
                         .background(
-                            RoundedRectangle(cornerRadius: 10)
+                            Capsule()
                                 .fill(Color(white: 0.12))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.25)))
+                                .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
                         )
                     }
                     .buttonStyle(.plain)
                 }
             }
-            
-            Button("Cancelar") {
+
+            Button {
                 vm.showVariantDialog = false
+            } label: {
+                Text("Cancelar")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
             }
-            .foregroundColor(.gray)
+            .buttonStyle(.plain)
         }
-        .padding(24)
-        .frame(maxWidth: 400)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.1))
-                .shadow(color: .black.opacity(0.5), radius: 20)
-        )
     }
-}
 
-// MARK: - Notes Dialog
-
-struct NotesDialog: View {
-    @ObservedObject var vm: POSViewModel
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            // Header
-            Text(vm.pendingCartItem?.productName ?? "")
-                .font(.title2.bold())
-                .foregroundColor(.white)
-                .multilineTextAlignment(.center)
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Comentarios especiales (opcional)")
+    @ViewBuilder
+    private var notesSection: some View {
+        VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Comentarios especiales")
                     .font(.subheadline.bold())
                     .foregroundColor(.white)
                 Text("Instrucciones, preferencias o alergias")
@@ -192,7 +322,7 @@ struct NotesDialog: View {
                     .foregroundColor(.gray)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            
+
             ZStack(alignment: .topLeading) {
                 if vm.tempNotes.isEmpty {
                     Text("Ej: Sin cebolla, extra salsa...")
@@ -201,7 +331,6 @@ struct NotesDialog: View {
                         .padding(.vertical, 14)
                         .font(.body)
                 }
-                
                 TextEditor(text: $vm.tempNotes)
                     .scrollContentBackground(.hidden)
                     .foregroundColor(.white)
@@ -209,49 +338,34 @@ struct NotesDialog: View {
                     .frame(height: 120)
                     .font(.body)
             }
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(white: 0.06))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color(white: 0.15), lineWidth: 1)
-                    )
-            )
-            
-            // Botones
+            .modifier(NotesTextFieldBackground())
+
             HStack(spacing: 12) {
                 Button {
                     vm.handleCancelNotes()
                 } label: {
                     Text("Cancelar")
                         .font(.headline)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(Color(white: 0.12))
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .frame(height: 48)
+                        .background(Capsule().fill(Color.white.opacity(0.08)))
                 }
-                
+                .buttonStyle(.plain)
+
                 Button {
                     vm.handleConfirmNotes()
                 } label: {
                     Text(vm.tempNotes.trimmingCharacters(in: .whitespaces).isEmpty ? "Agregar" : "Confirmar")
                         .font(.headline)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .frame(height: 48)
+                        .background(Capsule().fill(Color.blue))
                 }
+                .buttonStyle(.plain)
             }
         }
-        .padding(28)
-        .frame(maxWidth: 480)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.08))
-                .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
-        )
     }
 }
 
@@ -299,11 +413,7 @@ struct VoidDialog: View {
                 TextField("Otra razón...", text: $vm.voidReason)
                     .foregroundColor(.white)
                     .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(white: 0.06))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(white: 0.2)))
-                    )
+                    .modifier(NotesTextFieldBackground())
             }
             
             HStack(spacing: 12) {
@@ -311,31 +421,26 @@ struct VoidDialog: View {
                     vm.showVoidDialog = false
                     vm.voidItemIndex = nil
                 }
+                .font(.headline)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(Color(white: 0.12))
-                .foregroundColor(.white)
-                .cornerRadius(10)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
                 
                 Button("Eliminar Item") {
                     vm.handleVoidItem()
                 }
+                .font(.headline)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(vm.voidReason.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.3) : Color.red)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                .font(.headline)
+                .background(Capsule().fill(vm.voidReason.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.3) : Color.red))
                 .disabled(vm.voidReason.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(24)
         .frame(maxWidth: 440)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.1))
-                .shadow(color: .black.opacity(0.5), radius: 20)
-        )
+        .modifier(DialogBackground())
     }
 }
 
@@ -383,11 +488,7 @@ struct CustomerNameDialog: View {
                         .keyboardType(.numberPad)
                         .foregroundColor(.white)
                         .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color(white: 0.06))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.2)))
-                        )
+                        .modifier(NotesTextFieldBackground())
                         .onChange(of: vm.platformOrderDigits) { _, newValue in
                             vm.platformOrderDigits = String(newValue.prefix(4)).filter { $0.isNumber }
                         }
@@ -402,42 +503,67 @@ struct CustomerNameDialog: View {
                 TextField("Ej: Juan Pérez", text: $vm.customerName)
                     .foregroundColor(.white)
                     .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(white: 0.06))
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.2)))
-                    )
+                    .modifier(NotesTextFieldBackground())
                     .onSubmit { vm.handleConfirmCustomerName() }
+            }
+            
+            // Home delivery toggle (only for Para Llevar)
+            if !vm.isPlatformDelivery {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Envío a domicilio")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                        if vm.isHomeDelivery {
+                            Text("+\(vm.formatCurrency(vm.homeDeliveryFee))")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Toggle("", isOn: Binding(
+                        get: { vm.isHomeDelivery },
+                        set: { _ in vm.toggleHomeDelivery() }
+                    ))
+                    .tint(.blue)
+                    .labelsHidden()
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(vm.isHomeDelivery ? Color.blue.opacity(0.08) : Color(white: 0.06))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(vm.isHomeDelivery ? Color.blue.opacity(0.3) : Color(white: 0.2), lineWidth: 1)
+                        )
+                )
             }
             
             HStack(spacing: 12) {
                 Button("Cancelar") {
                     vm.showCustomerNameDialog = false
                 }
+                .font(.headline)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(Color(white: 0.12))
-                .foregroundColor(.white)
-                .cornerRadius(10)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
                 
                 Button("Continuar") {
                     vm.handleConfirmCustomerName()
                 }
+                .font(.headline)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                .font(.headline)
+                .background(Capsule().fill(Color.blue))
             }
         }
         .padding(24)
         .frame(maxWidth: 440)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.1))
-                .shadow(color: .black.opacity(0.5), radius: 20)
-        )
+        .modifier(DialogBackground())
     }
 }
 
@@ -463,11 +589,7 @@ struct LoyaltyDialog: View {
             TextField("Código de barras", text: $vm.qrCode)
                 .foregroundColor(.white)
                 .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(white: 0.06))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.2)))
-                )
+                .modifier(NotesTextFieldBackground())
                 .onSubmit { vm.handleQRCodeDetected(vm.qrCode) }
             
             HStack(spacing: 12) {
@@ -475,11 +597,11 @@ struct LoyaltyDialog: View {
                     vm.qrDialogOpen = false
                     vm.qrCode = ""
                 }
+                .font(.headline)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(Color(white: 0.12))
-                .foregroundColor(.white)
-                .cornerRadius(10)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
                 
                 Button {
                     vm.handleQRCodeDetected(vm.qrCode)
@@ -488,23 +610,18 @@ struct LoyaltyDialog: View {
                         if vm.loadingCard { ProgressView().tint(.white) }
                         Text(vm.loadingCard ? "Buscando..." : "Buscar")
                     }
+                    .font(.headline)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
-                    .background(vm.qrCode.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.3) : Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                    .font(.headline)
+                    .background(Capsule().fill(vm.qrCode.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.3) : Color.blue))
                 }
                 .disabled(vm.loadingCard || vm.qrCode.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(24)
         .frame(maxWidth: 400)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.1))
-                .shadow(color: .black.opacity(0.5), radius: 20)
-        )
+        .modifier(DialogBackground())
     }
 }
 
@@ -527,11 +644,7 @@ struct ManualStampDialog: View {
                 TextField("Escanea o ingresa el código", text: $vm.manualBarcodeInput)
                     .foregroundColor(.white)
                     .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(white: 0.06))
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.2)))
-                    )
+                    .modifier(NotesTextFieldBackground())
                     .onSubmit { vm.handleManualStampSubmit() }
                 
                 Text("Para clientes que ya pagaron pero olvidaron escanear su tarjeta")
@@ -543,11 +656,11 @@ struct ManualStampDialog: View {
                 Button("Cancelar") {
                     vm.manualStampDialogOpen = false
                 }
+                .font(.headline)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(Color(white: 0.12))
-                .foregroundColor(.white)
-                .cornerRadius(10)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
                 
                 Button {
                     vm.handleManualStampSubmit()
@@ -556,23 +669,18 @@ struct ManualStampDialog: View {
                         if vm.loadingCard { ProgressView().tint(.white) }
                         Text(vm.loadingCard ? "Procesando..." : "Agregar Sello")
                     }
+                    .font(.headline)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                    .font(.headline)
+                    .background(Capsule().fill(Color.blue))
                 }
                 .disabled(vm.loadingCard)
             }
         }
         .padding(24)
         .frame(maxWidth: 400)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.1))
-                .shadow(color: .black.opacity(0.5), radius: 20)
-        )
+        .modifier(DialogBackground())
     }
 }
 
@@ -649,11 +757,7 @@ struct FlexibleDiscountDialog: View {
                         .font(.title3.bold())
                         .foregroundColor(.white)
                         .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color(white: 0.06))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.2)))
-                        )
+                        .modifier(NotesTextFieldBackground())
                 }
             }
             
@@ -680,73 +784,946 @@ struct FlexibleDiscountDialog: View {
                     vm.showFlexibleDiscountDialog = false
                     vm.selectedDiscount = nil
                 }
+                .font(.headline)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(Color(white: 0.12))
-                .foregroundColor(.white)
-                .cornerRadius(10)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
                 
                 Button("Aplicar Descuento") {
                     vm.showFlexibleDiscountDialog = false
                 }
+                .font(.headline)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                .font(.headline)
+                .background(Capsule().fill(Color.blue))
             }
         }
         .padding(24)
         .frame(maxWidth: 420)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.1))
-                .shadow(color: .black.opacity(0.5), radius: 20)
-        )
+        .modifier(DialogBackground())
     }
 }
 
 // MARK: - Admin Menu Dialog
 
+private enum AdminMode: Equatable {
+    case menu
+    case guestItems
+    case deleteItems
+    case replaceItem
+    case pinConfirm
+}
+
 struct AdminMenuDialog: View {
     @ObservedObject var vm: POSViewModel
-    
+    @State private var dragOffset: CGFloat = 0
+    @State private var adminMode: AdminMode = .menu
+
+    // Delete items state
+    @State private var deleteSelection: [Int: Int] = [:]
+    @State private var deleteReason: String = ""
+
+    // Replace item state
+    @State private var replaceItemIndex: Int?
+    @State private var replaceQuantity: Int = 1
+    @State private var replaceSearch: String = ""
+    @State private var pendingReplaceProduct: Product? = nil
+
+    // PIN confirm state
+    @State private var pendingMode: AdminMode = .menu
+    @State private var adminPin: String = ""
+    @State private var adminPinVerifying: Bool = false
+    @State private var adminPinError: Bool = false
+
+    private var isWide: Bool {
+        adminMode != .menu
+    }
+
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             Text("Menú Admin")
                 .font(.title2.bold())
                 .foregroundColor(.white)
-            
+
+            switch adminMode {
+            case .menu:
+                menuSection
+                    .transition(.opacity)
+            case .guestItems:
+                guestItemsSection
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            case .deleteItems:
+                deleteItemsSection
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            case .replaceItem:
+                replaceItemSection
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            case .pinConfirm:
+                pinSection
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: isWide ? 520 : 400)
+        .modifier(DialogBackground())
+        .offset(y: max(0, dragOffset))
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    if value.translation.height > 0 {
+                        dragOffset = value.translation.height
+                    }
+                }
+                .onEnded { value in
+                    if value.translation.height > 80 {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            dragOffset = 600
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            vm.showAdminMenu = false
+                            resetState()
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                            dragOffset = 0
+                        }
+                    }
+                }
+        )
+    }
+
+    private func resetState() {
+        adminMode = .menu
+        deleteSelection = [:]
+        deleteReason = ""
+        replaceItemIndex = nil
+        replaceQuantity = 1
+        replaceSearch = ""
+        pendingReplaceProduct = nil
+        pendingMode = .menu
+        adminPin = ""
+        adminPinError = false
+        adminPinVerifying = false
+        vm.guestItemsSelection = []
+    }
+
+    private func requestPinFor(_ mode: AdminMode) {
+        pendingMode = mode
+        adminPin = ""
+        adminPinError = false
+        goToMode(.pinConfirm)
+    }
+
+    private func executeConfirmedAction() {
+        switch pendingMode {
+        case .guestItems:
+            vm.markItemsAsGuest()
+            goToMode(.menu)
+        case .deleteItems:
+            Task { @MainActor in
+                await performDeleteAsync()
+                goToMode(.menu)
+            }
+        case .replaceItem:
+            if let idx = replaceItemIndex, let product = pendingReplaceProduct {
+                vm.changeItemIndex = idx
+                vm.confirmChangeItem(newProduct: product, quantityToChange: replaceQuantity)
+            }
+            resetState()
+        default:
+            goToMode(.menu)
+        }
+    }
+
+    private func goToMode(_ mode: AdminMode) {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            adminMode = mode
+        }
+    }
+
+    // MARK: - Menu Section
+
+    @ViewBuilder
+    private var menuSection: some View {
+        VStack(spacing: 10) {
+            AdminPillButton(
+                icon: "gift.fill",
+                label: "Invitar Productos",
+                iconColor: .white,
+                action: { goToMode(.guestItems) }
+            )
+
+            AdminPillButton(
+                icon: "trash.fill",
+                label: "Eliminar Items",
+                iconColor: .white,
+                action: { goToMode(.deleteItems) }
+            )
+
+            AdminPillButton(
+                icon: "arrow.2.circlepath",
+                label: "Reemplazar Item",
+                iconColor: .white,
+                action: { goToMode(.replaceItem) }
+            )
+
             Button {
                 vm.showAdminMenu = false
-                vm.showGuestItemsDialog = true
+            } label: {
+                Text("Cerrar")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.08))
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 6)
+        }
+    }
+
+    // MARK: - Guest Items Section
+
+    @ViewBuilder
+    private var guestItemsSection: some View {
+        VStack(spacing: 12) {
+            Text("Selecciona los productos que deseas marcar como invitados.")
+                .font(.subheadline)
+                .foregroundColor(.gray)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            cartList(
+                selectionBinding: { index in
+                    Binding(
+                        get: { vm.guestItemsSelection.contains(index) },
+                        set: { isSelected in
+                            if isSelected {
+                                if !vm.guestItemsSelection.contains(index) {
+                                    vm.guestItemsSelection.append(index)
+                                }
+                            } else {
+                                vm.guestItemsSelection.removeAll { $0 == index }
+                            }
+                        }
+                    )
+                },
+                showQuantityStepper: false
+            )
+
+            actionBar(
+                backAction: { goToMode(.menu); vm.guestItemsSelection = [] },
+                confirmAction: { requestPinFor(.guestItems) },
+                confirmLabel: "Marcar (\(vm.guestItemsSelection.count))",
+                confirmColor: .blue,
+                isDisabled: vm.guestItemsSelection.isEmpty
+            )
+        }
+    }
+
+    // MARK: - Delete Items Section
+
+    @ViewBuilder
+    private var deleteItemsSection: some View {
+        VStack(spacing: 12) {
+            Text("Selecciona los items y cantidad a eliminar.")
+                .font(.subheadline)
+                .foregroundColor(.gray)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            cartList(
+                selectionBinding: { index in
+                    Binding(
+                        get: { deleteSelection[index] != nil },
+                        set: { isSelected in
+                            if isSelected {
+                                deleteSelection[index] = 1
+                            } else {
+                                deleteSelection.removeValue(forKey: index)
+                            }
+                        }
+                    )
+                },
+                showQuantityStepper: true,
+                quantityBinding: { index in
+                    Binding(
+                        get: { deleteSelection[index] ?? 1 },
+                        set: { deleteSelection[index] = $0 }
+                    )
+                }
+            )
+
+            let hasSentItems = deleteSelection.keys.contains(where: { idx in vm.cart.indices.contains(idx) && vm.cart[idx].sentToKitchen })
+            if hasSentItems {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Razón de eliminación")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+
+                    // Quick reason pills
+                    let reasons = ["Error del mesero", "Cambio de cliente", "No disponible", "Producto equivocado"]
+                    FlowLayout(spacing: 6) {
+                        ForEach(reasons, id: \.self) { reason in
+                            Button {
+                                deleteReason = reason
+                            } label: {
+                                Text(reason)
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        Capsule()
+                                            .fill(deleteReason == reason ? Color.red : Color.white.opacity(0.08))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    TextField("Otra razón...", text: $deleteReason)
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(white: 0.06))
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.1)))
+                        )
+                }
+            }
+
+            let totalToDelete = deleteSelection.values.reduce(0, +)
+            actionBar(
+                backAction: { goToMode(.menu); deleteSelection = [:]; deleteReason = "" },
+                confirmAction: { requestPinFor(.deleteItems) },
+                confirmLabel: "Eliminar (\(totalToDelete))",
+                confirmColor: .red,
+                isDisabled: deleteSelection.isEmpty
+            )
+        }
+    }
+
+    @MainActor
+    private func performDeleteAsync() async {
+        let reason = deleteReason.isEmpty ? "Eliminado desde admin" : deleteReason
+        let empId = vm.employeeId
+        var anyFailed = false
+
+        let sortedIndices = deleteSelection.keys.sorted(by: >)
+        print("🗑️ [AdminDelete] Starting delete — \(sortedIndices.count) item(s), reason: \"\(reason)\"")
+
+        for index in sortedIndices {
+            guard index < vm.cart.count else {
+                print("⚠️ [AdminDelete] index \(index) out of bounds (cart.count=\(vm.cart.count)), skipping")
+                continue
+            }
+            let qtyToRemove = deleteSelection[index] ?? 1
+            let item = vm.cart[index]
+            print("📦 [AdminDelete] index=\(index) product=\"\(item.productName)\" qty=\(item.quantity) toRemove=\(qtyToRemove) sentToKitchen=\(item.sentToKitchen) itemId=\(item.itemId ?? "nil") orderId=\(item.orderId ?? "nil")")
+
+            if item.sentToKitchen {
+                if let itemId = item.itemId, let orderId = item.orderId {
+                    do {
+                        if qtyToRemove >= item.quantity {
+                            print("🔴 [AdminDelete] VOID entire item — PATCH /api/orders/\(orderId)/items/\(itemId)/void")
+                            try await APIService.shared.voidItem(
+                                orderId: orderId,
+                                itemId: itemId,
+                                reason: reason,
+                                voidedBy: empId
+                            )
+                            print("✅ [AdminDelete] Void success, removing from local cart")
+                            if index < vm.cart.count { vm.cart.remove(at: index) }
+                        } else {
+                            let newQty = item.quantity - qtyToRemove
+                            print("🟡 [AdminDelete] PARTIAL — PATCH /api/order-items/\(itemId) newQty=\(newQty) unitPrice=\(item.unitPrice)")
+                            try await APIService.shared.updateOrderItemQuantity(
+                                itemId: itemId,
+                                quantity: newQty,
+                                unitPrice: item.unitPrice
+                            )
+                            print("✅ [AdminDelete] Partial success, updating local qty to \(newQty)")
+                            if index < vm.cart.count { vm.cart[index].quantity = newQty }
+                        }
+                    } catch {
+                        print("❌ [AdminDelete] API error for \"\(item.productName)\": \(error)")
+                        vm.showToast("Error al eliminar \"\(item.productName)\": \(error.localizedDescription)", isError: true)
+                        anyFailed = true
+                    }
+                } else {
+                    print("⚠️ [AdminDelete] sentToKitchen but no itemId/orderId — removing locally only")
+                    if index < vm.cart.count { vm.cart.remove(at: index) }
+                }
+            } else {
+                if qtyToRemove >= item.quantity {
+                    print("🔵 [AdminDelete] Local-only item, removing from cart")
+                    if index < vm.cart.count { vm.cart.remove(at: index) }
+                } else {
+                    let newQty = item.quantity - qtyToRemove
+                    print("🔵 [AdminDelete] Local-only item, reducing qty \(item.quantity) → \(newQty)")
+                    if index < vm.cart.count { vm.cart[index].quantity = newQty }
+                }
+            }
+        }
+
+        vm.applyPromotions()
+        deleteSelection = [:]
+        deleteReason = ""
+        if !anyFailed {
+            vm.showToast("Items eliminados")
+        }
+        print("🗑️ [AdminDelete] Done. anyFailed=\(anyFailed)")
+    }
+
+    // MARK: - Replace Item Section
+
+    @ViewBuilder
+    private var replaceItemSection: some View {
+        VStack(spacing: 12) {
+            Text("Selecciona el item a reemplazar:")
+                .font(.subheadline)
+                .foregroundColor(.gray)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if replaceItemIndex == nil {
+                // Step 1: Select item from cart
+                ScrollView {
+                    VStack(spacing: 6) {
+                        ForEach(Array(vm.cart.enumerated()), id: \.element.id) { index, item in
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    replaceItemIndex = index
+                                    replaceQuantity = min(1, item.quantity)
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "circle")
+                                        .font(.title3)
+                                        .foregroundColor(.gray)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("\(item.quantity)x \(item.productName)")
+                                            .font(.subheadline.bold())
+                                            .foregroundColor(.white)
+                                        let _ = print("🔄 [ReplaceUI] step1 item=\"\(item.productName)\" unitPrice=\(item.unitPrice) formatted=\(vm.formatCurrency(item.unitPrice))")
+                                        Text(vm.formatCurrency(item.unitPrice))
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color(white: 0.08))
+                                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.12)))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 300)
+            } else if let idx = replaceItemIndex, idx < vm.cart.count {
+                // Step 2: Select replacement product
+                let item = vm.cart[idx]
+
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.2.circlepath")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cambiando:")
+                            .font(.caption2)
+                            .foregroundColor(Color(white: 0.5))
+                        Text(item.productName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.white)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.orange.opacity(0.08))
+                .cornerRadius(8)
+
+                // Quantity stepper
+                if item.quantity > 1 {
+                    HStack(spacing: 16) {
+                        Text("¿Cuántos cambiar?")
+                            .font(.subheadline)
+                            .foregroundColor(Color(white: 0.7))
+                        Spacer()
+                        HStack(spacing: 0) {
+                            Button {
+                                if replaceQuantity > 1 { replaceQuantity -= 1 }
+                            } label: {
+                                Image(systemName: "minus")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(replaceQuantity > 1 ? .white : Color(white: 0.3))
+                                    .frame(width: 32, height: 32)
+                                    .background(Circle().fill(Color.white.opacity(0.08)))
+                            }
+                            .buttonStyle(.plain)
+
+                            Text("\(replaceQuantity) de \(item.quantity)")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                                .frame(minWidth: 70)
+                                .multilineTextAlignment(.center)
+
+                            Button {
+                                if replaceQuantity < item.quantity { replaceQuantity += 1 }
+                            } label: {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(replaceQuantity < item.quantity ? .white : Color(white: 0.3))
+                                    .frame(width: 32, height: 32)
+                                    .background(Circle().fill(Color.white.opacity(0.08)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+
+                // Search
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(Color(white: 0.5))
+                    TextField("Buscar producto...", text: $replaceSearch)
+                        .foregroundColor(.white)
+                        .autocorrectionDisabled()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(8)
+
+                // Product list
+                let filtered = replaceSearch.isEmpty
+                    ? vm.products.filter { $0.active }
+                    : vm.products.filter { $0.active && $0.name.localizedCaseInsensitiveContains(replaceSearch) }
+
+                ScrollView {
+                    LazyVStack(spacing: 1) {
+                        ForEach(filtered) { product in
+                            Button {
+                                pendingReplaceProduct = product
+                                requestPinFor(.replaceItem)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(product.name)
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.white)
+                                        if let cat = product.category {
+                                            Text(cat.name)
+                                                .font(.caption2)
+                                                .foregroundColor(Color(white: 0.5))
+                                        }
+                                    }
+                                    Spacer()
+                                    let _ = print("🔄 [ReplaceUI] step2 product=\"\(product.name)\" numericPrice=\(product.numericPrice) formatted=\(vm.formatCurrency(product.numericPrice))")
+                                    Text(vm.formatCurrency(product.numericPrice))
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.white)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(Color.white.opacity(0.03))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 260)
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        replaceItemIndex = nil
+                        replaceQuantity = 1
+                        replaceSearch = ""
+                    }
+                    goToMode(.menu)
+                } label: {
+                    Text(replaceItemIndex == nil ? "Volver" : "Cancelar")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(
+                            Capsule()
+                                .fill(Color.white.opacity(0.08))
+                        )
+                }
+                .buttonStyle(.plain)
+
+                if replaceItemIndex != nil {
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            replaceItemIndex = nil
+                            replaceQuantity = 1
+                            replaceSearch = ""
+                        }
+                    } label: {
+                        Text("Cambiar item")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(
+                                Capsule()
+                                    .fill(Color.orange.opacity(0.3))
+                            )
+                    }
+                    .disabled(true)
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    // MARK: - Shared Components
+
+    @ViewBuilder
+    private func cartList(
+        selectionBinding: @escaping (Int) -> Binding<Bool>,
+        showQuantityStepper: Bool,
+        quantityBinding: ((Int) -> Binding<Int>)? = nil
+    ) -> some View {
+        if vm.cart.isEmpty {
+            VStack(spacing: 8) {
+                Image(systemName: "tray")
+                    .font(.largeTitle)
+                    .foregroundColor(.gray)
+                Text("No hay productos en el carrito")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+            }
+            .padding(.vertical, 24)
+        } else {
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(Array(vm.cart.enumerated()), id: \.element.id) { index, item in
+                        HStack(spacing: 12) {
+                            Button {
+                                let binding = selectionBinding(index)
+                                binding.wrappedValue.toggle()
+                            } label: {
+                                let isSelected = selectionBinding(index).wrappedValue
+                                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                    .font(.title3)
+                                    .foregroundColor(isSelected ? .blue : .gray)
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text("\(item.quantity)x \(item.productName)")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.white)
+
+                                    if item.isGuest {
+                                        Text("Invitado")
+                                            .font(.caption2.bold())
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.yellow)
+                                            .foregroundColor(.black)
+                                            .cornerRadius(4)
+                                    }
+                                }
+
+                                let itemTotal = item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
+                                Text(vm.formatCurrency(itemTotal))
+                                    .font(.caption)
+                                    .foregroundColor(item.isGuest ? .gray : .gray)
+                                    .strikethrough(item.isGuest)
+                            }
+
+                            Spacer()
+
+                            if showQuantityStepper, let qtyBinding = quantityBinding {
+                                let selected = selectionBinding(index).wrappedValue
+                                if selected {
+                                    HStack(spacing: 10) {
+                                        Button {
+                                            let qty = qtyBinding(index).wrappedValue
+                                            if qty > 1 {
+                                                qtyBinding(index).wrappedValue = qty - 1
+                                            }
+                                        } label: {
+                                            Image(systemName: "minus")
+                                                .font(.callout.weight(.bold))
+                                                .foregroundColor(.white)
+                                                .frame(width: 36, height: 36)
+                                                .background(Circle().fill(Color.white.opacity(0.12)))
+                                        }
+                                        .buttonStyle(.plain)
+
+                                        Text("\(qtyBinding(index).wrappedValue)")
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+                                            .frame(minWidth: 28)
+
+                                        Button {
+                                            let qty = qtyBinding(index).wrappedValue
+                                            if qty < item.quantity {
+                                                qtyBinding(index).wrappedValue = qty + 1
+                                            }
+                                        } label: {
+                                            Image(systemName: "plus")
+                                                .font(.callout.weight(.bold))
+                                                .foregroundColor(.white)
+                                                .frame(width: 36, height: 36)
+                                                .background(Circle().fill(Color.white.opacity(0.12)))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(white: 0.08))
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(white: 0.12)))
+                        )
+                    }
+                }
+            }
+            .frame(maxHeight: 350)
+        }
+    }
+
+    // MARK: - PIN Section
+
+    @ViewBuilder
+    private var pinSection: some View {
+        VStack(spacing: 16) {
+            let modeLabel: String = {
+                switch pendingMode {
+                case .guestItems: return "Confirmar invitación"
+                case .deleteItems: return "Confirmar eliminación"
+                case .replaceItem: return "Confirmar reemplazo"
+                default: return "PIN de Admin"
+                }
+            }()
+
+            Text(modeLabel)
+                .font(.headline)
+                .foregroundColor(.gray)
+
+            if adminPinError {
+                Text("PIN incorrecto o sin permisos de admin")
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+
+            // Dots – no background box
+            HStack(spacing: 24) {
+                ForEach(0..<4, id: \.self) { i in
+                    Circle()
+                        .fill(i < adminPin.count ? Color.white : Color(white: 0.25))
+                        .frame(width: 16, height: 16)
+                }
+            }
+            .padding(.vertical, 8)
+
+            // Circular numpad
+            VStack(spacing: 12) {
+                let rows = [["1","2","3"],["4","5","6"],["7","8","9"],["C","0","←"]]
+                ForEach(rows, id: \.self) { row in
+                    HStack(spacing: 16) {
+                        ForEach(row, id: \.self) { key in
+                            Button {
+                                if key == "C" { adminPin = "" }
+                                else if key == "←" { if !adminPin.isEmpty { adminPin.removeLast() } }
+                                else { if adminPin.count < 4 { adminPin.append(key) } }
+                            } label: {
+                                Text(key)
+                                    .font(.title2.weight(.medium))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 70, height: 70)
+                                    .background(Circle().fill(Color.white.opacity(0.1)))
+                                    .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            Button {
+                adminPinError = false
+                adminPinVerifying = true
+                Task {
+                    do {
+                        let emp = try await APIService.shared.verifyPin(pin: adminPin)
+                        if emp.role == "admin" || emp.role == "manager" {
+                            adminPinVerifying = false
+                            adminPin = ""
+                            executeConfirmedAction()
+                        } else {
+                            adminPinVerifying = false
+                            adminPin = ""
+                            withAnimation { adminPinError = true }
+                        }
+                    } catch {
+                        adminPinVerifying = false
+                        adminPin = ""
+                        withAnimation { adminPinError = true }
+                    }
+                }
             } label: {
                 HStack {
-                    Image(systemName: "gift.fill")
-                        .font(.title3)
-                    Text("Invitar Productos / Cuenta Invitado")
+                    if adminPinVerifying {
+                        ProgressView().tint(.white)
+                    }
+                    Text(adminPinVerifying ? "Verificando..." : "Confirmar")
                         .font(.headline)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(12)
+                .frame(height: 48)
+                .background(
+                    Capsule()
+                        .fill(adminPin.count == 4 ? Color.blue : Color.gray.opacity(0.3))
+                )
+                .foregroundStyle(.white)
             }
-            
-            Button("Cerrar") {
-                vm.showAdminMenu = false
+            .disabled(adminPin.count != 4 || adminPinVerifying)
+            .buttonStyle(.plain)
+
+            Button {
+                goToMode(pendingMode)
+                adminPin = ""
+                adminPinError = false
+            } label: {
+                Text("Cancelar")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
             }
-            .foregroundColor(.gray)
+            .buttonStyle(.plain)
         }
-        .padding(24)
-        .frame(maxWidth: 400)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.1))
-                .shadow(color: .black.opacity(0.5), radius: 20)
-        )
+    }
+
+    private func actionBar(
+        backAction: @escaping () -> Void,
+        confirmAction: @escaping () -> Void,
+        confirmLabel: String,
+        confirmColor: Color,
+        isDisabled: Bool
+    ) -> some View {
+        HStack(spacing: 12) {
+            Button(action: backAction) {
+                Text("Volver")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.08))
+                    )
+            }
+            .buttonStyle(.plain)
+
+            Button(action: confirmAction) {
+                Text(confirmLabel)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        Capsule()
+                            .fill(isDisabled ? confirmColor.opacity(0.3) : confirmColor)
+                    )
+            }
+            .disabled(isDisabled)
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct AdminPillButton: View {
+    let icon: String
+    let label: String
+    let iconColor: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 28)
+                Text(label)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.07))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let width = proposal.width ?? 0
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > width && x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: width, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        var x: CGFloat = bounds.minX
+        var y: CGFloat = bounds.minY
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX && x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }
 
@@ -859,11 +1836,11 @@ struct GuestItemsDialog: View {
                     vm.showGuestItemsDialog = false
                     vm.guestItemsSelection = []
                 }
+                .font(.headline)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
-                .background(Color(white: 0.12))
-                .foregroundColor(.white)
-                .cornerRadius(10)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
                 
                 Button {
                     vm.markItemsAsGuest()
@@ -872,22 +1849,17 @@ struct GuestItemsDialog: View {
                         Image(systemName: "gift.fill")
                         Text("Marcar como Invitado (\(vm.guestItemsSelection.count))")
                     }
+                    .font(.headline)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
-                    .background(vm.guestItemsSelection.isEmpty ? Color.gray.opacity(0.3) : Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                    .font(.headline)
+                    .background(Capsule().fill(vm.guestItemsSelection.isEmpty ? Color.gray.opacity(0.3) : Color.blue))
                 }
                 .disabled(vm.guestItemsSelection.isEmpty)
             }
         }
         .padding(24)
         .frame(maxWidth: 520)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.1))
-                .shadow(color: .black.opacity(0.5), radius: 20)
-        )
+        .modifier(DialogBackground())
     }
 }

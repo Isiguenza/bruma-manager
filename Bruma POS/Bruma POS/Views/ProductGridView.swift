@@ -58,7 +58,6 @@ struct ProductGridView: View {
                 }
             }
             .padding(16)
-            .background(Color(red: 0.04, green: 0.04, blue: 0.05))
             
             Divider().background(Color.white.opacity(0.1))
             
@@ -73,7 +72,6 @@ struct ProductGridView: View {
                 }
             }
         }
-        .background(Color(red: 0.04, green: 0.04, blue: 0.05))
     }
     
     // MARK: - Products List

@@ -33,4 +33,6 @@ struct ActiveOrder: Codable {
     let itemCount: Int?
     let items: [OrderItem]?
     let createdAt: String?
+    let priority: Int?      // 0=normal, 1=rush
+    let onHold: Bool?       // true if order is on hold
 }

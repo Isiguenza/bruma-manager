@@ -1,11 +1,13 @@
 import Foundation
 
-enum APIError: LocalizedError {
+enum APIError: LocalizedError, Equatable {
     case unauthorized
     case serverError
     case decodingError
     case notFound
     case badRequest(String)
+    case offlineQueued
+    case offline(String)
     
     var errorDescription: String? {
         switch self {
@@ -14,6 +16,8 @@ enum APIError: LocalizedError {
         case .decodingError: return "Error procesando respuesta"
         case .notFound: return "No encontrado"
         case .badRequest(let msg): return msg
+        case .offlineQueued: return "Guardado offline — se sincronizará automáticamente"
+        case .offline(let msg): return msg
         }
     }
 }
@@ -30,6 +34,12 @@ class APIService {
     }
     
     private init() {}
+    
+    // MARK: - Connectivity
+    
+    var isConnected: Bool {
+        SyncEngine.shared.isOnline
+    }
     
     // MARK: - Generic Helpers
     
@@ -97,6 +107,11 @@ class APIService {
     
     func fetchEmployeeOrders(userId: String, source: String = "employee") async throws -> [Order] {
         let url = URL(string: "\(baseURL)/api/orders?userId=\(userId)&source=\(source)&limit=50")!
+        return try await request(url)
+    }
+    
+    func fetchAllEmployeeOrders() async throws -> [Order] {
+        let url = URL(string: "\(baseURL)/api/orders?source=employee&paymentStatus=pending")!
         return try await request(url)
     }
     
@@ -289,9 +304,13 @@ class APIService {
         let source: String?
     }
     
-    // MARK: - Orders
+    // MARK: - Orders (Offline-aware)
     
     func createOrder(body: [String: Any]) async throws -> Order {
+        guard isConnected else {
+            OfflineQueueService.shared.enqueue(type: .createOrder, payload: ["body": body])
+            throw APIError.offlineQueued
+        }
         let url = URL(string: "\(baseURL)/api/orders")!
         return try await request(url, method: "POST", body: body)
     }
@@ -302,13 +321,15 @@ class APIService {
     }
     
     func sendToKitchen(orderId: String) async throws {
+        guard isConnected else {
+            OfflineQueueService.shared.enqueue(type: .sendToKitchen, payload: ["orderId": orderId])
+            throw APIError.offlineQueued
+        }
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)/send-to-kitchen")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
         let (_, response) = try await URLSession.shared.data(for: request)
-        
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
             throw APIError.serverError
@@ -326,16 +347,23 @@ class APIService {
     }
     
     func fetchDeliveryOrders() async throws -> [Order] {
-        let url = URL(string: "\(baseURL)/api/orders?status=preparing,ready,pending&noTable=true&paymentStatus=pending")!
+        let url = URL(string: "\(baseURL)/api/orders?status=preparing,ready,pending&noTable=true&paymentStatus=pending&excludeSource=employee")!
         return try await request(url)
     }
     
     func updateOrderStatus(orderId: String, status: String) async throws {
+        guard isConnected else {
+            OfflineQueueService.shared.enqueue(type: .updateOrderStatus, payload: ["orderId": orderId, "status": status])
+            throw APIError.offlineQueued
+        }
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)/status")!
         let (_, _) = try await requestRaw(url, method: "PATCH", body: ["status": status])
     }
     
     func payOrder(orderId: String, body: [String: Any]) async throws {
+        guard isConnected else {
+            throw APIError.offline("No se puede pagar en modo offline")
+        }
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)/pay")!
         let (_, http) = try await requestRaw(url, method: "POST", body: body)
         if !(200...299).contains(http.statusCode) {
@@ -349,6 +377,12 @@ class APIService {
     }
     
     func voidItem(orderId: String, itemId: String, reason: String, voidedBy: String?) async throws {
+        guard isConnected else {
+            OfflineQueueService.shared.enqueue(type: .voidItem, payload: [
+                "orderId": orderId, "itemId": itemId, "reason": reason, "voidedBy": voidedBy ?? ""
+            ])
+            throw APIError.offlineQueued
+        }
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)/items/\(itemId)/void")!
         var body: [String: Any] = ["voidReason": reason]
         if let voidedBy = voidedBy { body["voidedBy"] = voidedBy }
@@ -361,6 +395,12 @@ class APIService {
     }
     
     func transferOrder(orderId: String, newTableId: String) async throws {
+        guard isConnected else {
+            OfflineQueueService.shared.enqueue(type: .transferTable, payload: [
+                "orderId": orderId, "newTableId": newTableId
+            ])
+            throw APIError.offlineQueued
+        }
         let url = URL(string: "\(baseURL)/api/orders/transfer")!
         let body: [String: Any] = [
             "orderId": orderId,
@@ -375,7 +415,7 @@ class APIService {
     // MARK: - Tables with Ready Items
     
     func fetchTablesWithReadyItems() async throws -> Set<String> {
-        let url = URL(string: "\(baseURL)/api/orders?status=ready")!
+        let url = URL(string: "\(baseURL)/api/orders?status=ready&paymentStatus=pending")!
         let orders: [Order] = try await request(url)
         var tableIds = Set<String>()
         for order in orders {
@@ -505,9 +545,13 @@ class APIService {
     
     // MARK: - Split Payments
     
-    func payOrderSplit(orderId: String, payments: [[String: Any]]) async throws {
+    func payOrderSplit(orderId: String, payments: [[String: Any]], employeeId: String? = nil) async throws {
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)/pay-split")!
-        let (_, http) = try await requestRaw(url, method: "POST", body: ["payments": payments])
+        var body: [String: Any] = ["payments": payments]
+        if let empId = employeeId, !empId.isEmpty {
+            body["employeeId"] = empId
+        }
+        let (_, http) = try await requestRaw(url, method: "POST", body: body)
         if !(200...299).contains(http.statusCode) {
             throw APIError.serverError
         }

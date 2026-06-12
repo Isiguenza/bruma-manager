@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, schema } from "../db";
-import { eq, and, or, isNull } from "drizzle-orm";
+import { eq, and, or, isNull, desc, sql } from "drizzle-orm";
 import { emitTableUpdated } from "../sockets/events";
 
 const router = Router();
@@ -10,16 +10,49 @@ router.get("/tables", async (req, res) => {
   try {
     const { status } = req.query;
 
-    let tables;
-    if (status) {
-      tables = await db.query.tables.findMany({
-        where: eq(schema.tables.status, status as any),
-      });
-    } else {
-      tables = await db.query.tables.findMany();
+    // Fetch tables and all pending orders in two sequential queries (no Promise.all)
+    const tables = status
+      ? await db.query.tables.findMany({ where: eq(schema.tables.status, status as any) })
+      : await db.query.tables.findMany();
+
+    // Fetch all pending orders in one query
+    const pendingOrders = await db.query.orders.findMany({
+      where: eq(schema.orders.paymentStatus, "pending"),
+    });
+    console.log(`📋 Pending orders found: ${pendingOrders.length}`);
+
+    // Build a map: tableId -> most recent pending order
+    const orderByTable = new Map<string, typeof pendingOrders[number]>();
+    for (const order of pendingOrders) {
+      if (!order.tableId) continue;
+      const existing = orderByTable.get(order.tableId);
+      if (!existing || new Date(order.createdAt) > new Date(existing.createdAt)) {
+        orderByTable.set(order.tableId, order);
+      }
     }
 
-    res.json(tables);
+    // Merge
+    const enriched = tables.map((table) => {
+      const order = orderByTable.get(table.id);
+      return {
+        ...table,
+        activeOrder: order
+          ? {
+              id: order.id,
+              orderNumber: order.orderNumber,
+              status: order.status,
+              total: order.total,
+              itemCount: 0,
+              items: [],
+              createdAt: order.createdAt,
+              priority: order.priority,
+              onHold: order.onHold,
+            }
+          : null,
+      };
+    });
+
+    res.json(enriched);
   } catch (error) {
     console.error("Error fetching tables:", error);
     res.status(500).json({ error: "Error al obtener mesas" });
@@ -39,7 +72,43 @@ router.get("/tables/:id", async (req, res) => {
       return res.status(404).json({ error: "Mesa no encontrada" });
     }
 
-    res.json(table);
+    // Enrich with activeOrder
+    console.log(`📋 Fetching activeOrder for table ${table.id}`);
+    let activeOrder = null;
+    try {
+      const activeOrders = await db.query.orders.findMany({
+        where: and(
+          eq(schema.orders.tableId, table.id),
+          eq(schema.orders.paymentStatus, "pending")
+        ),
+        limit: 1,
+      });
+      console.log(`📋 Found ${activeOrders.length} active orders`);
+      if (activeOrders[0]) {
+        console.log(`📋 Order: id=${activeOrders[0].id}, status=${activeOrders[0].status}`);
+        activeOrder = activeOrders[0];
+      }
+    } catch (err) {
+      console.error(`📋 Error fetching activeOrder:`, err);
+    }
+    const enrichedTable = {
+      ...table,
+      activeOrder: activeOrder
+        ? {
+            id: activeOrder.id,
+            orderNumber: activeOrder.orderNumber,
+            status: activeOrder.status,
+            total: activeOrder.total,
+            itemCount: activeOrder.items?.length || 0,
+            items: activeOrder.items,
+            createdAt: activeOrder.createdAt,
+            priority: activeOrder.priority,
+            onHold: activeOrder.onHold,
+          }
+        : null,
+    };
+
+    res.json(enrichedTable);
   } catch (error) {
     console.error("Error fetching table:", error);
     res.status(500).json({ error: "Error al obtener mesa" });

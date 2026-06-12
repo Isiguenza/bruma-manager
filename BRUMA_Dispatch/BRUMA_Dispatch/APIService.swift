@@ -18,7 +18,7 @@ class APIService {
         var baseURL: String {
             switch self {
             case .development:
-                return "https://api.cocinabruma.com.mx"
+                return "http://192.168.0.69:3000"
             case .production:
                 return "https://api.cocinabruma.com.mx"
             }
@@ -26,7 +26,7 @@ class APIService {
     }
     
     // Cambiar a .production cuando estés listo para usar en producción
-    private let environment: Environment = .development
+    private let environment: Environment = .production
     var baseURL: String {
         environment.baseURL
     }
@@ -80,6 +80,57 @@ class APIService {
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
+    
+    // Rush order (toggle priority)
+    func rushOrder(orderId: String) async throws {
+        guard let url = URL(string: "\(baseURL)/api/orders/\(orderId)/rush") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
+    
+    func unrushOrder(orderId: String) async throws {
+        guard let url = URL(string: "\(baseURL)/api/orders/\(orderId)/unrush") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
+    
+    // Hold order (pause)
+    func holdOrder(orderId: String) async throws {
+        guard let url = URL(string: "\(baseURL)/api/orders/\(orderId)/hold") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
+    
+    // Unhold order (resume)
+    func unholdOrder(orderId: String) async throws {
+        guard let url = URL(string: "\(baseURL)/api/orders/\(orderId)/unhold") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
     }

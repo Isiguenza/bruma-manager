@@ -46,9 +46,7 @@ router.post("/cash-register", async (req, res) => {
       .insert(schema.cashRegisters)
       .values({
         initialCash: initialCash.toString(),
-        currentCash: initialCash.toString(),
         openedBy: employeeId,
-        openedAt: new Date().toISOString(),
       })
       .returning();
 
@@ -87,7 +85,7 @@ router.post("/cash-register/:id/close", async (req, res) => {
       .set({
         finalCash: finalCash.toString(),
         closedBy,
-        closedAt: new Date().toISOString(),
+        closedAt: new Date(),
         notes: notes || null,
       })
       .where(eq(schema.cashRegisters.id, id))
@@ -125,20 +123,12 @@ router.post("/cash-register/:id/deposit", async (req, res) => {
 
     // Create transaction record
     await db.insert(schema.cashRegisterTransactions).values({
-      cashRegisterId: id,
+      registerId: id,
       type: "deposit",
       amount: amount.toString(),
       userId,
       description: description || "Depósito",
-      createdAt: new Date().toISOString(),
     });
-
-    // Update current cash
-    const newCurrentCash = parseFloat(register.currentCash) + amount;
-    await db
-      .update(schema.cashRegisters)
-      .set({ currentCash: newCurrentCash.toString() })
-      .where(eq(schema.cashRegisters.id, id));
 
     res.json({ success: true });
   } catch (error) {
@@ -171,20 +161,12 @@ router.post("/cash-register/:id/withdraw", async (req, res) => {
 
     // Create transaction record
     await db.insert(schema.cashRegisterTransactions).values({
-      cashRegisterId: id,
+      registerId: id,
       type: "withdrawal",
       amount: amount.toString(),
       userId,
       description: description || "Sangría",
-      createdAt: new Date().toISOString(),
     });
-
-    // Update current cash
-    const newCurrentCash = parseFloat(register.currentCash) - amount;
-    await db
-      .update(schema.cashRegisters)
-      .set({ currentCash: newCurrentCash.toString() })
-      .where(eq(schema.cashRegisters.id, id));
 
     res.json({ success: true });
   } catch (error) {
@@ -208,7 +190,7 @@ router.get("/cash-register/:id/report", async (req, res) => {
 
     // Get transactions
     const transactions = await db.query.cashRegisterTransactions.findMany({
-      where: eq(schema.cashRegisterTransactions.cashRegisterId, id),
+      where: eq(schema.cashRegisterTransactions.registerId, id),
       orderBy: desc(schema.cashRegisterTransactions.createdAt),
     });
 
@@ -336,7 +318,7 @@ router.get("/cash-register/:id/corte", async (req, res) => {
 
     // Get cash movements
     const transactions = await db.query.cashRegisterTransactions.findMany({
-      where: eq(schema.cashRegisterTransactions.cashRegisterId, id),
+      where: eq(schema.cashRegisterTransactions.registerId, id),
     });
 
     const deposits = transactions.filter((t) => t.type === "deposit");
@@ -353,12 +335,26 @@ router.get("/cash-register/:id/corte", async (req, res) => {
       totalDeposits -
       totalWithdrawals;
 
+    const cashOrders = registerOrders.filter(o => o.paymentMethod === "cash").length;
+    const cardOrders = registerOrders.filter(o => o.paymentMethod === "card" || o.paymentMethod === "terminal_mercadopago").length;
+    const transferOrders = registerOrders.filter(o => o.paymentMethod === "transfer").length;
+
     const corteData = {
+      register: {
+        id: register.id,
+        openedAt: register.openedAt instanceof Date ? register.openedAt.toISOString() : register.openedAt,
+        closedAt: register.closedAt instanceof Date ? register.closedAt.toISOString() : (register.closedAt ?? null),
+        openedBy: register.openedBy ?? null,
+        closedBy: register.closedBy ?? null,
+        status: register.status,
+        initialCash: parseFloat(register.initialCash),
+      },
       sales: {
         total: totalSales,
         cash: cashSales,
         card: cardSales,
         transfer: transferSales,
+        platformDelivery: 0,
         netCard: netCardSales,
       },
       tips: {
@@ -369,24 +365,47 @@ router.get("/cash-register/:id/corte", async (req, res) => {
         netCard: netCardTips,
       },
       commissions: {
+        rate: COMMISSION_WITH_IVA,
         rateWithIVA: COMMISSION_WITH_IVA,
         total: cardCommission,
+        salesCommission: cardSales * COMMISSION_WITH_IVA,
+        tipsCommission: cardTips * COMMISSION_WITH_IVA,
       },
       movements: {
         deposits: {
           total: totalDeposits,
           count: deposits.length,
+          items: deposits.map(d => ({
+            id: d.id,
+            amount: parseFloat(d.amount),
+            description: d.description,
+            createdAt: d.createdAt instanceof Date ? d.createdAt.toISOString() : d.createdAt,
+          })),
         },
         withdrawals: {
           total: totalWithdrawals,
           count: withdrawals.length,
+          items: withdrawals.map(w => ({
+            id: w.id,
+            amount: parseFloat(w.amount),
+            description: w.description,
+            createdAt: w.createdAt instanceof Date ? w.createdAt.toISOString() : w.createdAt,
+          })),
         },
       },
       summary: {
         totalOrders: registerOrders.length,
+        cashOrders,
+        cardOrders,
+        transferOrders,
         splitOrders: splitOrderCount,
         expectedCash,
         finalCash: register.finalCash ? parseFloat(register.finalCash) : null,
+        difference: register.finalCash ? (parseFloat(register.finalCash) - expectedCash) : null,
+      },
+      notes: {
+        opening: register.notes ?? null,
+        closure: register.closureNotes ?? null,
       },
     };
 
@@ -433,17 +452,28 @@ router.get("/cash-register/:id/report", async (req, res) => {
       .filter((o) => o.paymentMethod === "cash")
       .reduce((sum, order) => sum + parseFloat(order.total), 0);
     const totalCard = orders
-      .filter((o) => o.paymentMethod === "card")
+      .filter((o) => o.paymentMethod === "card" || o.paymentMethod === "terminal_mercadopago")
       .reduce((sum, order) => sum + parseFloat(order.total), 0);
     const totalTransfer = orders
       .filter((o) => o.paymentMethod === "transfer")
       .reduce((sum, order) => sum + parseFloat(order.total), 0);
+
+    // Calculate tips
+    const totalCashTips = orders
+      .filter((o) => o.tipPaymentMethod === "cash")
+      .reduce((sum, order) => sum + parseFloat(order.tip || "0"), 0);
+    const totalCardTips = orders
+      .filter((o) => o.tipPaymentMethod === "card" || o.tipPaymentMethod === "terminal_mercadopago")
+      .reduce((sum, order) => sum + parseFloat(order.tip || "0"), 0);
 
     const deposits = transactions.filter((t) => t.type === "deposit");
     const withdrawals = transactions.filter((t) => t.type === "withdrawal");
 
     const totalDeposits = deposits.reduce((sum, t) => sum + parseFloat(t.amount), 0);
     const totalWithdrawals = withdrawals.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+    // Expected cash = initial + cash sales + cash tips + deposits - withdrawals
+    const expectedCash = parseFloat(register.initialCash) + totalCash + totalCashTips + totalDeposits - totalWithdrawals;
 
     const report = {
       register: {
@@ -463,19 +493,31 @@ router.get("/cash-register/:id/report", async (req, res) => {
         card: totalCard,
         transfer: totalTransfer,
       },
-      transactions: {
-        deposits: {
-          count: deposits.length,
-          total: totalDeposits,
-          items: deposits,
-        },
-        withdrawals: {
-          count: withdrawals.length,
-          total: totalWithdrawals,
-          items: withdrawals,
-        },
+      tips: {
+        cash: totalCashTips,
+        card: totalCardTips,
+        total: totalCashTips + totalCardTips,
       },
-      expectedCash: parseFloat(register.initialCash) + totalCash + totalDeposits - totalWithdrawals,
+      // Return transactions as flat array for frontend compatibility
+      transactions: transactions.map(t => ({
+        id: t.id,
+        type: t.type,
+        amount: t.amount,
+        paymentMethod: t.paymentMethod,
+        description: t.description,
+        createdAt: t.createdAt,
+        orderId: t.orderId,
+        userId: t.userId,
+      })),
+      deposits: {
+        count: deposits.length,
+        total: totalDeposits,
+      },
+      withdrawals: {
+        count: withdrawals.length,
+        total: totalWithdrawals,
+      },
+      expectedCash,
     };
 
     res.json(report);

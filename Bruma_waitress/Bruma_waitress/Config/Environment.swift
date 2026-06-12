@@ -12,7 +12,7 @@ enum AppEnvironment {
     var baseURL: String {
         switch self {
         case .development:
-            return "http://192.168.0.227:3000" // Mac local server
+            return "http://192.168.0.69:3000" // Mac local server
         case .production:
             return "https://api.cocinabruma.com.mx" // Nuevo backend Express
         }

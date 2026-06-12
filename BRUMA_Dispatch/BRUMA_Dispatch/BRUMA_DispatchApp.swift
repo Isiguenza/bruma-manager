@@ -12,7 +12,6 @@ struct BRUMA_DispatchApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .preferredColorScheme(.dark)
         }
     }
 }

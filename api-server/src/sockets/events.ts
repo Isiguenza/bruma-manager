@@ -85,3 +85,17 @@ export function emitDeliveryNewOrder(order: any) {
   io.to("room:dispatch").emit("delivery:new_order", order);
   console.log(`📡 Emitted delivery:new_order`);
 }
+
+export function emitOrderRush(order: any) {
+  if (!io) return;
+  io.to("room:dispatch").emit("order:rush", order);
+  io.to("room:pos").emit("order:rush", order);
+  console.log(`📡 Emitted order:rush - ${order.id}`);
+}
+
+export function emitOrderHold(order: any) {
+  if (!io) return;
+  io.to("room:dispatch").emit("order:hold", order);
+  io.to("room:pos").emit("order:hold", order);
+  console.log(`📡 Emitted order:hold - ${order.id}`);
+}

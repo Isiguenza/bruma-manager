@@ -34,7 +34,11 @@ struct EmployeeSelectionView: View {
                             GridItem(.flexible(), spacing: 12)
                         ], spacing: 12) {
                             ForEach(vm.employees) { employee in
-                                EmployeeCardView(employee: employee) {
+                                let hasActive = vm.employeeIdsWithActiveOrders.contains(employee.id)
+                                EmployeeCardView(
+                                    employee: employee,
+                                    hasActiveOrder: hasActive
+                                ) {
                                     vm.handleSelectEmployee(employee)
                                 }
                             }
@@ -47,6 +51,11 @@ struct EmployeeSelectionView: View {
                 .refreshable {
                     await vm.fetchData()
                 }
+            }
+        }
+        .onAppear {
+            Task {
+                await vm.refreshEmployeeActiveOrders()
             }
         }
         .task {
@@ -79,6 +88,7 @@ struct EmployeeSelectionView: View {
 
 struct EmployeeCardView: View {
     let employee: Employee
+    let hasActiveOrder: Bool
     let action: () -> Void
     
     private var initials: String {
@@ -115,35 +125,53 @@ struct EmployeeCardView: View {
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                Text(initials)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundColor(roleColor)
-                
-                Text(employee.name)
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(roleColor)
-                        .frame(width: 6, height: 6)
-                    Text(roleLabel)
-                        .font(.caption2.weight(.medium))
+            ZStack(alignment: .topTrailing) {
+                VStack(spacing: 8) {
+                    Text(initials)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundColor(roleColor)
+                    
+                    Text(employee.name)
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(roleColor)
+                            .frame(width: 6, height: 6)
+                        Text(roleLabel)
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(roleColor)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 120)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(hasActiveOrder ? roleColor.opacity(0.6) : Color.white.opacity(0.1), lineWidth: hasActiveOrder ? 2 : 1)
+                        )
+                )
+                
+                if hasActiveOrder {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 7, height: 7)
+                        Text("Activa")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.orange)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.12))
+                    .clipShape(Capsule())
+                    .padding(8)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 120)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.white.opacity(0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                    )
-            )
         }
         .buttonStyle(.plain)
     }

@@ -102,7 +102,17 @@ struct OrdersHistoryModal: View {
                             .font(.headline.bold())
                             .foregroundColor(.white)
                         
-                        paymentMethodBadge(order.paymentMethod)
+                        if order.isSplitPayment {
+                            Text("Dividida")
+                                .font(.caption2.bold())
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.orange.opacity(0.15))
+                                .cornerRadius(6)
+                        } else {
+                            paymentMethodBadge(order.paymentMethod)
+                        }
                     }
                     
                     Text(order.tableId != nil ? "Mesa \(order.tableNumber ?? "")" : "Para Llevar")

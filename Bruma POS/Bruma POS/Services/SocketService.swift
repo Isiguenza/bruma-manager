@@ -11,9 +11,11 @@ class SocketService: ObservableObject {
     @Published var isConnected = false
     
     // Callbacks for events
-    var onOrderUpdated: ((String) -> Void)?
+    var onOrderUpdated: (([String: Any]) -> Void)?
     var onOrderPaid: ((String) -> Void)?
     var onTableUpdated: ((String) -> Void)?
+    var onOrderRush: (([String: Any]) -> Void)?
+    var onOrderHold: (([String: Any]) -> Void)?
     var onCashRegisterOpened: (() -> Void)?
     var onCashRegisterClosed: (() -> Void)?
     
@@ -66,7 +68,7 @@ class SocketService: ObservableObject {
                 return
             }
             print("📦 Order updated: \(orderId)")
-            self?.onOrderUpdated?(orderId)
+            self?.onOrderUpdated?(dict)
         }
         
         socket?.on("order:paid") { [weak self] data, ack in
@@ -77,6 +79,26 @@ class SocketService: ObservableObject {
             }
             print("💰 Order paid: \(orderId)")
             self?.onOrderPaid?(orderId)
+        }
+        
+        socket?.on("order:rush") { [weak self] data, ack in
+            guard let dict = data.first as? [String: Any],
+                  let orderId = dict["id"] as? String else {
+                print("⚠️ order:rush received but no id field found")
+                return
+            }
+            print("🔥 Order rush: \(orderId)")
+            self?.onOrderRush?(dict)
+        }
+        
+        socket?.on("order:hold") { [weak self] data, ack in
+            guard let dict = data.first as? [String: Any],
+                  let orderId = dict["id"] as? String else {
+                print("⚠️ order:hold received but no id field found")
+                return
+            }
+            print("⏸️ Order hold: \(orderId)")
+            self?.onOrderHold?(dict)
         }
         
         socket?.on("table:updated") { [weak self] data, ack in

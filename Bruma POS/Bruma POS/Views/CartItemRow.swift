@@ -1,5 +1,16 @@
 import SwiftUI
 
+private struct StepperButton: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Circle()
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
+            )
+    }
+}
+
 struct CartItemRow: View {
     let item: CartItem
     let index: Int
@@ -38,19 +49,6 @@ struct CartItemRow: View {
                     Text(vm.formatCurrency(item.unitPrice) + " c/u")
                         .font(.caption2)
                         .foregroundColor(Color(white: 0.4))
-                }
-                
-                if !isInsidePromotionGroup {
-                    Button { vm.openChangeItemDialog(at: index) } label: {
-                        Image(systemName: "arrow.2.circlepath")
-                            .font(.caption)
-                            .foregroundColor(.blue.opacity(0.7))
-                    }
-                    Button { vm.removeFromCart(at: index) } label: {
-                        Image(systemName: "trash")
-                            .font(.caption)
-                            .foregroundColor(.red.opacity(0.7))
-                    }
                 }
             }
             
@@ -146,9 +144,8 @@ struct CartItemRow: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 28, height: 28)
-                            .background(Circle().fill(Color.red.opacity(0.15)))
-                            .overlay(Circle().stroke(Color.red.opacity(0.3), lineWidth: 1))
                     }
+                    .modifier(StepperButton())
                     
                     Text("\(item.quantity)")
                         .font(.subheadline.weight(.semibold))
@@ -162,9 +159,8 @@ struct CartItemRow: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 28, height: 28)
-                            .background(Circle().fill(Color.blue.opacity(0.15)))
-                            .overlay(Circle().stroke(Color.blue.opacity(0.3), lineWidth: 1))
                     }
+                    .modifier(StepperButton())
                     
                     Spacer()
                     

@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: ./api-server/Dockerfile
-    network_mode: host
+    # network_mode: host  # Only works on Linux, use docker-compose.override.yml for macOS
     env_file: .env
     environment:
       - PORT=4000
@@ -17,7 +17,7 @@ services:
       args:
         - NEXT_PUBLIC_PRINT_SERVER_URL=http://192.168.0.152:3001
         - NEXT_PUBLIC_API_URL=http://192.168.0.152:4000
-    network_mode: host
+    # network_mode: host  # Only works on Linux, use docker-compose.override.yml for macOS
     env_file: .env
     environment:
       - NEXT_PUBLIC_PRINT_SERVER_URL=http://192.168.0.152:3001
@@ -28,9 +28,10 @@ services:
 
   print-server:
     build: ./print-server
-    network_mode: host
-    devices:
-      - /dev/usb/lp1:/dev/usb/lp1
+    # network_mode: host  # Only works on Linux, use docker-compose.override.yml for macOS
+    # USB device only available on Linux hosts, ignored on macOS
+    # devices:
+    #   - /dev/usb/lp1:/dev/usb/lp1
     environment:
       - PRINTER_IP=${PRINTER_IP:-192.168.0.200}
       - PRINTER_PORT=${PRINTER_PORT:-9100}

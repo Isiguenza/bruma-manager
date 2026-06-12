@@ -10,6 +10,7 @@ export async function PATCH(
   try {
     const { id, itemId } = await params;
     const body = await request.json();
+    console.log("[PATCH /api/orders/:id/items/:itemId/void] orderId=", id, "itemId=", itemId, "body=", JSON.stringify(body));
     const { voidReason, voidedBy } = body;
 
     // Mark item as voided
@@ -22,6 +23,8 @@ export async function PATCH(
       })
       .where(eq(orderItems.id, itemId))
       .returning();
+
+    console.log("[PATCH /api/orders/:id/items/:itemId/void] updatedItem=", updatedItem);
 
     if (!updatedItem) {
       return NextResponse.json({ error: "Item not found" }, { status: 404 });
@@ -36,6 +39,8 @@ export async function PATCH(
       .filter((item) => !item.voided)
       .reduce((sum, item) => sum + parseFloat(item.subtotal) * 1, 0);
 
+    console.log("[PATCH /api/orders/:id/items/:itemId/void] newTotal=", newTotal);
+
     await db
       .update(orders)
       .set({
@@ -47,7 +52,7 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, newTotal });
   } catch (error) {
-    console.error("Error voiding item:", error);
-    return NextResponse.json({ error: "Error voiding item" }, { status: 500 });
+    console.error("[PATCH /api/orders/:id/items/:itemId/void] 500 error:", error);
+    return NextResponse.json({ error: "Error voiding item", detail: String(error) }, { status: 500 });
   }
 }

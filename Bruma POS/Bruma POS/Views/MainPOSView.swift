@@ -7,60 +7,61 @@ struct MainPOSView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             
-            HStack(spacing: 0) {
-                // Left side: Cart sidebar (w-80 = 320pt like /bar)
+            HStack(spacing: 12) {
+                // Left side: Cart sidebar (2 internal cards)
                 CartView(vm: vm)
                     .frame(width: 320)
                 
-                Rectangle()
-                    .fill(Color(white: 0.12))
-                    .frame(width: 1)
-                
-                // Right side: Payment OR Categories+Products
+                // Right side: Payment OR Categories+Products cards
                 if vm.showingPayment {
                     PaymentView(vm: vm)
                         .frame(maxWidth: .infinity)
+                        .background(Color(uiColor: .systemGray6).opacity(0.4))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                     
+                        .padding(.trailing, 12)
+                        .padding(.vertical, 12)
                 } else {
-                    HStack(spacing: 0) {
-                        // Category sidebar
+                    HStack(spacing: 12) {
+                        // Category sidebar card
                         CategorySidebarView(vm: vm)
                             .frame(width: 220)
+                            .background(Color(uiColor: .systemGray6).opacity(0.4))
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                          
                         
-                        Rectangle()
-                            .fill(Color(white: 0.12))
-                            .frame(width: 1)
-                        
-                        // Product area
+                        // Product area card
                         ProductGridView(vm: vm)
                             .frame(maxWidth: .infinity)
+                            .background(Color(uiColor: .systemGray6).opacity(0.4))
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                       
+                            .padding(.trailing, 12)
                     }
+                    .padding(.vertical, 12)
                 }
             }
             
             // MARK: - Dialog Overlays
             
-            if vm.showVariantDialog {
-                dialogOverlay { VariantDialog(vm: vm) }
-            }
-            
-            if vm.showNotesDialog {
-                dialogOverlay { NotesDialog(vm: vm) }
+            if vm.showVariantDialog || vm.showNotesDialog {
+                dialogOverlay { ProductAddDialog(vm: vm) }
             }
             
             if vm.showGuestCountDialog {
-                dialogOverlay { GuestCountDialog(vm: vm, isInitial: false) }
+                dialogOverlay(onDismiss: { vm.showGuestCountDialog = false }) {
+                    GuestCountDialog(vm: vm, isInitial: false)
+                }
             }
             
             if vm.showInitialGuestDialog {
-                dialogOverlay { GuestCountDialog(vm: vm, isInitial: true) }
+                dialogOverlay(onDismiss: { vm.showInitialGuestDialog = false }) {
+                    GuestCountDialog(vm: vm, isInitial: true)
+                }
             }
             
             if vm.showVoidDialog {
                 dialogOverlay { VoidDialog(vm: vm) }
-            }
-            
-            if vm.showCustomerNameDialog {
-                dialogOverlay { CustomerNameDialog(vm: vm) }
             }
             
             if vm.qrDialogOpen {
@@ -76,15 +77,13 @@ struct MainPOSView: View {
             }
             
             if vm.showAdminMenu {
-                dialogOverlay { AdminMenuDialog(vm: vm) }
+                dialogOverlay(onDismiss: { vm.showAdminMenu = false }) {
+                    AdminMenuDialog(vm: vm)
+                }
             }
             
             if vm.showTransferTableDialog {
                 dialogOverlay { TransferTableDialog(vm: vm) }
-            }
-            
-            if vm.showGuestItemsDialog {
-                dialogOverlay { GuestItemsDialog(vm: vm) }
             }
             
             if vm.showChangeItemDialog {
@@ -98,6 +97,52 @@ struct MainPOSView: View {
                     .cornerRadius(16)
                     .shadow(color: .black.opacity(0.5), radius: 20)
                     .padding(.horizontal, 32)
+            }
+            
+            // MARK: - Split Payment Modal
+            let splitTotalPaid = vm.splitPayments.reduce(0) { $0 + $1.amount }
+            let splitRemaining = max(0, vm.totalWithTip - splitTotalPaid)
+            
+            if vm.showAddSplitPayment {
+                dialogOverlay(onDismiss: { vm.showAddSplitPayment = false }) {
+                    SplitPaymentModal(
+                        vm: vm,
+                        title: "Nuevo Pago",
+                        initialAmount: String(format: "%.2f", splitRemaining),
+                        maxAmount: splitRemaining,
+                        onDismiss: { vm.showAddSplitPayment = false },
+                        onConfirm: { payment in
+                            vm.splitPayments.append(payment)
+                            vm.showAddSplitPayment = false
+                        }
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+            }
+            if let payment = vm.editingSplitPayment {
+                dialogOverlay(onDismiss: { vm.editingSplitPayment = nil }) {
+                    SplitPaymentModal(
+                        vm: vm,
+                        title: "Editar Pago",
+                        initialAmount: String(format: "%.2f", payment.amount),
+                        initialTip: String(format: "%.2f", payment.tip),
+                        initialMethod: payment.paymentMethod,
+                        initialTipMethod: payment.tipPaymentMethod,
+                        maxAmount: splitRemaining + payment.amount,
+                        deleteAction: {
+                            vm.splitPayments.removeAll { $0.id == payment.id }
+                            vm.editingSplitPayment = nil
+                        },
+                        onDismiss: { vm.editingSplitPayment = nil },
+                        onConfirm: { updated in
+                            if let index = vm.splitPayments.firstIndex(where: { $0.id == payment.id }) {
+                                vm.splitPayments[index] = updated
+                            }
+                            vm.editingSplitPayment = nil
+                        }
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
             }
             
             // MARK: - Toast
@@ -128,13 +173,15 @@ struct MainPOSView: View {
     }
     
     @ViewBuilder
-    private func dialogOverlay<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func dialogOverlay<Content: View>(onDismiss: @escaping () -> Void = {}, @ViewBuilder content: () -> Content) -> some View {
         ZStack {
             Color.black.opacity(0.6)
                 .ignoresSafeArea()
-                .onTapGesture { /* dismiss if needed */ }
+                .onTapGesture { onDismiss() }
             
             content()
+                .contentShape(Rectangle())
+                .onTapGesture {}
         }
     }
 }

@@ -5,244 +5,53 @@ struct PaymentView: View {
     
     var body: some View {
         ZStack {
-            Color(white: 0.03).ignoresSafeArea()
-            
-            switch vm.paymentStep {
-            case "summary":
-                paymentSummary
-            case "payment":
-                paymentMethodSelection
-            case "confirmation":
-                paymentConfirmation
-            case "done":
-                paymentDone
-            case "split-payment":
-                SplitPaymentView(vm: vm)
-            case "split-assign":
-                SplitAssignView(vm: vm)
-            case "split-overview":
-                SplitOverviewView(vm: vm)
-            case "split-pay-person":
-                SplitPayPersonView(vm: vm)
-            default:
-                paymentSummary
-            }
-        }
-    }
-    
-    // MARK: - Summary
-    
-    private var paymentSummary: some View {
-        VStack(spacing: 20) {
-            // Header
-            HStack {
-                Text("Cobrar")
-                    .font(.title2.weight(.bold))
-                    .foregroundColor(.white)
-                Spacer()
-                Button {
-                    vm.resetPaymentState()
-                    vm.showingPayment = false
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Volver")
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(10)
-                }
-            }
-            
-            // Discount selector
-            if !vm.availableDiscounts.isEmpty {
-                discountSelector
-            }
-            
-            // Totals card (clean style)
-            VStack(spacing: 12) {
-                HStack {
-                    Text("Subtotal")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    Spacer()
-                    Text(vm.formatCurrency(vm.cartSubtotalBeforeDiscounts))
-                        .font(.headline)
-                        .foregroundColor(.white)
-                }
-                
-                if vm.selectedDiscount != nil {
-                    HStack {
-                        Text(vm.selectedDiscount?.name ?? "Descuento")
-                            .font(.subheadline)
-                            .foregroundColor(.yellow)
-                        Spacer()
-                        Text("-\(vm.formatCurrency(vm.flexibleDiscountAmount))")
-                            .font(.headline)
-                            .foregroundColor(.yellow)
-                    }
-                    
-                    Divider().background(Color.white.opacity(0.1))
-                    
-                    HStack {
-                        Text("Total")
-                            .font(.title3.weight(.semibold))
-                            .foregroundColor(.white)
-                        Spacer()
-                        Text(vm.formatCurrency(vm.cartTotalWithDiscount))
-                            .font(.title3.weight(.bold))
-                            .foregroundColor(.green)
-                    }
-                } else {
-                    Divider().background(Color.white.opacity(0.1))
-                    
-                    HStack {
-                        Text("Total")
-                            .font(.title3.weight(.semibold))
-                            .foregroundColor(.white)
-                        Spacer()
-                        Text(vm.formatCurrency(vm.cartTotal))
-                            .font(.title3.weight(.bold))
-                            .foregroundColor(.white)
-                    }
-                }
-            }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.white.opacity(0.05))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            // Subtle dark gradient background
+            LinearGradient(
+                colors: [Color(white: 0.02), Color(white: 0.05), Color(white: 0.02)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             )
+            .ignoresSafeArea()
             
-            Spacer()
-            
-            // Action buttons
-            VStack(spacing: 12) {
-                // Cobrar Todo
-                Button {
-                    vm.paymentStep = "payment"
-                    vm.paymentMethod = nil
-                    vm.cashReceived = ""
-                    vm.splitPayments = []
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "creditcard.fill")
-                        Text("Cobrar Todo")
-                            .font(.headline.weight(.semibold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(Color.green.opacity(0.2))
-                    .foregroundColor(.green)
-                    .cornerRadius(14)
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.green.opacity(0.4), lineWidth: 1.5))
-                }
-                
-                // Pago Dividido (multiple methods)
-                Button {
-                    vm.paymentStep = "split-payment"
-                    vm.splitPayments = []
-                    vm.paymentMethod = nil
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "creditcard.and.123")
-                        Text("Pago Dividido")
-                            .font(.headline.weight(.semibold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(Color.purple.opacity(0.15))
-                    .foregroundColor(.purple)
-                    .cornerRadius(14)
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.purple.opacity(0.3), lineWidth: 1))
-                }
-                
-                // Dividir Cuenta
-                if vm.guestCount > 1 {
-                    Button {
-                        if vm.itemAssignments.isEmpty {
-                            var assignments: [Int: [Int]] = [:]
-                            var payments: [Int: IndividualPayment] = [:]
-                            var tips: [Int: IndividualTip] = [:]
-                            for i in 0..<vm.guestCount {
-                                assignments[i] = []
-                                payments[i] = IndividualPayment()
-                                tips[i] = IndividualTip()
-                            }
-                            vm.itemAssignments = assignments
-                            vm.individualPayments = payments
-                            vm.individualTips = tips
-                        }
-                        vm.currentPersonIndex = 0
-                        vm.paymentStep = "split-assign"
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "person.2.fill")
-                            Text("Dividir Cuenta")
-                                .font(.headline.weight(.semibold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(Color.blue.opacity(0.15))
-                        .foregroundColor(.blue)
-                        .cornerRadius(14)
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.blue.opacity(0.3), lineWidth: 1))
-                    }
+            ZStack {
+                switch vm.paymentStep {
+                case "payment", "confirmation":
+                    mainPaymentView
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .leading)), removal: .opacity.combined(with: .move(edge: .trailing))))
+                case "done":
+                    paymentDone
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
+                case "split-payment":
+                    SplitPaymentView(vm: vm)
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
+                case "split-bill-mode":
+                    SplitBillModeView(vm: vm)
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
+                case "split-assign":
+                    SplitAssignView(vm: vm)
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
+                case "split-seat-assign":
+                    SplitSeatView(vm: vm)
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
+                case "split-overview":
+                    SplitOverviewView(vm: vm)
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
+                case "split-pay-person":
+                    SplitPayPersonView(vm: vm)
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
+                case "split-confirmation":
+                    splitConfirmationView
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
+                case "split-bill-confirmation":
+                    splitBillConfirmationView
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
+                default:
+                    mainPaymentView
+                        .transition(.opacity)
                 }
             }
+            .animation(.spring(response: 0.4, dampingFraction: 0.82), value: vm.paymentStep)
         }
-        .frame(maxWidth: 380)
-        .padding(24)
-    }
-    
-    // MARK: - Discount Selector
-    
-    private var discountSelector: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Descuento")
-                .font(.subheadline.weight(.medium))
-                .foregroundColor(.gray)
-            
-            Menu {
-                Button("Sin descuento") { vm.selectedDiscount = nil }
-                ForEach(vm.availableDiscounts) { discount in
-                    Button {
-                        if discount.type == "flexible" {
-                            vm.selectedDiscount = discount
-                            vm.showFlexibleDiscountDialog = true
-                        } else {
-                            vm.selectedDiscount = discount
-                        }
-                    } label: {
-                        Text("\(discount.name) (\(discountLabel(discount)))")
-                    }
-                }
-            } label: {
-                HStack {
-                    Text(vm.selectedDiscount?.name ?? "Sin descuento")
-                        .foregroundColor(.white)
-                    Spacer()
-                    Image(systemName: "chevron.down")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.white.opacity(0.05))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                )
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.05))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-        )
     }
     
     private func discountLabel(_ d: Discount) -> String {
@@ -253,80 +62,248 @@ struct PaymentView: View {
         }
     }
     
-    // MARK: - Payment Method Selection
+    // MARK: - Main Payment View
     
-    private var paymentMethodSelection: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 20) {
-                // Header
-                HStack {
-                    Text("Método de Pago")
-                        .font(.title2.weight(.bold))
-                        .foregroundColor(.white)
-                    Spacer()
-                    Button {
-                        vm.paymentStep = "summary"
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text("Regresar")
+    private var paymentBodyContent: some View {
+        Group {
+            if vm.paymentStep == "confirmation" {
+                confirmationSummary
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
+                    .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
+            } else {
+                VStack(spacing: 12) {
+                    if vm.customerName.hasPrefix("Uber") || vm.customerName.hasPrefix("Rappi") || vm.customerName.hasPrefix("Didi") {
+                        platformDeliveryPayment
+                    } else {
+                        methodSegmentedPicker
+                        tipSelector
+                        
+                        if vm.paymentMethod == "cash" {
+                            cashInputPanel
                         }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(10)
+                        
+                        if vm.showCustomTip {
+                            customTipPanel
+                        }
+                        
+                        if vm.paymentMethod != nil && vm.paymentMethod != "cash" && vm.tipAmount > 0 {
+                            tipPaymentMethodSelector
+                        }
                     }
                 }
-                
-                // Tip selector
-                tipSelector
-                
-                // Total card
-                totalWithTipCard
-                
-                // Platform delivery or payment methods
-                if vm.customerName.hasPrefix("Uber") || vm.customerName.hasPrefix("Rappi") || vm.customerName.hasPrefix("Didi") {
-                    platformDeliveryPayment
-                } else {
-                    // Payment methods
-                    paymentMethodButtons
-                    
-                    // Tip payment method selector (when not cash and tip > 0)
-                    if vm.paymentMethod != nil && vm.paymentMethod != "cash" && vm.tipAmount > 0 {
-                        tipPaymentMethodSelector
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+                .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .leading)), removal: .opacity.combined(with: .move(edge: .trailing))))
+            }
+        }
+    }
+
+    private var mainPaymentView: some View {
+        VStack(spacing: 0) {
+            paymentHeader
+                .animation(.easeInOut(duration: 0.3), value: vm.paymentStep)
+
+            ScrollView(showsIndicators: false) {
+                paymentBodyContent
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .padding(.bottom, 12)
+            }
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .safeAreaInset(edge: .bottom) {
+                paymentFooter
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .animation(.easeInOut(duration: 0.3), value: vm.paymentStep)
+            }
+
+
+           
+        }
+    }
+    
+    // MARK: - Header
+    
+    @ViewBuilder
+    private var paymentHeader: some View {
+        if vm.paymentStep == "confirmation" {
+            HStack(spacing: 12) {
+                Text("Confirmar Pago")
+                    .font(.title2.weight(.bold))
+                    .foregroundColor(.white)
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        vm.paymentStep = "payment"
                     }
-                    
-                    // Cash input
-                    if vm.paymentMethod == "cash" {
-                        cashInput
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Regresar")
                     }
-                    
-                    // Continue button
-                    if vm.paymentMethod != nil {
-                        Button {
-                            vm.paymentStep = "confirmation"
-                        } label: {
-                            HStack(spacing: 8) {
-                                Text("Continuar")
-                                Image(systemName: "arrow.right")
-                            }
-                            .font(.headline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(canProceed ? Color.blue.opacity(0.2) : Color.white.opacity(0.05))
-                            .foregroundColor(canProceed ? .blue : .gray)
-                            .cornerRadius(14)
-                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(canProceed ? Color.blue.opacity(0.4) : Color.white.opacity(0.1), lineWidth: 1.5))
-                        }
-                        .disabled(!canProceed)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.glass)
+                .clipShape(Capsule())
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
+        } else {
+            HStack(spacing: 12) {
+                Text("Cobrar")
+                    .font(.title2.weight(.bold))
+                    .foregroundColor(.white)
+                Spacer()
+                moreOptionsMenu
+                if !vm.availableDiscounts.isEmpty {
+                    discountPill
+                }
+                
+                Button {
+                    vm.resetPaymentState()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark")
+                        Text("Cerrar")
                     }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.glass)
+                .clipShape(Capsule())
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
+        }
+    }
+    
+    @ViewBuilder
+    private var discountPill: some View {
+        if vm.selectedDiscount != nil {
+            discountPillContent
+                .buttonStyle(.glassProminent)
+                .tint(.orange)
+        } else {
+            discountPillContent
+                .buttonStyle(.glass)
+        }
+    }
+
+    private var discountPillContent: some View {
+        Menu {
+            Button("Sin descuento") { vm.selectedDiscount = nil }
+            ForEach(vm.availableDiscounts) { discount in
+                Button {
+                    if discount.type == "flexible" {
+                        vm.selectedDiscount = discount
+                        vm.showFlexibleDiscountDialog = true
+                    } else {
+                        vm.selectedDiscount = discount
+                    }
+                } label: {
+                    Text("\(discount.name) (\(discountLabel(discount)))")
                 }
             }
-            .frame(maxWidth: 420)
-            .padding(24)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "tag.fill")
+                    .font(.caption)
+                Text(vm.selectedDiscount?.name ?? "Descuento")
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
+    }
+
+    private var moreOptionsMenu: some View {
+        Menu {
+            Button {
+                vm.paymentStep = "split-payment"
+                vm.splitPayments = []
+                vm.paymentMethod = nil
+            } label: {
+                Label("Pago Dividido", systemImage: "creditcard.arrow.trianglehead.2.clockwise.rotate.90")
+            }
+            
+            if vm.guestCount > 1 {
+                Button {
+                    vm.currentPersonIndex = 0
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                        vm.paymentStep = "split-bill-mode"
+                    }
+                } label: {
+                    Label("Dividir Cuenta", systemImage: "person.2.fill")
+                }
+            }
+        } label: {
+            
+            HStack(spacing: 12){
+                Label("Pago Completo", systemImage: "creditcard.and.numbers")
+                    
+                    .foregroundColor(.white)
+                    
+                
+                
+                
+                Image(systemName: "chevron.down")
+                    .foregroundStyle(.gray)
+                    .font(.footnote)
+            }
+            .padding(.vertical, 8)
+            
+            
+                
+        }
+        .buttonStyle(.glass)
+        
+    }
+    
+    // MARK: - Segmented Method Picker
+    
+    private var methodSegmentedPicker: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Método de pago")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.gray)
+            
+            HStack(spacing: 10) {
+                methodButton(method: "cash", icon: "banknote.fill", label: "Efectivo", color: Color(red: 0, green: 137/255, blue: 50/255))
+                methodButton(method: "terminal_mercadopago", icon: "creditcard.fill", label: "Terminal", color: Color(red: 30/255, green: 110/255, blue: 244/255))
+                methodButton(method: "transfer", icon: "building.columns.fill", label: "Transferencia", color: Color(red: 86/255, green: 74/255, blue: 222/255))
+            }
+        }
+        .padding(16)
+        .modifier(GlassCard())
+    }
+    
+    private func methodButton(method: String, icon: String, label: String, color: Color) -> some View {
+        Button {
+            vm.paymentMethod = method
+            if method != "cash" {
+                vm.cashReceived = ""
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.body)
+                Text(label)
+                    .font(.body.weight(.semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+        }
+        .buttonStyle(.glassProminent)
+        .tint(vm.paymentMethod == method ? color : Color(.systemGray6))
     }
     
     private var canProceed: Bool {
@@ -350,25 +327,18 @@ struct PaymentView: View {
                         vm.tipPercentage = pct
                         vm.customTip = ""
                         vm.showCustomTip = false
+                        vm.activeNumericField = nil
                     } label: {
                         Text(pct == 0 ? "Sin" : "\(pct)%")
                             .font(.subheadline.weight(.medium))
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
-                            .background(
-                                vm.tipPercentage == pct && !vm.showCustomTip
-                                ? Color.blue.opacity(0.2)
-                                : Color.white.opacity(0.05)
-                            )
-                            .foregroundColor(vm.tipPercentage == pct && !vm.showCustomTip ? .blue : .white)
-                            .cornerRadius(10)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(vm.tipPercentage == pct && !vm.showCustomTip ? Color.blue.opacity(0.4) : Color.white.opacity(0.1), lineWidth: 1)
-                            )
+                            .foregroundStyle(.white)
                     }
+                    .buttonStyle(.glassProminent)
+                    .tint(vm.tipPercentage == pct && !vm.showCustomTip ? .blue : Color(.systemGray5))
                 }
-                
+
                 Button {
                     vm.showCustomTip = true
                     vm.tipPercentage = 0
@@ -377,114 +347,268 @@ struct PaymentView: View {
                         .font(.subheadline.weight(.medium))
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
-                        .background(vm.showCustomTip ? Color.blue.opacity(0.2) : Color.white.opacity(0.05))
-                        .foregroundColor(vm.showCustomTip ? .blue : .white)
-                        .cornerRadius(10)
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(vm.showCustomTip ? Color.blue.opacity(0.4) : Color.white.opacity(0.1), lineWidth: 1))
+                        .foregroundStyle(.white)
                 }
-            }
-            
-            if vm.showCustomTip {
-                TextField("0.00", text: $vm.customTip)
-                    .keyboardType(.decimalPad)
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.white.opacity(0.05))
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                    )
+                .buttonStyle(.glassProminent)
+                .tint(vm.showCustomTip ? .blue : Color(.systemGray5))
+                
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.05))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-        )
+        .modifier(GlassCard())
     }
     
-    // MARK: - Total with Tip Card
+    // MARK: - Cash Input Panel
     
-    private var totalWithTipCard: some View {
-        VStack(spacing: 10) {
-            HStack {
-                Text("Subtotal")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                Spacer()
-                Text(vm.formatCurrency(vm.cartTotalWithDiscount))
-                    .font(.headline)
-                    .foregroundColor(.white)
-            }
+    private var cashInputPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Efectivo recibido")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.gray)
             
-            if vm.tipAmount > 0 {
+            TextField("0.00", text: $vm.cashReceived)
+                .keyboardType(.decimalPad)
+                .font(.title2.weight(.bold))
+                .foregroundColor(.white)
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.white.opacity(0.03))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                )
+            
+            if let cash = Double(vm.cashReceived), cash > 0 {
                 HStack {
-                    Text("Propina")
+                    Text("Cambio")
                         .font(.subheadline)
-                        .foregroundColor(.blue)
+                        .foregroundColor(.white)
                     Spacer()
-                    Text(vm.formatCurrency(vm.tipAmount))
-                        .font(.headline)
-                        .foregroundColor(.blue)
+                    Text(vm.formatCurrency(vm.changeAmount))
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.white)
                 }
-            }
-            
-            Divider().background(Color.white.opacity(0.1))
-            
-            HStack {
-                Text("Total a Pagar")
-                    .font(.title3.weight(.semibold))
-                    .foregroundColor(.white)
-                Spacer()
-                Text(vm.formatCurrency(vm.totalWithTip))
-                    .font(.title2.weight(.bold))
-                    .foregroundColor(.white)
+                .padding(12)
+                .modifier(
+                    vm.cashSufficient
+                    ? GlassCardTinted(color: .green)
+                    : GlassCardTinted(color: .red)
+                )
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.05))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-        )
+        .modifier(GlassCard())
     }
     
-    // MARK: - Payment Method Buttons
+    // MARK: - Custom Tip Panel
     
-    private var paymentMethodButtons: some View {
-        HStack(spacing: 12) {
-            paymentMethodCard(method: "cash", icon: "banknote.fill", label: "Efectivo", color: .green)
-            paymentMethodCard(method: "terminal_mercadopago", icon: "creditcard.fill", label: "Terminal", color: .blue)
-            paymentMethodCard(method: "transfer", icon: "building.columns.fill", label: "Transferencia", color: .purple)
+    private var customTipPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Propina personalizada")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.gray)
+            
+            TextField("0.00", text: $vm.customTip)
+                .keyboardType(.decimalPad)
+                .font(.headline)
+                .foregroundColor(.white)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                )
         }
+        .padding(16)
+        .modifier(GlassCard())
     }
     
-    private func paymentMethodCard(method: String, icon: String, label: String, color: Color) -> some View {
-        Button {
-            vm.paymentMethod = method
-        } label: {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 24))
-                    .foregroundColor(vm.paymentMethod == method ? color : color.opacity(0.6))
-                Text(label)
-                    .font(.caption.weight(.medium))
-                    .foregroundColor(vm.paymentMethod == method ? .white : .gray)
+    // MARK: - Confirmation Summary
+
+    private var confirmationSummary: some View {
+        VStack(spacing: 16) {
+            VStack(spacing: 12) {
+                HStack {
+                    Text("Subtotal")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Text(vm.formatCurrency(vm.cartSubtotalBeforeDiscounts))
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+
+                if vm.selectedDiscount != nil {
+                    HStack {
+                        Text(vm.selectedDiscount?.name ?? "Descuento")
+                            .font(.subheadline)
+                            .foregroundColor(.yellow)
+                        Spacer()
+                        Text("-\(vm.formatCurrency(vm.flexibleDiscountAmount))")
+                            .font(.headline)
+                            .foregroundColor(.yellow)
+                    }
+                }
+
+                if vm.tipAmount > 0 {
+                    HStack {
+                        Text("Propina")
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                        Spacer()
+                        Text(vm.formatCurrency(vm.tipAmount))
+                            .font(.headline)
+                            .foregroundColor(.blue)
+                    }
+                }
+
+                Divider().background(Color.white.opacity(0.1))
+
+                HStack {
+                    Text("Total")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Text(vm.formatCurrency(vm.totalWithTip))
+                        .font(.title2.weight(.bold))
+                        .foregroundColor(.white)
+                }
+
+                HStack(spacing: 8) {
+                    Text("Método")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Text(paymentMethodLabel)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(.white)
+                        .modifier(GlassCardTinted(color: .blue))
+                }
+
+                if vm.paymentMethod == "cash", let cash = Double(vm.cashReceived), cash > 0 {
+                    HStack {
+                        Text("Efectivo recibido")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Text(vm.formatCurrency(cash))
+                            .font(.headline)
+                            .foregroundColor(.white)
+                    }
+
+                    HStack {
+                        Text("Cambio")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Text(vm.formatCurrency(max(0, cash - vm.totalWithTip)))
+                            .font(.headline.weight(.bold))
+                            .foregroundColor(.green)
+                    }
+                }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 80)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(vm.paymentMethod == method ? color.opacity(0.15) : Color.white.opacity(0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(vm.paymentMethod == method ? color.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1.5)
-            )
+            .padding(20)
+            .modifier(GlassCard())
         }
-        .buttonStyle(.plain)
+    }
+
+    // MARK: - Payment Footer
+
+    @ViewBuilder
+    private var paymentFooter: some View {
+        if vm.paymentStep == "confirmation" {
+            SlideToConfirmView {
+                Task {
+                    if vm.paymentMethod == "cash" {
+                        vm.handlePayCash()
+                    } else if vm.paymentMethod == "transfer" {
+                        vm.handlePayTransfer()
+                    } else if vm.paymentMethod == "terminal_mercadopago" {
+                        vm.handlePayTerminal()
+                    }
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        vm.paymentStep = "done"
+                    }
+                }
+            }
+            .disabled(vm.processing)
+            .transition(.opacity.combined(with: .scale))
+        } else {
+            VStack(spacing: 10) {
+                HStack {
+                    Text("Subtotal")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Text(vm.formatCurrency(vm.cartSubtotalBeforeDiscounts))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                }
+
+                if vm.selectedDiscount != nil {
+                    HStack {
+                        Text(vm.selectedDiscount?.name ?? "Descuento")
+                            .font(.caption)
+                            .foregroundColor(.yellow)
+                        Spacer()
+                        Text("-\(vm.formatCurrency(vm.flexibleDiscountAmount))")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.yellow)
+                    }
+                }
+
+                if vm.tipAmount > 0 {
+                    HStack {
+                        Text("Propina")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        Spacer()
+                        Text(vm.formatCurrency(vm.tipAmount))
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.blue)
+                    }
+                }
+
+                Divider().background(Color.white.opacity(0.1))
+
+                HStack {
+                    Text("Total")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Text(vm.formatCurrency(vm.totalWithTip))
+                        .font(.title2.weight(.bold))
+                        .foregroundColor(.white)
+                }
+
+                Button {
+                    guard vm.paymentMethod != nil else { return }
+                    if vm.paymentMethod == "cash" && !canProceed { return }
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        vm.paymentStep = "confirmation"
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "creditcard.fill")
+                        Text("Cobrar")
+                            .font(.headline.weight(.semibold))
+                        Text(vm.formatCurrency(vm.totalWithTip))
+                            .font(.headline.weight(.bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .foregroundStyle(canProceed && vm.paymentMethod != nil ? .white : .gray)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(canProceed && vm.paymentMethod != nil ? .green : .gray)
+                .disabled(vm.paymentMethod == nil || (vm.paymentMethod == "cash" && !canProceed))
+            }
+            .padding(16)
+            .modifier(GlassCard())
+            .transition(.opacity.combined(with: .scale))
+        }
     }
     
     // MARK: - Tip Payment Method Selector
@@ -501,37 +625,27 @@ struct PaymentView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.05))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-        )
+        .modifier(GlassCard())
     }
     
+    @ViewBuilder
     private func tipMethodCard(method: String, label: String, icon: String, color: Color) -> some View {
+        let isSelected = vm.tipPaymentMethod == method || (vm.tipPaymentMethod == nil && method == vm.paymentMethod)
         Button {
             vm.tipPaymentMethod = method
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 18))
-                    .foregroundColor(vm.tipPaymentMethod == method || (vm.tipPaymentMethod == nil && method == vm.paymentMethod) ? color : color.opacity(0.6))
                 Text(label)
                     .font(.subheadline.weight(.medium))
-                    .foregroundColor(vm.tipPaymentMethod == method || (vm.tipPaymentMethod == nil && method == vm.paymentMethod) ? .white : .gray)
             }
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 50)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(vm.tipPaymentMethod == method || (vm.tipPaymentMethod == nil && method == vm.paymentMethod) ? color.opacity(0.15) : Color.white.opacity(0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(vm.tipPaymentMethod == method || (vm.tipPaymentMethod == nil && method == vm.paymentMethod) ? color.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1.5)
-            )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glassProminent)
+        .tint(isSelected ? color : Color(.systemGray5))
     }
     
     // MARK: - Cash Input
@@ -549,8 +663,8 @@ struct PaymentView: View {
                 .padding(16)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.white.opacity(0.05))
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                        .fill(Color.white.opacity(0.03))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1))
                 )
             
             if let cash = Double(vm.cashReceived), cash > 0 {
@@ -564,26 +678,22 @@ struct PaymentView: View {
                         .foregroundColor(vm.cashSufficient ? .green : .red)
                 }
                 .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.white.opacity(0.03))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                .modifier(
+                    vm.cashSufficient
+                    ? GlassCardTinted(color: .green)
+                    : GlassCardTinted(color: .red)
                 )
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.05))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-        )
+        .modifier(GlassCard())
     }
     
     // MARK: - Platform Delivery Payment
     
     private var platformDeliveryPayment: some View {
         VStack(spacing: 16) {
-            // Info card
+            // Info card — glass tinted orange
             HStack(spacing: 12) {
                 Image(systemName: "shippingbox.fill")
                     .font(.title2)
@@ -599,11 +709,7 @@ struct PaymentView: View {
                 Spacer()
             }
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.orange.opacity(0.08))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.25), lineWidth: 1))
-            )
+            .modifier(GlassCardTinted(color: .orange))
             
             // Confirm button
             Button {
@@ -619,11 +725,10 @@ struct PaymentView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 56)
-                .background(Color.orange.opacity(0.15))
-                .foregroundColor(.orange)
-                .cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.4), lineWidth: 1.5))
+                .foregroundStyle(.orange)
             }
+            .buttonStyle(.glassProminent)
+            .tint(.orange)
             .disabled(vm.processing)
         }
     }
@@ -632,7 +737,7 @@ struct PaymentView: View {
     
     private var paymentConfirmation: some View {
         VStack(spacing: 20) {
-            // Header
+            // Header with glass back button
             HStack {
                 Text("Confirmar Pago")
                     .font(.title2.weight(.bold))
@@ -649,12 +754,12 @@ struct PaymentView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(10)
                 }
+                .buttonStyle(.glass)
+                .clipShape(Capsule())
             }
             
-            // Summary card
+            // Summary card — glass
             VStack(spacing: 12) {
                 HStack {
                     Text("Subtotal")
@@ -699,10 +804,8 @@ struct PaymentView: View {
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(Color.blue.opacity(0.15))
-                        .foregroundColor(.blue)
-                        .cornerRadius(8)
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.blue.opacity(0.3), lineWidth: 1))
+                        .foregroundStyle(.blue)
+                        .modifier(GlassCardTinted(color: .blue))
                 }
                 
                 if vm.paymentMethod == "cash", let cash = Double(vm.cashReceived), cash > 0 {
@@ -718,11 +821,7 @@ struct PaymentView: View {
                 }
             }
             .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.white.opacity(0.05))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-            )
+            .modifier(GlassCard())
             
             // Slide to confirm
             SlideToConfirmView {
@@ -753,72 +852,259 @@ struct PaymentView: View {
         }
     }
     
-    // MARK: - Done
-    
-    private var paymentDone: some View {
-        VStack(spacing: 24) {
-            // Success card
-            VStack(spacing: 16) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundColor(.green)
-                
-                Text("Pago Completado")
+    // MARK: - Split Confirmation
+
+    private var splitConfirmationView: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Confirmar Pago Dividido")
                     .font(.title2.weight(.bold))
                     .foregroundColor(.white)
-                
-                Text(paymentMethodLabel)
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                
+                Spacer()
+                Button {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                        vm.paymentStep = "split-payment"
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Regresar")
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.glass)
+                .clipShape(Capsule())
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    // Payments list
+                    ForEach(vm.splitPayments) { payment in
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(payment.displayMethod)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.white)
+                                if payment.tip > 0 {
+                                    Text("Propina \(vm.formatCurrency(payment.tip))")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                            Spacer()
+                            Text(vm.formatCurrency(payment.amount))
+                                .font(.headline.weight(.bold))
+                                .foregroundColor(.white)
+                        }
+                        .padding(14)
+                        .modifier(GlassCard())
+                    }
+
+                    // Totals
+                    VStack(spacing: 10) {
+                        if (vm.splitPayments.reduce(0) { $0 + $1.tip }) > 0 {
+                            HStack {
+                                Text("Total propinas")
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                                Spacer()
+                                Text(vm.formatCurrency(vm.splitPayments.reduce(0) { $0 + $1.tip }))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        Divider().background(Color.white.opacity(0.1))
+                        HStack {
+                            Text("Total")
+                                .font(.title3.weight(.semibold))
+                                .foregroundColor(.white)
+                            Spacer()
+                            Text(vm.formatCurrency(vm.totalWithTip))
+                                .font(.title2.weight(.bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .padding(16)
+                    .modifier(GlassCard())
+
+                    // Slide to confirm
+                    SlideToConfirmView {
+                        Task {
+                            vm.handlePaySplit()
+                            try? await Task.sleep(nanoseconds: 1_500_000_000)
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                vm.paymentStep = "done"
+                            }
+                        }
+                    }
+                    .disabled(vm.processing)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
+                }
+                .padding(.horizontal, 24)
+            }
+            .scrollEdgeEffectStyle(.soft, for: .top)
+        }
+    }
+
+    // MARK: - Split Bill Confirmation
+
+    private var splitBillConfirmationView: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Confirmar Cuenta Dividida")
+                    .font(.title2.weight(.bold))
+                    .foregroundColor(.white)
+                Spacer()
+                Button {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                        vm.paymentStep = "split-overview"
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Regresar")
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.glass)
+                .clipShape(Capsule())
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    // Seat payments list
+                    let seatCount = vm.guestCount
+                    ForEach(Array(0..<seatCount), id: \.self) { idx in
+                        if let payment = vm.individualPayments[idx], payment.paid {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Asiento \(idx + 1)")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.white)
+                                    Text(payment.methodDisplay)
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                    if payment.tipAmount > 0 {
+                                        Text("Propina \(vm.formatCurrency(payment.tipAmount))")
+                                            .font(.caption)
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+                                Spacer()
+                                Text(vm.formatCurrency(payment.amount))
+                                    .font(.headline.weight(.bold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(14)
+                            .modifier(GlassCard())
+                        }
+                    }
+
+                    // Totals
+                    VStack(spacing: 10) {
+                        let totalTip = vm.individualPayments.values.reduce(0.0) { $0 + $1.tipAmount }
+                        if totalTip > 0 {
+                            HStack {
+                                Text("Total propinas")
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                                Spacer()
+                                Text(vm.formatCurrency(totalTip))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        Divider().background(Color.white.opacity(0.1))
+                        HStack {
+                            Text("Total")
+                                .font(.title3.weight(.semibold))
+                                .foregroundColor(.white)
+                            Spacer()
+                            Text(vm.formatCurrency(vm.cartTotal))
+                                .font(.title2.weight(.bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .padding(16)
+                    .modifier(GlassCard())
+
+                    // Slide to confirm
+                    SlideToConfirmView {
+                        vm.handleFinalizeSplitBill()
+                    }
+                    .disabled(vm.confirmingOrder)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
+                }
+                .padding(.horizontal, 24)
+            }
+            .scrollEdgeEffectStyle(.soft, for: .top)
+        }
+    }
+
+    // MARK: - Done
+
+    private var paymentDone: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            // Success ring + checkmark
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.12))
+                    .frame(width: 120, height: 120)
+                Circle()
+                    .stroke(Color.green.opacity(0.3), lineWidth: 2)
+                    .frame(width: 120, height: 120)
+                AnimatedCheckmark()
+            }
+
+            VStack(spacing: 6) {
+                Text("Pago Completado")
+                    .font(.title.weight(.bold))
+                    .foregroundColor(.white)
                 Text(vm.formatCurrency(vm.totalWithTip))
-                    .font(.largeTitle.weight(.bold))
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
             }
-            .padding(32)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.green.opacity(0.08))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.green.opacity(0.25), lineWidth: 1))
-            )
-            
-            // Finish button
+
+            Spacer()
+
             Button {
                 vm.handleConfirmOrder()
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "checkmark")
+                    Image(systemName: "arrow.right.circle.fill")
                     Text("Finalizar")
                         .font(.headline.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 56)
-                .background(Color.green.opacity(0.2))
-                .foregroundColor(.green)
-                .cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.green.opacity(0.4), lineWidth: 1.5))
+                .foregroundStyle(.white)
             }
+            .buttonStyle(.glassProminent)
+            .tint(.green)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 32)
         }
         .frame(maxWidth: 420)
-        .padding(24)
     }
     
-    // MARK: - Helper (deprecated - use inline buttons instead)
-    
-    private func backButton(action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.left")
-                Text("Regresar")
-            }
-            .font(.subheadline.bold())
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Color(white: 0.1))
-            .foregroundColor(.white)
-            .cornerRadius(10)
-        }
-    }
 }
 
 // MARK: - Slide To Confirm
@@ -829,12 +1115,12 @@ struct SlideToConfirmView: View {
     
     @State private var offset: CGFloat = 0
     @State private var confirmed = false
-    private let trackWidth: CGFloat = 340
-    private let thumbSize: CGFloat = 56
+    private let trackWidth: CGFloat = 400
+    private let thumbSize: CGFloat = 64
     
     var body: some View {
         ZStack(alignment: .leading) {
-            // Track
+            // Track — glass
             RoundedRectangle(cornerRadius: 28)
                 .fill(Color(white: 0.1))
                 .overlay(
@@ -842,6 +1128,7 @@ struct SlideToConfirmView: View {
                         .stroke(Color(white: 0.2))
                 )
                 .frame(height: thumbSize)
+                .modifier(GlassTrack())
             
             // Label
             Text(confirmed ? "Confirmado" : "Desliza para confirmar →")
@@ -849,7 +1136,7 @@ struct SlideToConfirmView: View {
                 .foregroundColor(.gray)
                 .frame(maxWidth: .infinity)
             
-            // Thumb
+            // Thumb — glass with glow
             Circle()
                 .fill(confirmed ? Color.green : Color.blue)
                 .frame(width: thumbSize, height: thumbSize)
@@ -857,6 +1144,12 @@ struct SlideToConfirmView: View {
                     Image(systemName: confirmed ? "checkmark" : "chevron.right.2")
                         .font(.headline)
                         .foregroundColor(.white)
+                )
+                .shadow(
+                    color: (confirmed ? Color.green : Color.blue).opacity(0.4),
+                    radius: 8,
+                    x: 0,
+                    y: 0
                 )
                 .offset(x: offset)
                 .gesture(
@@ -879,5 +1172,24 @@ struct SlideToConfirmView: View {
         }
         .frame(width: trackWidth, height: thumbSize)
         .opacity(disabled ? 0.5 : 1)
+    }
+}
+
+// MARK: - Animated Checkmark
+
+private struct AnimatedCheckmark: View {
+    @State private var showCheck = false
+
+    var body: some View {
+        Image(systemName: "checkmark")
+            .font(.system(size: 44, weight: .bold))
+            .foregroundColor(.green)
+            .opacity(showCheck ? 1 : 0)
+            .scaleEffect(showCheck ? 1.0 : 0.3)
+            .animation(.spring(response: 0.5, dampingFraction: 0.6), value: showCheck)
+            .task {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                showCheck = true
+            }
     }
 }

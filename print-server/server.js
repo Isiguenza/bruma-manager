@@ -621,6 +621,172 @@ app.post('/print-summary', async (req, res) => {
   }
 });
 
+// Endpoint para imprimir ticket por asiento (cuenta dividida)
+app.post('/print-seat-bill', async (req, res) => {
+  try {
+    const { tableNumber, orderNumber, seatLabel, items, subtotal, tip, discount, total, paymentMethod } = req.body;
+    console.log('🪑 Imprimiendo ticket por asiento:', seatLabel, '| Mesa:', tableNumber);
+
+    let content = "";
+
+    // Inicializar impresora
+    content += commands.init;
+    content += commands.alignCenter;
+
+    // Logo
+    const logoPath = path.join(__dirname, "public", "logo.jpg");
+    if (fs.existsSync(logoPath)) {
+      const logoBitmap = await imageToEscPosBitmap(logoPath, 400);
+      content += logoBitmap;
+      content += commands.feedLine;
+      content += commands.feedLine;
+    } else {
+      content += commands.textSizeLarge;
+      content += commands.bold;
+      content += "BRUMA\n";
+      content += commands.boldOff;
+      content += commands.textSizeNormal;
+    }
+    content += commands.feedLine;
+
+    // Dirección
+    content += "Av. Panamericana Casa B14\n";
+    content += "Col. Pedregal de Carrasco, CDMX\n";
+    content += commands.feedLine;
+    content += commands.feedLine;
+    content += commands.feedLine;
+
+    // Fecha y hora
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("es-MX", { timeZone: "America/Mexico_City" });
+    const timeStr = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", timeZone: "America/Mexico_City" });
+    content += `${dateStr} ${timeStr}\n`;
+    content += commands.feedLine;
+    content += commands.feedLine;
+    content += commands.feedLine;
+
+    // Mesa y orden
+    content += commands.alignLeft;
+    content += commands.textSizeDouble;
+    content += commands.bold;
+    const tableLabel = tableNumber ? `MESA ${tableNumber}` : "PARA LLEVAR";
+    const orderText = `#${orderNumber}`;
+    const labelSpaces = Math.max(1, 24 - tableLabel.length - orderText.length);
+    content += tableLabel + " ".repeat(labelSpaces) + orderText + "\n";
+    content += commands.boldOff;
+    content += commands.textSizeNormal;
+    content += commands.feedLine;
+
+    // Encabezado de cuenta dividida
+    content += commands.alignCenter;
+    content += commands.bold;
+    content += `CUENTA DIVIDIDA\n`;
+    content += commands.textSizeDouble;
+    content += `${seatLabel.toUpperCase()}\n`;
+    content += commands.textSizeNormal;
+    content += commands.boldOff;
+    content += commands.feedLine;
+    content += commands.feedLine;
+
+    // Separador
+    content += commands.alignLeft;
+    content += "------------------------------------------------\n";
+    content += commands.feedLine;
+
+    // Items
+    for (const item of items) {
+      const qtyName = `${item.qty}x ${item.name}`;
+      const price = `$${item.total}`;
+      const itemSpaces = Math.max(1, 48 - qtyName.length - price.length);
+      content += qtyName + " ".repeat(itemSpaces) + price + "\n";
+    }
+
+    content += commands.feedLine;
+    content += commands.feedLine;
+    content += "------------------------------------------------\n";
+    content += commands.feedLine;
+
+    // Subtotal
+    content += "Subtotal:";
+    const subtotalStr = `$${typeof subtotal === 'number' ? subtotal.toFixed(2) : subtotal}`;
+    content += " ".repeat(Math.max(1, 48 - 9 - subtotalStr.length)) + subtotalStr + "\n";
+    content += commands.feedLine;
+
+    // Descuento (si aplica)
+    if (discount && discount.amount > 0) {
+      const discLabel = `${discount.name || 'Descuento'}:`;
+      const discStr = `-$${parseFloat(discount.amount).toFixed(2)}`;
+      content += discLabel;
+      content += " ".repeat(Math.max(1, 48 - discLabel.length - discStr.length)) + discStr + "\n";
+      content += commands.feedLine;
+    }
+
+    // Propina (si aplica)
+    if (tip && tip > 0) {
+      content += "Propina:";
+      const tipStr = `$${parseFloat(tip).toFixed(2)}`;
+      content += " ".repeat(Math.max(1, 48 - 8 - tipStr.length)) + tipStr + "\n";
+      content += commands.feedLine;
+    }
+
+    // Total
+    content += commands.feedLine;
+    content += commands.bold;
+    content += commands.textSizeDouble;
+    content += "TOTAL:";
+    const totalStr = `$${typeof total === 'number' ? total.toFixed(2) : total}`;
+    content += " ".repeat(Math.max(1, 24 - 6 - totalStr.length)) + totalStr + "\n";
+    content += commands.textSizeNormal;
+    content += commands.boldOff;
+    content += commands.feedLine;
+    content += commands.feedLine;
+
+    // Sección de pago (solo si ya pagó)
+    if (paymentMethod) {
+      content += "────────────────────────────────────────────────\n";
+      content += commands.feedLine;
+      content += commands.bold;
+      content += "PAGADO\n";
+      content += commands.boldOff;
+      content += commands.feedLine;
+      const methodLabel = paymentMethod === 'cash' ? 'Efectivo' :
+                         paymentMethod === 'card' ? 'Tarjeta' :
+                         paymentMethod === 'transfer' ? 'Transferencia' :
+                         paymentMethod === 'terminal_mercadopago' ? 'Terminal' : paymentMethod;
+      content += `Metodo: ${methodLabel}\n`;
+      content += commands.feedLine;
+    } else {
+      // Pre-cuenta - nota al pie
+      content += commands.alignCenter;
+      content += "- - - - - - - - - - - - - - - - - - - - - - - -\n";
+      content += commands.feedLine;
+      content += "PRE-CUENTA\n";
+      content += "No es comprobante de pago\n";
+      content += commands.feedLine;
+    }
+
+    // Footer
+    content += commands.feedLine;
+    content += commands.feedLine;
+    content += commands.feedLine;
+    content += commands.alignCenter;
+    content += "Gracias por su preferencia\n";
+    content += commands.feedLine;
+    content += commands.feedLine;
+    content += commands.feedLine;
+
+    content += commands.feed;
+    content += commands.cut;
+
+    await sendToPrinter(content);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("❌ Error imprimiendo ticket por asiento:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Endpoint para imprimir ticket de cuenta dividida
 app.post('/print-split', async (req, res) => {
   try {

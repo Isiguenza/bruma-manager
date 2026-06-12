@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, schema } from "../db";
 import { eq } from "drizzle-orm";
+import bcrypt from "bcrypt";
 
 const router = Router();
 
@@ -55,11 +56,14 @@ router.post("/employees", async (req, res) => {
       return res.status(400).json({ error: "name, pin y role son requeridos" });
     }
 
+    // Hash the PIN before storing
+    const pinHash = await bcrypt.hash(pin, 10);
+
     const [newEmployee] = await db
       .insert(schema.userProfiles)
       .values({
         name,
-        pinHash: pin,
+        pinHash,
         role,
         active: active !== undefined ? active : true,
         authUserId: `employee_${Date.now()}`,
@@ -82,7 +86,11 @@ router.patch("/employees/:id", async (req, res) => {
 
     const { pin, ...otherUpdates } = updates;
     const updateData: any = { ...otherUpdates };
-    if (pin !== undefined) updateData.pinHash = pin;
+    
+    // Hash the PIN if it's being updated
+    if (pin !== undefined) {
+      updateData.pinHash = await bcrypt.hash(pin, 10);
+    }
 
     const [updatedEmployee] = await db
       .update(schema.userProfiles)

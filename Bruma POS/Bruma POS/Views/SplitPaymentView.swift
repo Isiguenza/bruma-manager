@@ -2,8 +2,6 @@ import SwiftUI
 
 struct SplitPaymentView: View {
     @ObservedObject var vm: POSViewModel
-    @State private var showingAddPayment = false
-    @State private var editingPayment: SplitPayment?
     
     private var remainingAmount: Double {
         let totalPaid = vm.splitPayments.reduce(0) { $0 + $1.amount }
@@ -23,28 +21,31 @@ struct SplitPaymentView: View {
     }
     
     var body: some View {
-        VStack(spacing: 20) {
-            // Header
-            HStack {
-                Text("Pago Dividido")
-                    .font(.title2.weight(.bold))
-                    .foregroundColor(.white)
-                Spacer()
-                Button {
-                    vm.paymentStep = "summary"
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Regresar")
+        ZStack {
+            VStack(spacing: 20) {
+                // Header
+                HStack {
+                    Text("Pago Dividido")
+                        .font(.title2.weight(.bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Button {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                            vm.paymentStep = "payment"
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Regresar")
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                     }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(10)
+                    .buttonStyle(.glass)
+                    .clipShape(Capsule())
                 }
-            }
             
             // Total card
             VStack(spacing: 12) {
@@ -97,11 +98,7 @@ struct SplitPaymentView: View {
                 .frame(height: 8)
             }
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.white.opacity(0.05))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-            )
+            .modifier(GlassCard())
             
             // Payments list
             if vm.splitPayments.isEmpty {
@@ -130,7 +127,7 @@ struct SplitPaymentView: View {
             VStack(spacing: 12) {
                 if remainingAmount > 0 {
                     Button {
-                        showingAddPayment = true
+                        vm.showAddSplitPayment = true
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "plus.circle.fill")
@@ -139,19 +136,16 @@ struct SplitPaymentView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .frame(height: 56)
-                        .background(Color.blue.opacity(0.2))
-                        .foregroundColor(.blue)
-                        .cornerRadius(14)
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.blue.opacity(0.4), lineWidth: 1.5))
+                        .foregroundStyle(.white)
                     }
+                    .buttonStyle(.glassProminent)
+                    .tint(.blue)
                 }
-                
+
                 if isComplete {
                     Button {
-                        Task {
-                            vm.handlePaySplit()
-                            try? await Task.sleep(nanoseconds: 1_500_000_000)
-                            vm.paymentStep = "done"
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                            vm.paymentStep = "split-confirmation"
                         }
                     } label: {
                         HStack(spacing: 8) {
@@ -161,30 +155,15 @@ struct SplitPaymentView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .frame(height: 56)
-                        .background(Color.green.opacity(0.2))
-                        .foregroundColor(.green)
-                        .cornerRadius(14)
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.green.opacity(0.4), lineWidth: 1.5))
+                        .foregroundStyle(.white)
                     }
-                    .disabled(vm.processing)
+                    .buttonStyle(.glassProminent)
+                    .tint(.green)
                 }
             }
-        }
-        .frame(maxWidth: 420)
-        .padding(24)
-        .sheet(isPresented: $showingAddPayment) {
-            AddSplitPaymentSheet(vm: vm, maxAmount: remainingAmount, onAdd: { payment in
-                vm.splitPayments.append(payment)
-            })
-        }
-        .sheet(item: $editingPayment) { payment in
-            EditSplitPaymentSheet(vm: vm, payment: payment, maxAmount: remainingAmount + payment.amount, onUpdate: { updated in
-                if let index = vm.splitPayments.firstIndex(where: { $0.id == payment.id }) {
-                    vm.splitPayments[index] = updated
-                }
-            }, onDelete: {
-                vm.splitPayments.removeAll { $0.id == payment.id }
-            })
+            }
+            .frame(maxWidth: 420)
+            .padding(24)
         }
     }
     
@@ -213,7 +192,7 @@ struct SplitPaymentView: View {
                 .foregroundColor(.white)
             
             Button {
-                editingPayment = payment
+                vm.editingSplitPayment = payment
             } label: {
                 Image(systemName: "pencil.circle")
                     .font(.title3)
@@ -221,408 +200,282 @@ struct SplitPaymentView: View {
             }
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.05))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 1))
-        )
+        .modifier(GlassCard())
     }
 }
 
-// MARK: - Add Split Payment Sheet
+// MARK: - Split Payment Modal
 
-struct AddSplitPaymentSheet: View {
+struct SplitPaymentModal: View {
     @ObservedObject var vm: POSViewModel
+    let title: String
+    var initialAmount: String = ""
+    var initialTip: String = "0.00"
+    var initialMethod: String = "cash"
+    var initialTipMethod: String? = nil
     let maxAmount: Double
-    let onAdd: (SplitPayment) -> Void
-    @Environment(\.dismiss) var dismiss
-    
-    @State private var amount = ""
-    @State private var tip = ""
-    @State private var paymentMethod = "cash"
-    @State private var tipPaymentMethod: String?
-    @State private var showTipSelector = false
-    
+    var deleteAction: (() -> Void)? = nil
+    let onDismiss: () -> Void
+    let onConfirm: (SplitPayment) -> Void
+
+    @State private var amount: String = ""
+    @State private var tip: String = "0.00"
+    @State private var paymentMethod: String = "cash"
+    @State private var tipPaymentMethod: String? = nil
+    @State private var showTip = false
+    @State private var dragOffset: CGFloat = 0
+
     private var amountValue: Double {
         Double(amount.replacingOccurrences(of: ",", with: "")) ?? 0
     }
-    
     private var tipValue: Double {
         Double(tip.replacingOccurrences(of: ",", with: "")) ?? 0
     }
-    
     private var isValid: Bool {
-        amountValue > 0 && amountValue <= maxAmount + 0.01
+        amountValue > 0.005 && amountValue <= maxAmount + 0.01
     }
-    
+
     var body: some View {
-        NavigationView {
-            ZStack {
-                Color(white: 0.03).ignoresSafeArea()
-                
-                VStack(spacing: 20) {
-                    // Amount
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Monto")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.gray)
-                        TextField("0.00", text: $amount)
-                            .keyboardType(.decimalPad)
-                            .font(.title2.weight(.bold))
-                            .foregroundColor(.white)
-                            .padding(16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.white.opacity(0.05))
-                                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                            )
-                        Text("Máximo: \(vm.formatCurrency(maxAmount))")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    
-                    // Payment method
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Método de pago")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.gray)
-                        HStack(spacing: 10) {
-                            methodButton("cash", "Efectivo", "banknote.fill", .green)
-                            methodButton("terminal_mercadopago", "Terminal", "creditcard.fill", .blue)
-                            methodButton("transfer", "Transferencia", "building.columns.fill", .purple)
-                        }
-                    }
-                    
-                    // Tip
-                    VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Agregar propina", isOn: $showTipSelector)
-                            .foregroundColor(.white)
-                        
-                        if showTipSelector {
-                            TextField("0.00", text: $tip)
-                                .keyboardType(.decimalPad)
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding(12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color.white.opacity(0.05))
-                                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                                )
-                            
-                            if paymentMethod != "cash" {
-                                Text("Método de la propina")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                                HStack(spacing: 10) {
-                                    tipMethodButton(paymentMethod, "Mismo método", .blue)
-                                    tipMethodButton("cash", "Efectivo", .green)
-                                }
-                            }
-                        }
-                    }
-                    .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color.white.opacity(0.05))
-                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                    )
-                    
-                    Spacer()
-                    
-                    Button {
-                        let payment = SplitPayment(
-                            paymentMethod: paymentMethod,
-                            amount: amountValue,
-                            tip: tipValue,
-                            tipPaymentMethod: showTipSelector ? (tipPaymentMethod ?? paymentMethod) : nil,
-                            sequenceNumber: vm.splitPayments.count + 1
-                        )
-                        onAdd(payment)
-                        dismiss()
-                    } label: {
-                        Text("Agregar Pago")
-                            .font(.headline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(isValid ? Color.blue.opacity(0.2) : Color.white.opacity(0.05))
-                            .foregroundColor(isValid ? .blue : .gray)
-                            .cornerRadius(14)
-                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(isValid ? Color.blue.opacity(0.4) : Color.white.opacity(0.1), lineWidth: 1.5))
-                    }
-                    .disabled(!isValid)
-                }
-                .padding(24)
-            }
-            .navigationTitle("Nuevo Pago")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancelar") { dismiss() }
+        ZStack {
+            Color.black.opacity(0.6)
+                .ignoresSafeArea()
+                .onTapGesture { onDismiss() }
+
+            VStack(spacing: 0) {
+                // Title
+                Text(title)
+                    .font(.title2.bold())
+                    .foregroundColor(.white)
+                    .padding(.bottom, 20)
+
+                // Amount field
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Monto")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.white.opacity(0.5))
+                    TextField("0.00", text: $amount)
+                        .keyboardType(.decimalPad)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                        .background(
+                            Capsule().fill(Color.white.opacity(0.07))
+                                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        )
+                    Text("Máximo: \(vm.formatCurrency(maxAmount))")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.4))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-            }
-            .preferredColorScheme(.dark)
-        }
-    }
-    
-    private func methodButton(_ method: String, _ label: String, _ icon: String, _ color: Color) -> some View {
-        Button {
-            paymentMethod = method
-        } label: {
-            VStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 20))
-                    .foregroundColor(paymentMethod == method ? color : color.opacity(0.6))
-                Text(label)
-                    .font(.caption2.weight(.medium))
-                    .foregroundColor(paymentMethod == method ? .white : .gray)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 70)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(paymentMethod == method ? color.opacity(0.15) : Color.white.opacity(0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(paymentMethod == method ? color.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1.5)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-    
-    private func tipMethodButton(_ method: String, _ label: String, _ color: Color) -> some View {
-        Button {
-            tipPaymentMethod = method
-        } label: {
-            Text(label)
-                .font(.caption.weight(.medium))
-                .frame(maxWidth: .infinity)
-                .frame(height: 40)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(tipPaymentMethod == method || (tipPaymentMethod == nil && method == paymentMethod) ? color.opacity(0.15) : Color.white.opacity(0.05))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(tipPaymentMethod == method || (tipPaymentMethod == nil && method == paymentMethod) ? color.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1.5)
-                )
-                .foregroundColor(tipPaymentMethod == method || (tipPaymentMethod == nil && method == paymentMethod) ? .white : .gray)
-        }
-        .buttonStyle(.plain)
-    }
-}
+                .padding(.bottom, 16)
 
-// MARK: - Edit Split Payment Sheet
+                // Method buttons
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Método de pago")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.white.opacity(0.5))
+                    methodPill("cash",                 "Efectivo",      "banknote.fill",         .green)
+                    methodPill("terminal_mercadopago", "Terminal",      "creditcard.fill",       .blue)
+                    methodPill("transfer",             "Transferencia", "building.columns.fill", .purple)
+                }
+                .padding(.bottom, 16)
 
-struct EditSplitPaymentSheet: View {
-    @ObservedObject var vm: POSViewModel
-    let payment: SplitPayment
-    let maxAmount: Double
-    let onUpdate: (SplitPayment) -> Void
-    let onDelete: () -> Void
-    @Environment(\.dismiss) var dismiss
-    
-    @State private var amount: String
-    @State private var tip: String
-    @State private var paymentMethod: String
-    @State private var tipPaymentMethod: String?
-    @State private var showTipSelector: Bool
-    
-    init(vm: POSViewModel, payment: SplitPayment, maxAmount: Double, onUpdate: @escaping (SplitPayment) -> Void, onDelete: @escaping () -> Void) {
-        self.vm = vm
-        self.payment = payment
-        self.maxAmount = maxAmount
-        self.onUpdate = onUpdate
-        self.onDelete = onDelete
-        _amount = State(initialValue: String(format: "%.2f", payment.amount))
-        _tip = State(initialValue: String(format: "%.2f", payment.tip))
-        _paymentMethod = State(initialValue: payment.paymentMethod)
-        _tipPaymentMethod = State(initialValue: payment.tipPaymentMethod)
-        _showTipSelector = State(initialValue: payment.tip > 0)
-    }
-    
-    private var amountValue: Double {
-        Double(amount.replacingOccurrences(of: ",", with: "")) ?? 0
-    }
-    
-    private var tipValue: Double {
-        Double(tip.replacingOccurrences(of: ",", with: "")) ?? 0
-    }
-    
-    private var isValid: Bool {
-        amountValue > 0 && amountValue <= maxAmount + 0.01
-    }
-    
-    var body: some View {
-        NavigationView {
-            ZStack {
-                Color(white: 0.03).ignoresSafeArea()
-                
-                VStack(spacing: 20) {
-                    // Amount
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Monto")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.gray)
-                        TextField("0.00", text: $amount)
-                            .keyboardType(.decimalPad)
-                            .font(.title2.weight(.bold))
-                            .foregroundColor(.white)
-                            .padding(16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.white.opacity(0.05))
-                                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                            )
-                        Text("Máximo: \(vm.formatCurrency(maxAmount))")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    
-                    // Payment method
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Método de pago")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.gray)
-                        HStack(spacing: 10) {
-                            methodButton("cash", "Efectivo", "banknote.fill", .green)
-                            methodButton("terminal_mercadopago", "Terminal", "creditcard.fill", .blue)
-                            methodButton("transfer", "Transferencia", "building.columns.fill", .purple)
-                        }
-                    }
-                    
-                    // Tip
-                    VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Agregar propina", isOn: $showTipSelector)
-                            .foregroundColor(.white)
-                        
-                        if showTipSelector {
-                            TextField("0.00", text: $tip)
-                                .keyboardType(.decimalPad)
+                // Tip section
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        withAnimation(.spring(response: 0.3)) { showTip.toggle() }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: showTip ? "chevron.up.circle.fill" : "chevron.down.circle")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .frame(width: 28)
+                            Text("Propina")
                                 .font(.headline)
-                                .foregroundColor(.white)
-                                .padding(12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color.white.opacity(0.05))
-                                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                                )
-                            
-                            if paymentMethod != "cash" {
-                                Text("Método de la propina")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                                HStack(spacing: 10) {
-                                    tipMethodButton(paymentMethod, "Mismo método", .blue)
-                                    tipMethodButton("cash", "Efectivo", .green)
-                                }
+                                .foregroundStyle(.white)
+                            Spacer()
+                            if showTip && tipValue > 0 {
+                                Text(vm.formatCurrency(tipValue))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white.opacity(0.6))
                             }
                         }
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(
+                            Capsule().fill(Color.white.opacity(0.07))
+                                .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+                        )
                     }
-                    .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color.white.opacity(0.05))
-                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                    )
-                    
-                    Spacer()
-                    
-                    VStack(spacing: 12) {
-                        Button {
-                            var updated = payment
-                            updated.amount = amountValue
-                            updated.tip = tipValue
-                            updated.paymentMethod = paymentMethod
-                            updated.tipPaymentMethod = showTipSelector ? (tipPaymentMethod ?? paymentMethod) : nil
-                            onUpdate(updated)
-                            dismiss()
-                        } label: {
-                            Text("Actualizar Pago")
-                                .font(.headline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 56)
-                                .background(isValid ? Color.blue.opacity(0.2) : Color.white.opacity(0.05))
-                                .foregroundColor(isValid ? .blue : .gray)
-                                .cornerRadius(14)
-                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(isValid ? Color.blue.opacity(0.4) : Color.white.opacity(0.1), lineWidth: 1.5))
+                    .buttonStyle(.plain)
+
+                    if showTip {
+                        TextField("0.00", text: $tip)
+                            .keyboardType(.decimalPad)
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 16)
+                            .background(
+                                Capsule().fill(Color.white.opacity(0.07))
+                                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                            )
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+
+                        if paymentMethod != "cash" {
+                            HStack(spacing: 8) {
+                                tipMethodPill(paymentMethod, "Mismo método", .blue)
+                                tipMethodPill("cash",        "Efectivo",     .green)
+                            }
+                            .transition(.opacity)
                         }
-                        .disabled(!isValid)
-                        
-                        Button {
-                            onDelete()
-                            dismiss()
-                        } label: {
+                    }
+                }
+                .padding(.bottom, 20)
+
+                // Confirm button
+                Button {
+                    onConfirm(SplitPayment(
+                        paymentMethod: paymentMethod,
+                        amount: amountValue,
+                        tip: showTip ? tipValue : 0,
+                        tipPaymentMethod: showTip ? (tipPaymentMethod ?? paymentMethod) : nil,
+                        sequenceNumber: vm.splitPayments.count + 1
+                    ))
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                        Text(deleteAction == nil ? "Agregar Pago" : "Actualizar Pago")
+                            .font(.headline.weight(.semibold))
+                    }
+                    .foregroundStyle(isValid ? .white : .white.opacity(0.3))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(
+                        Capsule().fill(isValid ? Color.blue : Color.white.opacity(0.06))
+                            
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!isValid)
+
+                if let del = deleteAction {
+                    Button {
+                        del()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "trash.fill")
                             Text("Eliminar Pago")
                                 .font(.headline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 56)
-                                .background(Color.red.opacity(0.1))
-                                .foregroundColor(.red)
-                                .cornerRadius(14)
-                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.red.opacity(0.3), lineWidth: 1.5))
                         }
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(
+                            Capsule().fill(Color.red.opacity(0.1))
+                                .overlay(Capsule().stroke(Color.red.opacity(0.3), lineWidth: 1.5))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 8)
+                }
+
+                // Cancel
+                Button { onDismiss() } label: {
+                    Text("Cancelar")
+                        .font(.headline)
+                        .foregroundStyle(.white.opacity(0.5))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(Capsule().fill(Color.white.opacity(0.05)))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 24)
+            .frame(maxWidth: 400)
+            .background(
+                Group {
+                    if #available(iOS 26.0, *) {
+                        Color.clear.glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24))
+                    } else {
+                        RoundedRectangle(cornerRadius: 24)
+                            .fill(Color(white: 0.1))
+                            .shadow(color: .black.opacity(0.5), radius: 24)
                     }
                 }
-                .padding(24)
+            )
+            .offset(y: max(0, dragOffset))
+            .gesture(
+                DragGesture()
+                    .onChanged { v in
+                        if v.translation.height > 0 { dragOffset = v.translation.height }
+                    }
+                    .onEnded { v in
+                        if v.translation.height > 80 {
+                            withAnimation(.easeOut(duration: 0.22)) { dragOffset = 600 }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { onDismiss() }
+                        } else {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { dragOffset = 0 }
+                        }
+                    }
+            )
+            .onAppear {
+                amount = initialAmount
+                tip = initialTip
+                paymentMethod = initialMethod
+                tipPaymentMethod = initialTipMethod
+                showTip = (Double(initialTip) ?? 0) > 0
             }
-            .navigationTitle("Editar Pago")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancelar") { dismiss() }
-                        .foregroundColor(.white)
-                }
-            }
-            .preferredColorScheme(.dark)
         }
     }
-    
-    private func methodButton(_ method: String, _ label: String, _ icon: String, _ color: Color) -> some View {
-        Button {
-            paymentMethod = method
-        } label: {
-            VStack(spacing: 6) {
+
+    private func methodPill(_ method: String, _ label: String, _ icon: String, _ color: Color) -> some View {
+        let selected = paymentMethod == method
+        return Button { paymentMethod = method } label: {
+            HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 20))
-                    .foregroundColor(paymentMethod == method ? color : color.opacity(0.6))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(selected ? color : color.opacity(0.5))
+                    .frame(width: 28)
                 Text(label)
-                    .font(.caption2.weight(.medium))
-                    .foregroundColor(paymentMethod == method ? .white : .gray)
+                    .font(.headline)
+                    .foregroundStyle(selected ? .white : .white.opacity(0.5))
+                Spacer()
+                if selected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(color)
+                }
             }
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
-            .frame(height: 70)
+            .frame(height: 48)
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(paymentMethod == method ? color.opacity(0.15) : Color.white.opacity(0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(paymentMethod == method ? color.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1.5)
+                Capsule().fill(selected ? color.opacity(0.15) : Color.white.opacity(0.07))
+                    .overlay(Capsule().stroke(selected ? color.opacity(0.4) : Color.white.opacity(0.1), lineWidth: selected ? 1.5 : 1))
             )
         }
         .buttonStyle(.plain)
     }
-    
-    private func tipMethodButton(_ method: String, _ label: String, _ color: Color) -> some View {
-        Button {
-            tipPaymentMethod = method
-        } label: {
+
+    private func tipMethodPill(_ method: String, _ label: String, _ color: Color) -> some View {
+        let isSelected = tipPaymentMethod == method || (tipPaymentMethod == nil && method == paymentMethod)
+        return Button { tipPaymentMethod = method } label: {
             Text(label)
-                .font(.caption.weight(.medium))
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(isSelected ? .white : .white.opacity(0.5))
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(tipPaymentMethod == method || (tipPaymentMethod == nil && method == paymentMethod) ? color.opacity(0.15) : Color.white.opacity(0.05))
+                    Capsule().fill(isSelected ? color.opacity(0.2) : Color.white.opacity(0.07))
+                        .overlay(Capsule().stroke(isSelected ? color.opacity(0.45) : Color.white.opacity(0.1), lineWidth: isSelected ? 1.5 : 1))
                 )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(tipPaymentMethod == method || (tipPaymentMethod == nil && method == paymentMethod) ? color.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1.5)
-                )
-                .foregroundColor(tipPaymentMethod == method || (tipPaymentMethod == nil && method == paymentMethod) ? .white : .gray)
         }
         .buttonStyle(.plain)
     }

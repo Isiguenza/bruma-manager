@@ -7,6 +7,7 @@ enum PaymentMethodFilter: String, CaseIterable {
     case cash = "Efectivo"
     case card = "Terminal"
     case transfer = "Transferencia"
+    case split = "Dividida"
 }
 
 @MainActor
@@ -24,6 +25,11 @@ class CashRegisterViewModel: ObservableObject {
     // MARK: - Transactions
     @Published var transactions: [CashRegisterTransaction] = []
     @Published var loadingTransactions = false
+    
+    // Only deposits and withdrawals (not sales)
+    var cashMovements: [CashRegisterTransaction] {
+        transactions.filter { $0.type == "deposit" || $0.type == "withdrawal" }
+    }
     
     // MARK: - Closure History
     @Published var closureHistory: [CashRegister] = []
@@ -70,30 +76,38 @@ class CashRegisterViewModel: ObservableObject {
     
     // MARK: - Computed Sales
     
-    var actualTotalSales: Double {
-        filteredOrders.reduce(0.0) { sum, order in
-            sum + (Double(order.total ?? "0") ?? 0)
+    // Sales calculated from cash register transactions (type="sale")
+    // This correctly handles split payments, which create one tx per method
+    private func saleTxTotal(for method: String?) -> Double {
+        let saleTxs = transactions.filter { $0.type == "sale" }
+        if let method = method {
+            return saleTxs
+                .filter { $0.paymentMethod == method }
+                .reduce(0.0) { sum, t in sum + (Double(t.amount) ?? 0) }
         }
+        return saleTxs.reduce(0.0) { sum, t in sum + (Double(t.amount) ?? 0) }
     }
     
-    func sales(for paymentMethod: String?) -> Double {
-        guard let method = paymentMethod else { return actualTotalSales }
-        return paidOrders.filter { $0.paymentMethod == method }
-            .reduce(0.0) { sum, order in sum + (Double(order.total ?? "0") ?? 0) }
-    }
-    
-    var actualCashSales: Double { sales(for: "cash") }
+    var actualTotalSales: Double { saleTxTotal(for: nil) }
+    var actualCashSales: Double { saleTxTotal(for: "cash") }
     var actualTerminalSales: Double {
-        sales(for: "card") + sales(for: "terminal_mercadopago")
+        saleTxTotal(for: "card") + saleTxTotal(for: "terminal_mercadopago")
     }
-    var actualTransferSales: Double { sales(for: "transfer") }
+    var actualTransferSales: Double { saleTxTotal(for: "transfer") }
+    
+    // Cash tips from non-cash orders (e.g. terminal payment with cash tip)
+    var actualCashTips: Double {
+        paidOrders
+            .filter { $0.paymentMethod != "cash" && $0.tipPaymentMethod == "cash" }
+            .reduce(0.0) { sum, order in sum + (Double(order.tip ?? "0") ?? 0) }
+    }
     
     var expectedCash: Double {
         guard let register = register else { return 0 }
         let initial = Double(register.initialCash) ?? 0
         let deposits = Double(register.deposits) ?? 0
         let withdrawals = Double(register.withdrawals) ?? 0
-        return initial + actualCashSales - withdrawals + deposits
+        return initial + actualCashSales + actualCashTips - withdrawals + deposits
     }
     
     // MARK: - Filtered Orders
@@ -109,6 +123,8 @@ class CashRegisterViewModel: ObservableObject {
             result = result.filter { $0.paymentMethod == "card" || $0.paymentMethod == "terminal_mercadopago" }
         case .transfer:
             result = result.filter { $0.paymentMethod == "transfer" }
+        case .split:
+            result = result.filter { $0.isSplitPayment }
         case .all:
             break
         }
@@ -146,6 +162,11 @@ class CashRegisterViewModel: ObservableObject {
                     groups.append((method, label, color, orders))
                 }
             }
+        }
+        // Add split orders group
+        let splitOrders = filteredOrders.filter { $0.isSplitPayment }
+        if !splitOrders.isEmpty {
+            groups.append(("split", "Dividida", .orange, splitOrders))
         }
         return groups
     }

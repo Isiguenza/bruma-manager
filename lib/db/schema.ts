@@ -28,6 +28,7 @@ export const orderStatusEnum = pgEnum("order_status", [
   "preparing",
   "ready",
   "delivered",
+  "completed",
   "cancelled",
 ]);
 export const paymentStatusEnum = pgEnum("payment_status", [
@@ -283,6 +284,10 @@ export const orders = pgTable("orders", {
   source: varchar("source", { length: 50 }).default("pos"), // "pos", "uber_eats", "rappi", etc.
   deliveryOrderId: uuid("delivery_order_id"),
   tipPaymentMethod: paymentMethodEnum("tip_payment_method"),
+  priority: integer("priority").default(0), // 0=normal, 1=rush
+  onHold: boolean("on_hold").default(false),
+  holdStartedAt: timestamp("hold_started_at"),
+  holdAccumulatedSeconds: integer("hold_accumulated_seconds").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

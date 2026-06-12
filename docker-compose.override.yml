@@ -1,0 +1,19 @@
+# Docker Desktop on macOS does NOT support network_mode: host
+# Use this override for local development on macOS
+# Run with: docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
+
+services:
+  api-server:
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - CORS_ORIGIN=*
+
+  nextjs:
+    ports:
+      - "3002:3002"
+
+  print-server:
+    ports:
+      - "3003:3001"

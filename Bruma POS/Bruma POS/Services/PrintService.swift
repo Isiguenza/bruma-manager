@@ -48,6 +48,7 @@ class PrintService {
         isDelivery: Bool,
         discount: [String: Any]? = nil,
         paymentMethod: String? = nil,
+        splitPayments: [[String: Any]]? = nil,
         deliveryFee: Int = 0
     ) async {
         guard let url = URL(string: "\(printServerURL)/print") else { return }
@@ -68,6 +69,7 @@ class PrintService {
         ]
         if let discount = discount { body["discount"] = discount }
         if let pm = paymentMethod { body["paymentMethod"] = pm }
+        if let sp = splitPayments { body["splitPayments"] = sp }
         if deliveryFee > 0 { body["deliveryFee"] = deliveryFee }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -137,6 +139,20 @@ class PrintService {
             return nil
         }()
         
+        let isSplit = order.isSplitPayment
+        let paymentMethodToShow = isSplit ? "Dividido" : order.paymentMethod
+        let splitPaymentsData: [[String: Any]]? = isSplit ? (order.payments ?? []).map { p in
+            var dict: [String: Any] = [
+                "method": p.displayMethod,
+                "amount": Double(p.amount) ?? 0
+            ]
+            if let tip = p.tip, let tipValue = Double(tip), tipValue > 0 {
+                dict["tip"] = tipValue
+                dict["tipMethod"] = p.tipPaymentMethod ?? p.paymentMethod
+            }
+            return dict
+        } : nil
+        
         await printTicket(
             customerName: order.customerName ?? "",
             orderNumber: String(order.orderNumber),
@@ -147,9 +163,45 @@ class PrintService {
             tableNumber: order.tableNumber ?? "",
             isDelivery: order.tableId == nil,
             discount: discountData,
-            paymentMethod: order.paymentMethod,
+            paymentMethod: paymentMethodToShow,
+            splitPayments: splitPaymentsData,
             deliveryFee: 0
         )
+    }
+    
+    // MARK: - Print Seat Bill (split bill per seat)
+    
+    func printSeatBill(
+        tableNumber: String?,
+        orderNumber: String,
+        seatLabel: String,
+        items: [[String: Any]],
+        subtotal: Double,
+        tip: Double,
+        discount: [String: Any]?,
+        total: Double,
+        paymentMethod: String?
+    ) async {
+        guard let url = URL(string: "\(printServerURL)/print-seat-bill") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 5
+        
+        var body: [String: Any] = [
+            "orderNumber": orderNumber,
+            "seatLabel": seatLabel,
+            "items": items,
+            "subtotal": subtotal,
+            "tip": tip,
+            "total": total
+        ]
+        if let tn = tableNumber { body["tableNumber"] = tn }
+        if let pm = paymentMethod { body["paymentMethod"] = pm }
+        if let disc = discount { body["discount"] = disc }
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        _ = try? await URLSession.shared.data(for: request)
     }
     
     // MARK: - Print Guest (courtesy ticket)

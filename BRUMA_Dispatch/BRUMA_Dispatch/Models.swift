@@ -22,7 +22,11 @@ struct Order: Codable, Identifiable {
     let updatedAt: String
     let items: [OrderItem]?
     let table: Table?
-    let preparationTime: Int? // Tiempo de preparación en minutos
+    let preparationTime: Int?
+    let priority: Int?         // 0=normal, 1=rush
+    let onHold: Bool?
+    let holdStartedAt: String?
+    let holdAccumulatedSeconds: Int?
 }
 
 // MARK: - OrderItem
@@ -80,7 +84,7 @@ extension OrderItem: Codable {
 
 // MARK: - OrderBatch (grupo de items enviados juntos)
 struct OrderBatch: Identifiable {
-    let id: String // Unique ID for this batch
+    let id: String
     let orderId: String
     let orderNumber: Int
     let items: [OrderItem]
@@ -88,12 +92,20 @@ struct OrderBatch: Identifiable {
     let table: Table?
     let customerName: String?
     let preparationTime: Int?
+    var isRush: Bool = false
+    var isOnHold: Bool = false
+    var holdAccumulatedSeconds: Int = 0
     
-    // Computed property for urgency
+    // Effective elapsed minutes excluding hold time
+    var effectiveElapsedMinutes: Double {
+        guard let date = parseDate(createdAt) else { return 0 }
+        let total = Date().timeIntervalSince(date)
+        let effective = max(0, total - Double(holdAccumulatedSeconds))
+        return effective / 60.0
+    }
+    
     var urgency: OrderUrgency {
-        guard let date = parseDate(createdAt) else { return .normal }
-        let elapsed = Date().timeIntervalSince(date) / 60.0
-        
+        let elapsed = effectiveElapsedMinutes
         if elapsed < 4 { return .normal }
         if elapsed < 7 { return .attention }
         if elapsed < 10 { return .warning }

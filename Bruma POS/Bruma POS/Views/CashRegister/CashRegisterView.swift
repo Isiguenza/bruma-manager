@@ -153,12 +153,8 @@ struct CashRegisterView: View {
             }
             .foregroundColor(.white)
             .frame(width: 80, height: 80)
-            .background(Color(white: 0.15))
-            .cornerRadius(40)
-            .overlay(
-                Circle()
-                    .stroke(Color(white: 0.25), lineWidth: 1)
-            )
+            .background(.clear)
+            .glassEffect(.clear)
         }
         .disabled(text.isEmpty && systemImage == nil)
         .opacity(text.isEmpty && systemImage == nil ? 0 : 1)
@@ -257,13 +253,6 @@ struct CashRegisterView: View {
                         vm.showWithdrawDialog = true
                     }
                     
-                    actionButton(title: "Contar", icon: "number.circle.fill", iconColor: .cyan) {
-                        vm.showQuickCount = true
-                    }
-                    
-                    actionButton(title: "Compartir", icon: "square.and.arrow.up.fill", iconColor: .indigo) {
-                        shareSummary(register: register)
-                    }
                     
                     actionButton(title: "Corte", icon: "doc.text.fill", iconColor: .yellow) {
                         vm.showCorte = true
@@ -388,7 +377,7 @@ struct CashRegisterView: View {
     private var paymentMethodBars: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
-                paymentBar(label: "Efectivo", value: vm.actualCashSales, total: vm.actualTotalSales, color: .green)
+                paymentBar(label: "Efectivo", value: vm.actualCashSales + vm.actualCashTips, total: vm.actualTotalSales, color: .green)
                 paymentBar(label: "Terminal", value: vm.actualTerminalSales, total: vm.actualTotalSales, color: .blue)
                 paymentBar(label: "Transfer", value: vm.actualTransferSales, total: vm.actualTotalSales, color: .purple)
             }
@@ -432,7 +421,7 @@ struct CashRegisterView: View {
                     .font(.headline.bold())
                     .foregroundColor(.white)
                 Spacer()
-                Text("\(vm.transactions.count) movimientos")
+                Text("\(vm.cashMovements.count) movimientos")
                     .font(.caption)
                     .foregroundColor(.gray)
             }
@@ -442,7 +431,7 @@ struct CashRegisterView: View {
                     .tint(.white)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
-            } else if vm.transactions.isEmpty {
+            } else if vm.cashMovements.isEmpty {
                 Text("No hay movimientos registrados")
                     .font(.caption)
                     .foregroundColor(.gray)
@@ -450,11 +439,11 @@ struct CashRegisterView: View {
                     .padding(.vertical, 12)
             } else {
                 VStack(spacing: 6) {
-                    ForEach(vm.transactions.prefix(5)) { tx in
+                    ForEach(vm.cashMovements.prefix(5)) { tx in
                         transactionRow(tx)
                     }
-                    if vm.transactions.count > 5 {
-                        Text("+\(vm.transactions.count - 5) más")
+                    if vm.cashMovements.count > 5 {
+                        Text("+\(vm.cashMovements.count - 5) más")
                             .font(.caption2)
                             .foregroundColor(.gray)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -474,12 +463,20 @@ struct CashRegisterView: View {
     
     private func transactionRow(_ tx: CashRegisterTransaction) -> some View {
         HStack {
-            HStack(spacing: 6) {
-                Image(systemName: tx.type == "deposit" ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                    .foregroundColor(tx.type == "deposit" ? .green : .orange)
-                Text(tx.type == "deposit" ? "Depósito" : "Sangría")
-                    .font(.subheadline)
-                    .foregroundColor(.white)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(systemName: tx.type == "deposit" ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                        .foregroundColor(tx.type == "deposit" ? .green : .orange)
+                    Text(tx.type == "deposit" ? "Depósito" : "Sangría")
+                        .font(.subheadline)
+                        .foregroundColor(.white)
+                }
+                if let desc = tx.description, !desc.isEmpty {
+                    Text(desc)
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
             }
             
             Spacer()
@@ -617,7 +614,15 @@ struct CashRegisterView: View {
                         .font(.subheadline.bold())
                         .foregroundColor(.white)
                     
-                    if let method = order.paymentMethod {
+                    if order.isSplitPayment {
+                        Text("Dividida")
+                            .font(.caption2.bold())
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .cornerRadius(4)
+                    } else if let method = order.paymentMethod {
                         Text(paymentMethodText(method))
                             .font(.caption2.bold())
                             .foregroundColor(.white.opacity(0.6))
@@ -699,15 +704,55 @@ struct CashRegisterView: View {
                                 .foregroundColor(.gray)
                         }
                         Spacer()
-                        Text(paymentMethodText(order.paymentMethod ?? ""))
-                            .font(.caption.bold())
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color.blue.opacity(0.2))
-                            .cornerRadius(6)
+                        if order.isSplitPayment {
+                            Text("Dividida")
+                                .font(.caption.bold())
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Color.orange.opacity(0.2))
+                                .foregroundColor(.orange)
+                                .cornerRadius(6)
+                        } else {
+                            Text(paymentMethodText(order.paymentMethod ?? ""))
+                                .font(.caption.bold())
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Color.blue.opacity(0.2))
+                                .cornerRadius(6)
+                        }
                     }
                     
                     Divider()
+                    
+                    // Payment methods detail (for split payments)
+                    if order.isSplitPayment, let payments = order.payments, !payments.isEmpty {
+                        Text("Pagos")
+                            .font(.headline)
+                        
+                        VStack(spacing: 8) {
+                            ForEach(payments) { payment in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("#\(payment.sequenceNumber) \(payment.displayMethod)")
+                                            .font(.subheadline.bold())
+                                        if let tip = payment.tip, let tipValue = Double(tip), tipValue > 0 {
+                                            let tipMethodText = paymentMethodText(payment.tipPaymentMethod ?? payment.paymentMethod)
+                                            Text("Propina \(tipMethodText): \(vm.formatCurrency(tip))")
+                                                .font(.caption2)
+                                                .foregroundColor(.gray)
+                                        }
+                                    }
+                                    Spacer()
+                                    let paymentTotal = (Double(payment.amount) ?? 0) + (Double(payment.tip ?? "0") ?? 0)
+                                    Text(vm.formatCurrency(String(paymentTotal)))
+                                        .font(.subheadline)
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                        }
+                        
+                        Divider()
+                    }
                     
                     // Items
                     Text("Productos")

@@ -54,6 +54,20 @@ class OrdersViewModel: ObservableObject {
                 await self?.fetchOrders()
             }
         }
+        
+        SocketService.shared.onOrderRush = { [weak self] orderId in
+            Task { @MainActor in
+                print("🔥 Dispatch: Order rush via WebSocket: \(orderId)")
+                await self?.fetchOrders()
+            }
+        }
+        
+        SocketService.shared.onOrderHold = { [weak self] orderId in
+            Task { @MainActor in
+                print("⏸️ Dispatch: Order hold via WebSocket: \(orderId)")
+                await self?.fetchOrders()
+            }
+        }
     }
     
     // Polling backup every 30s, WebSocket is primary
@@ -71,8 +85,9 @@ class OrdersViewModel: ObservableObject {
         
         // Timer para actualizar UI cada segundo (para el reloj)
         uiTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
             Task { @MainActor in
-                self?.currentTime = Date()
+                self.currentTime = Date()
             }
         }
         RunLoop.main.add(uiTimer!, forMode: .common)
@@ -111,13 +126,11 @@ class OrdersViewModel: ObservableObject {
             // Update tracking
             previousBatchIds = newBatchIds
             
-            // Sort batches by creation date (newest first)
-            batches = newBatches.sorted { batch1, batch2 in
-                guard let date1 = parseDate(batch1.createdAt),
-                      let date2 = parseDate(batch2.createdAt) else {
-                    return false
-                }
-                return date1 > date2
+            // Sort: rush first, then by effective elapsed time (oldest first = FIFO)
+            batches = newBatches.sorted { a, b in
+                if a.isRush && !b.isRush { return true }
+                if !a.isRush && b.isRush { return false }
+                return a.effectiveElapsedMinutes > b.effectiveElapsedMinutes
             }
             errorMessage = nil
             
@@ -180,7 +193,10 @@ class OrdersViewModel: ObservableObject {
                         createdAt: currentBatch[0].createdAt ?? order.createdAt,
                         table: order.table,
                         customerName: order.customerName,
-                        preparationTime: order.preparationTime
+                        preparationTime: order.preparationTime,
+                        isRush: order.priority == 1,
+                        isOnHold: order.onHold ?? false,
+                        holdAccumulatedSeconds: order.holdAccumulatedSeconds ?? 0
                     )
                     allBatches.append(batch)
                     print("  ✅ Batch created: \(currentBatch.count) items")
@@ -202,7 +218,10 @@ class OrdersViewModel: ObservableObject {
                     createdAt: currentBatch[0].createdAt ?? order.createdAt,
                     table: order.table,
                     customerName: order.customerName,
-                    preparationTime: order.preparationTime
+                    preparationTime: order.preparationTime,
+                    isRush: order.priority == 1,
+                    isOnHold: order.onHold ?? false,
+                    holdAccumulatedSeconds: order.holdAccumulatedSeconds ?? 0
                 )
                 allBatches.append(batch)
                 print("  ✅ Final batch: \(currentBatch.count) items")
@@ -227,6 +246,36 @@ class OrdersViewModel: ObservableObject {
         }
     }
     
+    // Rush order (toggle)
+    func toggleRush(batch: OrderBatch) async {
+        do {
+            if batch.isRush {
+                try await APIService.shared.unrushOrder(orderId: batch.orderId)
+            } else {
+                try await APIService.shared.rushOrder(orderId: batch.orderId)
+            }
+            await fetchOrders()
+        } catch {
+            print("❌ Error toggling rush: \(error)")
+            errorMessage = "Error al activar/desactivar rush"
+        }
+    }
+    
+    // Hold order (toggle)
+    func toggleHold(batch: OrderBatch) async {
+        do {
+            if batch.isOnHold {
+                try await APIService.shared.unholdOrder(orderId: batch.orderId)
+            } else {
+                try await APIService.shared.holdOrder(orderId: batch.orderId)
+            }
+            await fetchOrders()
+        } catch {
+            print("❌ Error toggling hold: \(error)")
+            errorMessage = "Error al detener/reanudar orden"
+        }
+    }
+    
     // Toggle batch expansion
     func toggleExpand(batchId: String) {
         if expandedBatchIds.contains(batchId) {
@@ -236,15 +285,16 @@ class OrdersViewModel: ObservableObject {
         }
     }
     
-    // Get elapsed time string for batch
+    // Get elapsed time string for batch (excludes hold time)
     func getElapsedTime(batch: OrderBatch) -> String {
         guard let createdDate = parseDate(batch.createdAt) else {
             return "0m 0s"
         }
         
-        let elapsed = Int(currentTime.timeIntervalSince(createdDate))
-        let minutes = elapsed / 60
-        let seconds = elapsed % 60
+        let total = Int(currentTime.timeIntervalSince(createdDate))
+        let effective = max(0, total - batch.holdAccumulatedSeconds)
+        let minutes = effective / 60
+        let seconds = effective % 60
         
         return "\(minutes)m \(seconds)s"
     }
@@ -290,7 +340,13 @@ class OrdersViewModel: ObservableObject {
               let data = json.data(using: .utf8) else {
             return nil
         }
-        
-        return try? JSONDecoder().decode([String: CustomModifier].self, from: data)
+        do {
+            let result = try JSONDecoder().decode([String: CustomModifier].self, from: data)
+            return result
+        } catch {
+            print("❌ [parseCustomModifiers] Failed to decode: \(error)")
+            print("   JSON: \(json)")
+            return nil
+        }
     }
 }

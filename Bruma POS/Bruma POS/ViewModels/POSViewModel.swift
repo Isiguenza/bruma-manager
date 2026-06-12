@@ -5,14 +5,15 @@ import Combine
 @MainActor
 class POSViewModel: ObservableObject {
     
-    // MARK: - WebSocket
+    // MARK: - WebSocket & Network
     private let socketService = SocketService.shared
+    private var cancellables = Set<AnyCancellable>()
     
     // MARK: - App State
     enum AppScreen { case dashboard, tableSelection, pos }
     @Published var currentScreen: AppScreen = .dashboard
     @Published var activeView: String = "pos" // "pos" or "reservations"
-    @Published var selectedTab: Int = 0 // Tab selection: 0=Mesas, 1=Caja, 2=Reservas, 3=Delivery
+    @Published var selectedTab: Int = 0 // Tab selection: 0=Mesas, 1=Caja, 2=Reservas, 3=Empleados
     @Published var loading = false
     @Published var toastMessage: String?
     @Published var toastIsError = false
@@ -27,6 +28,10 @@ class POSViewModel: ObservableObject {
     @Published var cashRegisterOpen = false
     @Published var checkingRegister = false
     @Published var lastActivity = Date()
+    
+    // MARK: - Config
+    @Published var config = POSConfig.load()
+    @Published var showSettings = false
     
     // MARK: - Tables
     @Published var tables: [Table] = []
@@ -43,7 +48,7 @@ class POSViewModel: ObservableObject {
     }
     
     var filteredTables: [Table] {
-        var result = tables
+        var result = tables.filter { !config.disabledTableIds.contains($0.id) }
         
         // Filter by status
         switch tableFilter {
@@ -128,12 +133,18 @@ class POSViewModel: ObservableObject {
     @Published var showTransferTableDialog = false
     @Published var showingReleaseConfirmation = false
     
+    // MARK: - Offline Mode
+    @Published var isOffline = false
+    @Published var syncQueueCount = 0
+    @Published var syncing = false
+    
     // MARK: - Employee Orders
     @Published var employees: [Employee] = []
     @Published var selectedEmployee: Employee?
     @Published var isEmployeeOrder = false
     @Published var employeeOrderTab = 0 // 0=Orden Actual, 1=Historial
     @Published var employeeOrderHistory: [Order] = []
+    @Published var employeeIdsWithActiveOrders: Set<String> = []
     @Published var loadingEmployees = false
     
     // MARK: - Delivery
@@ -148,7 +159,7 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Payment
     @Published var showingPayment = false
-    @Published var paymentStep = "summary" // summary, payment, confirmation, done, split-assign, split-overview, split-pay-person
+    @Published var paymentStep = "payment" // summary, payment, confirmation, done, split-assign, split-overview, split-pay-person
     @Published var paymentMethod: String?
     @Published var cashReceived = ""
     @Published var tipPercentage = 0
@@ -159,36 +170,87 @@ class POSViewModel: ObservableObject {
     @Published var paymentCompleted = false
     @Published var confirmingOrder = false
     @Published var splitPayments: [SplitPayment] = []
+    @Published var showAddSplitPayment = false
+    @Published var editingSplitPayment: SplitPayment? = nil
+    @Published var activeNumericField: String? = nil // "cash", "tip", nil
     
     // Reset payment state when switching tables/orders
     func resetPaymentState() {
         showingPayment = false
-        paymentStep = "summary"
-        paymentMethod = nil
+        paymentStep = "payment"
+        paymentMethod = "cash"
         cashReceived = ""
         tipPercentage = 0
         customTip = ""
         showCustomTip = false
         tipPaymentMethod = nil
         splitPayments = []
+        showAddSplitPayment = false
+        editingSplitPayment = nil
         processing = false
         paymentCompleted = false
         confirmingOrder = false
         splitBillMode = false
+        splitBillType = "by-seat"
         itemAssignments = [:]
         individualPayments = [:]
         individualTips = [:]
         splitPaymentMethod = nil
+        splitTipPaymentMethod = nil
+        splitPersonDiscountAmount = 0
+        splitPersonDiscountName = ""
         splitCashReceived = ""
         currentPersonIndex = 0
+        activeNumericField = nil
+    }
+    
+    // MARK: - Numpad Input Handlers
+    func appendToActiveField(_ key: String) {
+        guard let field = activeNumericField else { return }
+        switch field {
+        case "cash":
+            cashReceived += key
+        case "tip":
+            customTip += key
+        default:
+            break
+        }
+    }
+    
+    func backspaceActiveField() {
+        guard let field = activeNumericField else { return }
+        switch field {
+        case "cash":
+            if !cashReceived.isEmpty { cashReceived.removeLast() }
+        case "tip":
+            if !customTip.isEmpty { customTip.removeLast() }
+        default:
+            break
+        }
+    }
+    
+    func clearActiveField() {
+        guard let field = activeNumericField else { return }
+        switch field {
+        case "cash":
+            cashReceived = ""
+        case "tip":
+            customTip = ""
+        default:
+            break
+        }
     }
     
     // MARK: - Split Bill
     @Published var splitBillMode = false
+    @Published var splitBillType: String = "by-seat" // "by-seat" | "custom"
     @Published var itemAssignments: [Int: [Int]] = [:]
     @Published var individualPayments: [Int: IndividualPayment] = [:]
     @Published var individualTips: [Int: IndividualTip] = [:]
     @Published var splitPaymentMethod: String?
+    @Published var splitTipPaymentMethod: String? = nil
+    @Published var splitPersonDiscountAmount: Double = 0
+    @Published var splitPersonDiscountName: String = ""
     @Published var splitCashReceived = ""
     @Published var currentPersonIndex = 0
     @Published var selectedSplitPersonIndex = 0
@@ -397,6 +459,35 @@ class POSViewModel: ObservableObject {
         restoreSession()
         setupSocketCallbacks()
         socketService.connect()
+        setupSyncEngine()
+    }
+    
+    private func setupSyncEngine() {
+        // Bind offline state
+        SyncEngine.shared.$isOnline
+            .map { !$0 }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] offline in
+                self?.isOffline = offline
+                self?.syncQueueCount = OfflineQueueService.shared.count
+            }
+            .store(in: &cancellables)
+        
+        // Bind sync state
+        SyncEngine.shared.$isSyncing
+            .receive(on: RunLoop.main)
+            .sink { [weak self] syncing in
+                self?.syncing = syncing
+            }
+            .store(in: &cancellables)
+        
+        // Bind queue count
+        OfflineQueueService.shared.$queue
+            .receive(on: RunLoop.main)
+            .sink { [weak self] queue in
+                self?.syncQueueCount = queue.count
+            }
+            .store(in: &cancellables)
     }
     
     private func setupSocketCallbacks() {
@@ -407,11 +498,90 @@ class POSViewModel: ObservableObject {
             }
         }
         
-        socketService.onOrderUpdated = { [weak self] orderId in
+        socketService.onOrderUpdated = { [weak self] dict in
             Task { @MainActor in
+                guard let orderId = dict["id"] as? String else { return }
                 print("📦 [Socket] order:updated received for \(orderId)")
+                print("📦 [Socket] Full dict: \(dict)")
+                
+                // Update table's activeOrder status if tableId is present
+                if let tableId = dict["tableId"] as? String,
+                   let status = dict["status"] as? String,
+                   let self = self {
+                    print("📦 [Socket] tableId=\(tableId), status=\(status)")
+                    if let index = self.tables.firstIndex(where: { $0.id == tableId }) {
+                        var table = self.tables[index]
+                        print("📦 [Socket] Found table #\(table.number) at index \(index)")
+                        if var activeOrder = table.activeOrder {
+                            print("📦 [Socket] Old activeOrder.status=\(activeOrder.status)")
+                            let priority = dict["priority"] as? Int ?? activeOrder.priority
+                            let onHold = dict["onHold"] as? Bool ?? activeOrder.onHold
+                            activeOrder = ActiveOrder(
+                                id: activeOrder.id,
+                                orderNumber: activeOrder.orderNumber,
+                                status: status,
+                                total: activeOrder.total,
+                                itemCount: activeOrder.itemCount,
+                                items: activeOrder.items,
+                                createdAt: activeOrder.createdAt,
+                                priority: priority,
+                                onHold: onHold
+                            )
+                            table = Table(
+                                id: table.id,
+                                number: table.number,
+                                name: table.name,
+                                capacity: table.capacity,
+                                status: table.status,
+                                active: table.active,
+                                activeOrder: activeOrder,
+                                guestCount: table.guestCount,
+                                nextReservation: table.nextReservation
+                            )
+                            self.tables[index] = table
+                            print("🪑 [Socket] Updated table #\(table.number) activeOrder.status to \(status)")
+                        } else {
+                            print("⚠️ [Socket] table.activeOrder is nil")
+                        }
+                    } else {
+                        print("⚠️ [Socket] Table not found for tableId=\(tableId)")
+                    }
+                } else {
+                    print("⚠️ [Socket] Missing tableId or status in dict")
+                }
+                
                 await self?.refreshOrderFromSocket()
                 await self?.refreshReadyItemsAndDelivery()
+            }
+        }
+        
+        socketService.onOrderRush = { [weak self] dict in
+            Task { @MainActor in
+                guard let self = self,
+                      let orderId = dict["id"] as? String else { return }
+                print("🔥 [Socket] order:rush received for \(orderId)")
+                let priority = dict["priority"] as? Int
+                let onHold = dict["onHold"] as? Bool
+                if let tableId = dict["tableId"] as? String {
+                    self.updateTableOrderFlags(tableId: tableId, priority: priority, onHold: onHold)
+                }
+                // Also update delivery orders
+                self.updateDeliveryOrderFlags(orderId: orderId, priority: priority, onHold: onHold)
+            }
+        }
+        
+        socketService.onOrderHold = { [weak self] dict in
+            Task { @MainActor in
+                guard let self = self,
+                      let orderId = dict["id"] as? String else { return }
+                print("⏸️ [Socket] order:hold received for \(orderId)")
+                let priority = dict["priority"] as? Int
+                let onHold = dict["onHold"] as? Bool
+                if let tableId = dict["tableId"] as? String {
+                    self.updateTableOrderFlags(tableId: tableId, priority: priority, onHold: onHold)
+                }
+                // Also update delivery orders
+                self.updateDeliveryOrderFlags(orderId: orderId, priority: priority, onHold: onHold)
             }
         }
         
@@ -445,6 +615,63 @@ class POSViewModel: ObservableObject {
             tables[index] = updated
         } catch {
             print("Error refreshing table: \(error)")
+        }
+    }
+    
+    // MARK: - Real-time Rush/Hold helpers
+    
+    @MainActor
+    private func updateTableOrderFlags(tableId: String, priority: Int?, onHold: Bool?) {
+        guard let index = tables.firstIndex(where: { $0.id == tableId }) else {
+            print("⚠️ [Socket] Table not found for tableId=\(tableId)")
+            return
+        }
+        var table = tables[index]
+        guard var activeOrder = table.activeOrder else {
+            print("⚠️ [Socket] table.activeOrder is nil for #\(table.number)")
+            return
+        }
+        print("🔥⏸️ [Socket] Updating table #\(table.number) — priority=\(priority ?? activeOrder.priority ?? -1), onHold=\(onHold ?? activeOrder.onHold ?? false)")
+        activeOrder = ActiveOrder(
+            id: activeOrder.id,
+            orderNumber: activeOrder.orderNumber,
+            status: activeOrder.status,
+            total: activeOrder.total,
+            itemCount: activeOrder.itemCount,
+            items: activeOrder.items,
+            createdAt: activeOrder.createdAt,
+            priority: priority ?? activeOrder.priority,
+            onHold: onHold ?? activeOrder.onHold
+        )
+        table = Table(
+            id: table.id,
+            number: table.number,
+            name: table.name,
+            capacity: table.capacity,
+            status: table.status,
+            active: table.active,
+            activeOrder: activeOrder,
+            guestCount: table.guestCount,
+            nextReservation: table.nextReservation
+        )
+        tables[index] = table
+    }
+    
+    @MainActor
+    private func updateDeliveryOrderFlags(orderId: String, priority: Int?, onHold: Bool?) {
+        // Update delivery orders
+        if let idx = deliveryOrders.firstIndex(where: { $0.id == orderId }) {
+            var order = deliveryOrders[idx]
+            // We can't mutate Order directly (it's a let struct), so we need to use a workaround
+            // Since Order fields are lets, we need to rebuild it. But priority/onHold are optional lets.
+            // Actually in Swift, structs with let properties can be reconstructed via a copy if we have them all.
+            // But since Order has many fields, let's just refresh delivery orders from API instead.
+            print("🔥⏸️ [Socket] Delivery order flagged, refreshing...")
+            Task { await refreshReadyItemsAndDelivery() }
+        }
+        if let idx = platformDeliveryOrders.firstIndex(where: { $0.id == orderId }) {
+            print("🔥⏸️ [Socket] Platform delivery order flagged, refreshing...")
+            Task { await refreshReadyItemsAndDelivery() }
         }
     }
     
@@ -611,7 +838,7 @@ class POSViewModel: ObservableObject {
         if let t = try? await APIService.shared.fetchTables() {
             tables = t.filter { $0.active }
             for table in tables.prefix(3) {
-                print("[Tables] #\(table.number) status=\(table.status) guest=\(table.guestCount ?? -1) occupied=\(table.isOccupied) activeOrder=\(table.activeOrder != nil)")
+                print("[Tables] #\(table.number) status=\(table.status) activeOrder=\(table.activeOrder?.status ?? "nil")")
             }
         } else {
             print("[Tables] fetchTables failed or returned nil")
@@ -643,6 +870,8 @@ class POSViewModel: ObservableObject {
         loading = true
         
         // Fetch each independently so one failure doesn't block the rest
+        // On success: save to offline cache. On failure: load from offline cache.
+        
         if let t = try? await APIService.shared.fetchTables() {
             tables = t.filter { $0.active }
         } else {
@@ -651,14 +880,18 @@ class POSViewModel: ObservableObject {
         
         if let c = try? await APIService.shared.fetchCategories() {
             categories = c.filter { $0.active }.sorted { $0.sortOrder < $1.sortOrder }
+            OfflineDataStore.shared.saveCategories(c)
         } else {
-            print("[POS] Error fetching categories")
+            categories = OfflineDataStore.shared.loadCategories()
+            print("[POS] Loaded \(categories.count) categories from offline cache")
         }
         
         if let p = try? await APIService.shared.fetchProducts() {
             products = p
+            OfflineDataStore.shared.saveProducts(p)
         } else {
-            print("[POS] Error fetching products")
+            products = OfflineDataStore.shared.loadProducts()
+            print("[POS] Loaded \(products.count) products from offline cache")
         }
         
         if let f = try? await APIService.shared.fetchFrostings() {
@@ -710,6 +943,11 @@ class POSViewModel: ObservableObject {
             print("[POS] Error fetching employees")
         }
         
+        // Fetch active employee order IDs for indicator badges
+        if let empOrders = try? await APIService.shared.fetchAllEmployeeOrders() {
+            employeeIdsWithActiveOrders = Set(empOrders.compactMap { $0.userId })
+        }
+        
         loading = false
     }
     
@@ -717,9 +955,12 @@ class POSViewModel: ObservableObject {
         var regular: [Order] = []
         var platform: [Order] = []
         
+        // Exclude employee orders from delivery list
+        let filtered = orders.filter { $0.source != "employee" }
+        
         // Group by customerName to merge related orders
         var grouped: [String: [Order]] = [:]
-        for order in orders {
+        for order in filtered {
             let key = order.customerName ?? "Delivery_\(order.id)"
             grouped[key, default: []].append(order)
         }
@@ -866,6 +1107,10 @@ class POSViewModel: ObservableObject {
     
     func confirmGuestCount() {
         guestCount = tempGuestCount
+        let validSeats = (1...max(1, tempGuestCount)).map { "A\($0)" } + ["C"]
+        if !validSeats.contains(activeSeat) {
+            activeSeat = "A\(min(tempGuestCount, 1))"
+        }
         showGuestCountDialog = false
         showToast("Número de personas actualizado: \(tempGuestCount)")
         
@@ -890,6 +1135,12 @@ class POSViewModel: ObservableObject {
         }
     }
     
+    func refreshEmployeeActiveOrders() async {
+        if let empOrders = try? await APIService.shared.fetchAllEmployeeOrders() {
+            employeeIdsWithActiveOrders = Set(empOrders.compactMap { $0.userId })
+        }
+    }
+    
     func handleSelectEmployee(_ employee: Employee) {
         lastActivity = Date()
         resetPaymentState()
@@ -908,7 +1159,9 @@ class POSViewModel: ObservableObject {
             loading = true
             do {
                 let activeOrders = try await APIService.shared.fetchActiveEmployeeOrder(userId: employee.id)
+                
                 if let existingOrder = activeOrders.first {
+                    print("📦 [handleSelectEmployee] Loaded order: \(existingOrder.id), items: \(existingOrder.items?.count ?? 0)")
                     currentOrderId = existingOrder.id
                     var items: [CartItem] = []
                     if let orderItems = existingOrder.items {
@@ -922,11 +1175,12 @@ class POSViewModel: ObservableObject {
                     applyPromotions()
                     guestCount = existingOrder.guestCount ?? 1
                 } else {
+                    print("📦 [handleSelectEmployee] No active order found for employee: \(employee.id)")
                     currentOrderId = nil
                     cart = []
                 }
             } catch {
-                print("Error loading employee order: \(error)")
+                print("❌ [handleSelectEmployee] Error loading employee order: \(error)")
                 currentOrderId = nil
                 cart = []
             }
@@ -963,7 +1217,7 @@ class POSViewModel: ObservableObject {
         activeCourse = 1
         activeSeat = "C"
         guestCount = 1
-        showDeliveryDialog = true
+        showCustomerNameDialog = true
     }
     
     func handleNewPlatformDeliveryOrder() {
@@ -980,7 +1234,7 @@ class POSViewModel: ObservableObject {
         activeCourse = 1
         activeSeat = "C"
         guestCount = 1
-        showDeliveryDialog = true
+        showCustomerNameDialog = true
     }
     
     func handleConfirmCustomerName() {
@@ -1429,6 +1683,7 @@ class POSViewModel: ObservableObject {
         let clampedQty = min(max(quantityToChange, 1), item.quantity)
         let remainingQty = item.quantity - clampedQty
         let changeNote = "Cambio de \(item.productName) a \(newProduct.name)"
+        print("🔄 [confirmChangeItem] item=\"\(item.productName)\" qty=\(item.quantity) newProduct=\"\(newProduct.name)\" newPrice=\(newPrice) clampedQty=\(clampedQty) remainingQty=\(remainingQty) isPlatform=\(isPlatform) product.price=\(newProduct.price) product.platformPrice=\(newProduct.platformPrice ?? "nil")")
         
         Task {
             do {
@@ -1739,6 +1994,14 @@ class POSViewModel: ObservableObject {
                 }
                 
                 showToast("Enviado a cocina (\(unsentItems.count) items)")
+            } catch let error as APIError where error == .offlineQueued {
+                // Offline: items are queued for sync, mark local state
+                for i in cart.indices {
+                    if !cart[i].sentToKitchen {
+                        cart[i].sentToKitchen = true
+                    }
+                }
+                showToast("📴 Guardado offline — se enviará a cocina automáticamente")
             } catch {
                 print("❌ [handleSendToKitchen] ERROR: \(error)")
                 print("❌ [handleSendToKitchen] ERROR localized: \(error.localizedDescription)")
@@ -1852,7 +2115,7 @@ class POSViewModel: ObservableObject {
                     if !itemAssignments.isEmpty {
                         paymentStep = "split-assign"
                     } else {
-                        paymentStep = "summary"
+                        paymentStep = "payment"
                     }
                     showingPayment = true
                 }
@@ -1860,7 +2123,7 @@ class POSViewModel: ObservableObject {
                 if !itemAssignments.isEmpty {
                     paymentStep = "split-assign"
                 } else {
-                    paymentStep = "summary"
+                    paymentStep = "payment"
                 }
                 showingPayment = true
             }
@@ -1893,8 +2156,13 @@ class POSViewModel: ObservableObject {
                     cart[i].sentToKitchen = true
                 }
                 
-                paymentStep = "summary"
+                paymentStep = "payment"
                 showingPayment = true
+            } catch let error as APIError where error == .offlineQueued {
+                // Offline: order queued for sync
+                paymentStep = "payment"
+                showingPayment = true
+                showToast("📴 Orden guardada offline — se sincronizará automáticamente")
             } catch {
                 showToast("Error creando orden", isError: true)
             }
@@ -1913,7 +2181,7 @@ class POSViewModel: ObservableObject {
                     "paymentMethod": "cash",
                     "loyaltyCardId": loyaltyCard?.id ?? "",
                     "loyaltyStamps": 1,
-                    "userId": employeeId ?? "",
+                    "employeeId": employeeId ?? "",
                     "tip": tipWithDelivery,
                     "tipPaymentMethod": tipPaymentMethod ?? "cash",
                     "subtotal": cartTotalWithDiscount,
@@ -1938,7 +2206,7 @@ class POSViewModel: ObservableObject {
                     "paymentMethod": "transfer",
                     "loyaltyCardId": loyaltyCard?.id ?? "",
                     "loyaltyStamps": 1,
-                    "userId": employeeId ?? "",
+                    "employeeId": employeeId ?? "",
                     "tip": tipWithDelivery,
                     "tipPaymentMethod": tipPaymentMethod ?? "transfer",
                     "subtotal": cartTotalWithDiscount,
@@ -1963,7 +2231,7 @@ class POSViewModel: ObservableObject {
                     "paymentMethod": "terminal_mercadopago",
                     "loyaltyCardId": loyaltyCard?.id ?? "",
                     "loyaltyStamps": 1,
-                    "userId": employeeId ?? "",
+                    "employeeId": employeeId ?? "",
                     "tip": tipWithDelivery,
                     "tipPaymentMethod": tipPaymentMethod ?? "terminal_mercadopago",
                     "subtotal": cartTotalWithDiscount,
@@ -1998,7 +2266,7 @@ class POSViewModel: ObservableObject {
                     return dict
                 }
                 
-                try await APIService.shared.payOrderSplit(orderId: orderId, payments: paymentsData)
+                try await APIService.shared.payOrderSplit(orderId: orderId, payments: paymentsData, employeeId: employeeId)
                 paymentCompleted = true
                 await handlePrint()
                 showToast("Pago dividido registrado")
@@ -2023,7 +2291,7 @@ class POSViewModel: ObservableObject {
                     "paymentMethod": "platform_delivery",
                     "subtotal": subtotal,
                     "tip": 0,
-                    "userId": employeeId ?? ""
+                    "employeeId": employeeId ?? ""
                 ])
                 await handlePrint()
                 showToast("Orden entregada a repartidor")
@@ -2034,6 +2302,44 @@ class POSViewModel: ObservableObject {
             }
             processing = false
         }
+    }
+    
+    // MARK: - Split Bill Init
+    
+    func initSplitBySeat() {
+        var assignments: [Int: [Int]] = [:]
+        var payments: [Int: IndividualPayment] = [:]
+        var tips: [Int: IndividualTip] = [:]
+        for i in 0..<guestCount {
+            assignments[i] = []
+            payments[i] = IndividualPayment()
+            tips[i] = IndividualTip()
+        }
+        for (cartIndex, item) in cart.enumerated() {
+            guard item.seat != "C" else { continue }
+            if item.seat.hasPrefix("A"), let seatNum = Int(item.seat.dropFirst()), seatNum >= 1, seatNum <= guestCount {
+                assignments[seatNum - 1, default: []].append(cartIndex)
+            }
+        }
+        itemAssignments = assignments
+        individualPayments = payments
+        individualTips = tips
+        splitBillType = "by-seat"
+    }
+    
+    func initSplitCustom() {
+        var assignments: [Int: [Int]] = [:]
+        var payments: [Int: IndividualPayment] = [:]
+        var tips: [Int: IndividualTip] = [:]
+        for i in 0..<guestCount {
+            assignments[i] = []
+            payments[i] = IndividualPayment()
+            tips[i] = IndividualTip()
+        }
+        itemAssignments = assignments
+        individualPayments = payments
+        individualTips = tips
+        splitBillType = "custom"
     }
     
     // MARK: - Split Bill Payment
@@ -2052,7 +2358,17 @@ class POSViewModel: ObservableObject {
         let tipAmt = tipData.showCustom ? (Double(tipData.custom) ?? 0) : personTotal * Double(tipData.percentage) / 100
         let finalTotal = personTotal + tipAmt
         
-        individualPayments[pIdx] = IndividualPayment(paid: true, method: splitPaymentMethod, amount: finalTotal)
+        let discountAmt = splitPersonDiscountAmount
+        let actualTotal = finalTotal - discountAmt
+        individualPayments[pIdx] = IndividualPayment(
+            paid: true,
+            method: splitPaymentMethod,
+            amount: actualTotal,
+            tipAmount: tipAmt,
+            tipPaymentMethod: splitTipPaymentMethod,
+            discountAmount: discountAmt,
+            discountName: splitPersonDiscountName
+        )
         
         // Print individual ticket
         Task {
@@ -2068,33 +2384,27 @@ class POSViewModel: ObservableObject {
         confirmingOrder = true
         Task {
             do {
-                var totalTips = 0.0
-                for i in 0..<guestCount {
-                    let assignedItems = itemAssignments[i] ?? []
-                    let personSubtotal = assignedItems.reduce(0.0) { sum, ci in
-                        guard ci < cart.count else { return sum }
-                        let item = cart[ci]
-                        let basePrice = item.originalPrice ?? item.unitPrice
-                        let promoDiscount = item.promotionDiscount ?? 0
-                        return sum + (basePrice * Double(item.quantity) - promoDiscount)
+                let paymentsData = (0..<guestCount).compactMap { i -> [String: Any]? in
+                    guard let payment = individualPayments[i], payment.paid else { return nil }
+                    var dict: [String: Any] = [
+                        "paymentMethod": payment.method ?? "cash",
+                        "amount": payment.amount - payment.tipAmount,
+                        "tip": payment.tipAmount,
+                        "sequenceNumber": i + 1
+                    ]
+                    if let tipMethod = payment.tipPaymentMethod {
+                        dict["tipPaymentMethod"] = tipMethod
                     }
-                    let tipData = individualTips[i] ?? IndividualTip()
-                    let tipAmt = tipData.showCustom ? (Double(tipData.custom) ?? 0) : personSubtotal * Double(tipData.percentage) / 100
-                    totalTips += tipAmt
+                    return dict
                 }
                 
-                try await APIService.shared.payOrder(orderId: orderId, body: [
-                    "paymentMethod": "split",
-                    "loyaltyCardId": loyaltyCard?.id ?? "",
-                    "loyaltyStamps": 1,
-                    "userId": employeeId ?? "",
-                    "tip": totalTips,
-                    "subtotal": cartTotal
-                ])
-                
+                try await APIService.shared.payOrderSplit(orderId: orderId, payments: paymentsData)
+                paymentCompleted = true
                 await handlePrint()
                 showToast("Pago dividido completado")
-                handleConfirmOrder()
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    paymentStep = "done"
+                }
             } catch {
                 showToast("Error procesando pago dividido", isError: true)
             }
@@ -2167,6 +2477,20 @@ class POSViewModel: ObservableObject {
             }
         }
         
+        let isSplit = !splitPayments.isEmpty
+        let paymentMethodToShow = isSplit ? "Dividido" : paymentMethod
+        let splitPaymentsData: [[String: Any]]? = isSplit ? splitPayments.map { p in
+            var dict: [String: Any] = [
+                "method": p.displayMethod,
+                "amount": p.amount
+            ]
+            if p.tip > 0 {
+                dict["tip"] = p.tip
+                dict["tipMethod"] = p.tipPaymentMethod ?? p.paymentMethod
+            }
+            return dict
+        } : nil
+        
         await PrintService.shared.printTicket(
             customerName: customerName,
             orderNumber: String((sentItems.first?.orderId ?? "N/A").prefix(8)),
@@ -2177,7 +2501,8 @@ class POSViewModel: ObservableObject {
             tableNumber: selectedTable?.number ?? "",
             isDelivery: selectedTable == nil,
             discount: discountData,
-            paymentMethod: paymentMethod,
+            paymentMethod: paymentMethodToShow,
+            splitPayments: splitPaymentsData,
             deliveryFee: Int(deliveryFeeAmount)
         )
     }
@@ -2476,16 +2801,57 @@ class POSViewModel: ObservableObject {
             return sum + ((item.originalPrice ?? item.unitPrice) * Double(item.quantity))
         }
         
-        await PrintService.shared.printSplitTicket(
+        let discountAmt = splitPersonDiscountAmount
+        let discountData: [String: Any]? = discountAmt > 0 ? ["name": splitPersonDiscountName.isEmpty ? "Descuento" : splitPersonDiscountName, "amount": discountAmt] : nil
+        
+        await PrintService.shared.printSeatBill(
             tableNumber: selectedTable?.number,
             orderNumber: currentOrderId?.prefix(8).description ?? "",
-            customerName: selectedTable == nil ? customerName : nil,
+            seatLabel: "Asiento \(personIndex + 1)",
             items: ticketItems,
             subtotal: subtotal,
             tip: tip,
-            total: total,
-            paymentMethod: splitPaymentMethod,
-            splitInfo: "Persona \(personIndex + 1) de \(guestCount)"
+            discount: discountData,
+            total: total - discountAmt,
+            paymentMethod: splitPaymentMethod
+        )
+    }
+    
+    func printSeatPreAccount(seatIndex: Int) async {
+        let assignedIndices = itemAssignments[seatIndex] ?? []
+        guard !assignedIndices.isEmpty else { return }
+        
+        var ticketItems: [[String: Any]] = []
+        for ci in assignedIndices {
+            guard ci < cart.count else { continue }
+            let item = cart[ci]
+            let originalTotal = Int(Double(item.quantity) * (item.originalPrice ?? item.unitPrice))
+            var dict: [String: Any] = [
+                "name": item.productName,
+                "qty": item.quantity,
+                "price": item.originalPrice ?? item.unitPrice,
+                "total": originalTotal
+            ]
+            if let pn = item.promotionName { dict["promotionName"] = pn }
+            ticketItems.append(dict)
+        }
+        
+        let subtotal = assignedIndices.reduce(0.0) { sum, ci in
+            guard ci < cart.count else { return sum }
+            let item = cart[ci]
+            return sum + ((item.originalPrice ?? item.unitPrice) * Double(item.quantity) - (item.promotionDiscount ?? 0))
+        }
+        
+        await PrintService.shared.printSeatBill(
+            tableNumber: selectedTable?.number,
+            orderNumber: currentOrderId?.prefix(8).description ?? "",
+            seatLabel: "Asiento \(seatIndex + 1)",
+            items: ticketItems,
+            subtotal: subtotal,
+            tip: 0,
+            discount: nil,
+            total: subtotal,
+            paymentMethod: nil
         )
     }
     
@@ -2499,8 +2865,8 @@ class POSViewModel: ObservableObject {
         loyaltyCard = nil
         showingPayment = false
         showingLoyaltyStep = false
-        paymentStep = "summary"
-        paymentMethod = nil
+        paymentStep = "payment"
+        paymentMethod = "cash"
         cashReceived = ""
         currentOrderId = nil
         paymentCompleted = false
@@ -2512,10 +2878,14 @@ class POSViewModel: ObservableObject {
         tipPaymentMethod = nil
         splitPayments = []
         splitBillMode = false
+        splitBillType = "by-seat"
         itemAssignments = [:]
         individualPayments = [:]
         individualTips = [:]
         splitPaymentMethod = nil
+        splitTipPaymentMethod = nil
+        splitPersonDiscountAmount = 0
+        splitPersonDiscountName = ""
         splitCashReceived = ""
         selectedDiscount = nil
         guestItemsSelection = []
@@ -2716,7 +3086,6 @@ class POSViewModel: ObservableObject {
         }
         showToast("\(guestItemsSelection.count) producto(s) marcado(s) como invitado")
         guestItemsSelection = []
-        showGuestItemsDialog = false
     }
     
     func unmarkItemAsGuest(at index: Int) {
@@ -2732,6 +3101,20 @@ struct IndividualPayment {
     var paid: Bool = false
     var method: String?
     var amount: Double = 0
+    var tipAmount: Double = 0
+    var tipPaymentMethod: String? = nil
+    var discountAmount: Double = 0
+    var discountName: String = ""
+
+    var methodDisplay: String {
+        switch method {
+        case "cash": return "Efectivo"
+        case "card": return "Tarjeta"
+        case "terminal_mercadopago": return "Terminal"
+        case "transfer": return "Transferencia"
+        default: return method ?? ""
+        }
+    }
 }
 
 struct IndividualTip {

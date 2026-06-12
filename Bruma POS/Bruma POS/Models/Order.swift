@@ -13,6 +13,8 @@ struct Order: Codable, Identifiable {
     let tableName: String?
     let tableNumber: String?
     let employeeName: String?
+    let userId: String?
+    let source: String?
     let createdAt: String?
     let items: [OrderItem]?
     let splitBillData: String?
@@ -21,6 +23,13 @@ struct Order: Codable, Identifiable {
     let tipPaymentMethod: String?
     let discountAmount: String?
     let discountName: String?
+    let payments: [OrderPayment]?
+    let priority: Int?      // 0=normal, 1=rush
+    let onHold: Bool?       // true if order is on hold
+    
+    var isSplitPayment: Bool {
+        (payments?.count ?? 0) > 1
+    }
     
     var displayName: String {
         if let name = customerName, !name.isEmpty {
@@ -60,6 +69,26 @@ struct Order: Codable, Identifiable {
         if name.hasPrefix("Rappi") { return "Rappi" }
         if name.hasPrefix("Didi") { return "Didi" }
         return nil
+    }
+}
+
+struct OrderPayment: Codable, Identifiable {
+    let id: String
+    let orderId: String
+    let sequenceNumber: Int
+    let paymentMethod: String
+    let amount: String
+    let tip: String?
+    let tipPaymentMethod: String?
+    let createdAt: String?
+    
+    var displayMethod: String {
+        switch paymentMethod {
+        case "cash": return "Efectivo"
+        case "card", "terminal_mercadopago": return "Terminal"
+        case "transfer": return "Transferencia"
+        default: return paymentMethod
+        }
     }
 }
 

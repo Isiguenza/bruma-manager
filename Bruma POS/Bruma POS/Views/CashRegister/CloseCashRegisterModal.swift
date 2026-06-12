@@ -66,7 +66,7 @@ struct CloseCashRegisterModal: View {
                             .foregroundColor(.white)
                         
                         summaryRow(title: "Efectivo inicial", value: vm.formatCurrency(register.initialCash))
-                        summaryRow(title: "Ventas en efectivo", value: vm.formatCurrency(vm.actualCashSales))
+                        summaryRow(title: "Ventas en efectivo", value: vm.formatCurrency(vm.actualCashSales + vm.actualCashTips))
                         summaryRow(title: "Ventas con terminal", value: vm.formatCurrency(vm.actualTerminalSales))
                         summaryRow(title: "Ventas con transferencia", value: vm.formatCurrency(vm.actualTransferSales))
                         summaryRow(title: "Depósitos", value: vm.formatCurrency(register.deposits))

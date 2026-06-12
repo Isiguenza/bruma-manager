@@ -13,6 +13,8 @@ class SocketService: ObservableObject {
     // Callbacks for events
     var onNewOrder: (() -> Void)?
     var onOrderUpdated: ((String) -> Void)?
+    var onOrderRush: ((String) -> Void)?
+    var onOrderHold: ((String) -> Void)?
     
     private init() {}
     
@@ -69,6 +71,20 @@ class SocketService: ObservableObject {
             }
             print("📦 Order updated: \(orderId)")
             self?.onOrderUpdated?(orderId)
+        }
+        
+        socket?.on("order:rush") { [weak self] data, ack in
+            guard let dict = data.first as? [String: Any],
+                  let orderId = dict["id"] as? String else { return }
+            print("🔥 Order rush: \(orderId)")
+            self?.onOrderRush?(orderId)
+        }
+        
+        socket?.on("order:hold") { [weak self] data, ack in
+            guard let dict = data.first as? [String: Any],
+                  let orderId = dict["id"] as? String else { return }
+            print("⏸️ Order hold: \(orderId)")
+            self?.onOrderHold?(orderId)
         }
     }
     

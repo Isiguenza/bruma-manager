@@ -74,6 +74,18 @@ struct TableSelectionView: View {
                     await vm.fetchData()
                 }
             }
+            
+            // New Order Dialog overlay
+            if vm.showCustomerNameDialog {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { vm.showCustomerNameDialog = false }
+                
+                CustomerNameDialog(vm: vm)
+                    .frame(maxWidth: 440)
+                    .contentShape(Rectangle())
+                    .onTapGesture {}
+            }
         }
         .sheet(isPresented: $vm.showInitialGuestDialog) {
             InitialGuestCountDialog(vm: vm)
@@ -83,10 +95,9 @@ struct TableSelectionView: View {
         .onReceive(timer) { _ in
             currentTime = Date()
         }
-        .sheet(isPresented: $vm.showCustomerNameDialog) {
-            CustomerNameSheet(vm: vm)
-                .presentationDetents([.height(380)])
-                .presentationDragIndicator(.visible)
+        .fullScreenCover(isPresented: $vm.showSettings) {
+            SettingsView(vm: vm)
+                .presentationBackground(.clear)
         }
     }
     
@@ -159,97 +170,6 @@ struct TableSelectionView: View {
         }
     }
     
-    // MARK: - Customer Name Sheet (for Para Llevar)
-    
-    struct CustomerNameSheet: View {
-        @ObservedObject var vm: POSViewModel
-        
-        var body: some View {
-            ZStack {
-                Color(red: 0.08, green: 0.08, blue: 0.08).ignoresSafeArea()
-                
-                VStack(spacing: 24) {
-                    VStack(spacing: 8) {
-                        Text("Nueva Orden Para Llevar")
-                            .font(.title3.weight(.semibold))
-                            .foregroundColor(.white)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Nombre del Cliente")
-                            .font(.subheadline.bold())
-                            .foregroundColor(.white)
-                        
-                        TextField("Ej: Juan Pérez", text: $vm.customerName)
-                            .foregroundColor(.white)
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color(white: 0.06))
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.2)))
-                            )
-                            .onSubmit { vm.handleConfirmCustomerName() }
-                    }
-                    
-                    // Home delivery checkbox
-                    Button {
-                        vm.isHomeDelivery.toggle()
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: vm.isHomeDelivery ? "checkmark.square.fill" : "square")
-                                .font(.title3)
-                                .foregroundColor(vm.isHomeDelivery ? .blue : .gray)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Envío a domicilio")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundColor(.white)
-                                Text("+\(vm.formatCurrency(vm.homeDeliveryFee))")
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                            }
-                            
-                            Spacer()
-                        }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(vm.isHomeDelivery ? Color.blue.opacity(0.08) : Color(white: 0.06))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(vm.isHomeDelivery ? Color.blue.opacity(0.3) : Color(white: 0.2)))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    
-                    HStack(spacing: 12) {
-                        Button {
-                            vm.showCustomerNameDialog = false
-                        } label: {
-                            Text("Cancelar")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(Color(white: 0.12))
-                                .cornerRadius(12)
-                        }
-                        
-                        Button {
-                            vm.handleConfirmCustomerName()
-                        } label: {
-                            Text("Continuar")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(Color.blue)
-                                .cornerRadius(12)
-                        }
-                    }
-                }
-                .padding(24)
-            }
-        }
-    }
     
     
     // MARK: - Header (clean style)
@@ -279,6 +199,17 @@ struct TableSelectionView: View {
                     .foregroundColor(.white)
                 
                 Button(action: {
+                    vm.showSettings = true
+                }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(8)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                
+                Button(action: {
                     vm.clearSession()
                 }) {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
@@ -298,34 +229,69 @@ struct TableSelectionView: View {
     // MARK: - Search Bar
     
     private var tableSearchBar: some View {
-        HStack {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.gray)
-            TextField("Buscar mesa...", text: $vm.tableSearchQuery)
-                .foregroundColor(.white)
-            
-            if !vm.tableSearchQuery.isEmpty {
-                Button {
-                    vm.tableSearchQuery = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
+        GlassEffectContainer{
+            HStack(spacing: 10) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
                         .foregroundColor(.gray)
+                    TextField("Buscar mesa...", text: $vm.tableSearchQuery)
+                        .foregroundColor(.white)
+                    
+                    if !vm.tableSearchQuery.isEmpty {
+                        Button {
+                            vm.tableSearchQuery = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .glassEffect(.regular.interactive(), in: .capsule)
+                
+                if vm.config.takeoutEnabled || vm.config.deliveryEnabled {
+                    nuevaOrdenMenu
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 4)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                )
-        )
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
-        .padding(.bottom, 4)
+    }
+    
+    @ViewBuilder
+    private var nuevaOrdenMenu: some View {
+        let menuContent = Menu {
+            if vm.config.takeoutEnabled {
+                Button {
+                    vm.handleNewDeliveryOrder()
+                } label: {
+                    Label("Para llevar", systemImage: "bag")
+                }
+            }
+            if vm.config.deliveryEnabled {
+                Button {
+                    vm.handleNewPlatformDeliveryOrder()
+                } label: {
+                    Label("Delivery", systemImage: "bicycle")
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "plus")
+                    .font(.caption.weight(.bold))
+                Text("Nueva Orden")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+        }
+        
+        menuContent
+            .buttonStyle(.glassProminent)
+            .clipShape(Capsule())
     }
     
     // MARK: - Filter Bar
@@ -380,29 +346,30 @@ struct TableSelectionView: View {
     
     private var deliveryRow: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("ÓRDENES")
-                .font(.caption.weight(.bold))
-                .foregroundColor(.gray)
-                .padding(.horizontal, 16)
+            HStack {
+                Text("ÓRDENES")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(.gray)
+                Spacer()
+                let totalOrders = vm.deliveryOrders.count + vm.platformDeliveryOrders.count
+                if totalOrders > 0 {
+                    Text("\(totalOrders) activas")
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                }
+            }
+            .padding(.horizontal, 16)
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    // New Para Llevar
-                    paraLlevarCompactCard
-                    
-                    // New Platform Delivery
-                    platformDeliveryCompactCard
-                    
-                    // Active Para Llevar orders
                     ForEach(vm.deliveryOrders) { order in
-                        DeliveryCompactCard(order: order, iconColor: .green) {
+                        DeliveryCompactCard(order: order, source: "Para Llevar") {
                             vm.handleSelectDeliveryOrder(order)
                         }
                     }
                     
-                    // Active Platform Delivery orders
                     ForEach(vm.platformDeliveryOrders) { order in
-                        DeliveryCompactCard(order: order, iconColor: .purple) {
+                        DeliveryCompactCard(order: order, source: order.detectedPlatform ?? "Delivery") {
                             vm.handleSelectDeliveryOrder(order)
                         }
                     }
@@ -413,76 +380,128 @@ struct TableSelectionView: View {
     }
     
     // MARK: - Compact Delivery Cards
+}
+
+// MARK: - Minimalist Order Card
+
+struct DeliveryCompactCard: View {
+    let order: Order
+    let source: String
+    let action: () -> Void
     
-    private var paraLlevarCompactCard: some View {
-        Button {
-            vm.handleNewDeliveryOrder()
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "bag.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(.blue)
-                
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Para Llevar")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                    Text("Nueva")
-                        .font(.caption)
-                        .foregroundColor(.blue.opacity(0.8))
-                }
-                
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.blue.opacity(0.12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                    )
-            )
+    private var statusColor: Color {
+        switch order.status {
+        case "pending": return .orange
+        case "preparing": return .blue
+        case "ready": return .green
+        case "delivered": return Color(.systemBlue)
+        case "cancelled": return .red
+        default: return .gray
         }
-        .frame(width: 200, height: 64)
-        .buttonStyle(.plain)
     }
     
-    private var platformDeliveryCompactCard: some View {
-        Button {
-            vm.handleNewPlatformDeliveryOrder()
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "shippingbox.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(.purple)
-                
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Delivery")
+    private var statusLabel: String {
+        switch order.status {
+        case "pending": return "Pendiente"
+        case "preparing": return "Preparando"
+        case "ready": return "Listo"
+        case "delivered": return "Entregado"
+        case "cancelled": return "Cancelado"
+        default: return order.status
+        }
+    }
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                // Top row: Name + Order # + badges
+                HStack(alignment: .top) {
+                    Text(order.displayName.replacingOccurrences(of: " [ENVIO]", with: ""))
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.white)
-                    Text("Uber/Rappi")
-                        .font(.caption)
-                        .foregroundColor(.purple.opacity(0.8))
+                        .lineLimit(1)
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 4) {
+                        if order.onHold == true {
+                            HStack(spacing: 2) {
+                                Image(systemName: "pause.fill")
+                                    .font(.system(size: 8))
+                                Text("EN ESPERA")
+                                    .font(.system(size: 8, weight: .black))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.red.opacity(0.85))
+                            .clipShape(Capsule())
+                        }
+                        if order.priority == 1 {
+                            HStack(spacing: 2) {
+                                Image(systemName: "flame.fill")
+                                    .font(.system(size: 8))
+                                Text("RUSH")
+                                    .font(.system(size: 8, weight: .black))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.85))
+                            .clipShape(Capsule())
+                        }
+                        Text("#\(order.orderNumber)")
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(.gray)
+                    }
                 }
                 
-                Spacer()
+                // Middle row: items + source
+                HStack(spacing: 4) {
+                    Text("\(order.items?.count ?? 0) items")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    
+                    Text("•")
+                        .font(.caption)
+                        .foregroundColor(Color(white: 0.35))
+                    
+                    Text(source)
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(Color(white: 0.6))
+                }
+                
+                // Status pill
+                HStack {
+                    Text(statusLabel)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundColor(statusColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(statusColor.opacity(0.12))
+                        )
+                    
+                    Spacer()
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
+            .frame(width: 200, alignment: .leading)
+            .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.purple.opacity(0.12))
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(order.onHold == true ? Color.red.opacity(0.08) : Color.white.opacity(0.05))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(
+                                order.onHold == true ? Color.red.opacity(0.4) :
+                                order.priority == 1 ? Color.orange.opacity(0.4) :
+                                Color.white.opacity(0.08),
+                                lineWidth: 1
+                            )
                     )
             )
         }
-        .frame(width: 200, height: 64)
         .buttonStyle(.plain)
     }
 }
@@ -504,6 +523,37 @@ struct TableCardView: View {
                             .font(.system(size: 28, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                         Spacer()
+                        
+                        // Hold badge
+                        if table.activeOrder?.onHold == true {
+                            HStack(spacing: 3) {
+                                Image(systemName: "pause.fill")
+                                    .font(.system(size: 9))
+                                Text("EN ESPERA")
+                                    .font(.system(size: 9, weight: .black))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.red.opacity(0.85))
+                            .clipShape(Capsule())
+                        }
+                        
+                        // Rush badge
+                        if table.activeOrder?.priority == 1 {
+                            HStack(spacing: 3) {
+                                Image(systemName: "flame.fill")
+                                    .font(.system(size: 9))
+                                Text("RUSH")
+                                    .font(.system(size: 9, weight: .black))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.orange.opacity(0.85))
+                            .clipShape(Capsule())
+                        }
+                        
                         if hasReadyItems {
                             HStack(spacing: 3) {
                                 Image(systemName: "checkmark.circle.fill")
@@ -514,7 +564,7 @@ struct TableCardView: View {
                             .foregroundColor(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
-                            .background(Color(red: 1.0, green: 0.45, blue: 0.0))
+                            .background(.green)
                             .clipShape(Capsule())
                         }
                         if table.isAvailable {
@@ -537,9 +587,14 @@ struct TableCardView: View {
                     }
                     
                     if table.isOccupied, let activeOrder = table.activeOrder {
-                        Text("\(activeOrder.itemCount ?? 0) items")
-                            .font(.caption2)
-                            .foregroundColor(.orange.opacity(0.8))
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(kitchenStatusColor(activeOrder.status))
+                                .frame(width: 5, height: 5)
+                            Text(kitchenStatusLabel(activeOrder.status))
+                                .font(.caption2.weight(.medium))
+                                .foregroundColor(kitchenStatusColor(activeOrder.status))
+                        }
                     } else {
                         Text(table.name ?? "Mesa")
                             .font(.caption2)
@@ -607,17 +662,58 @@ struct TableCardView: View {
         }
     }
     
+    private func kitchenStatusColor(_ status: String) -> Color {
+        switch status {
+        case "pending": return .orange
+        case "preparing": return .blue
+        case "ready": return .green
+        case "delivered", "completed": return .gray
+        default: return .gray
+        }
+    }
+    
+    private func kitchenStatusLabel(_ status: String) -> String {
+        switch status {
+        case "pending": return "Sin enviar"
+        case "preparing": return "En cocina"
+        case "ready": return "Listo"
+        case "delivered": return "Entregado"
+        case "completed": return "Completado"
+        default: return status
+        }
+    }
+    
     private func tableBackgroundColor(_ table: Table) -> Color {
+        // If on hold, red tint
+        if table.activeOrder?.onHold == true {
+            return Color.red.opacity(0.12)
+        }
+        // If occupied, use kitchen status color
+        if table.status == "occupied", let activeOrder = table.activeOrder {
+            return kitchenStatusColor(activeOrder.status).opacity(0.08)
+        }
+        
         switch table.status {
-        case "occupied": return Color.orange.opacity(0.08)
         case "reserved": return Color.purple.opacity(0.08)
         default: return Color.white.opacity(0.05)
         }
     }
     
     private func tableBorderColor(_ table: Table) -> Color {
+        // If on hold, red border
+        if table.activeOrder?.onHold == true {
+            return Color.red.opacity(0.5)
+        }
+        // If rush, orange border
+        if table.activeOrder?.priority == 1 {
+            return Color.orange.opacity(0.5)
+        }
+        // If occupied, use kitchen status color
+        if table.status == "occupied", let activeOrder = table.activeOrder {
+            return kitchenStatusColor(activeOrder.status).opacity(0.4)
+        }
+        
         switch table.status {
-        case "occupied": return Color(red: 1.0, green: 0.45, blue: 0.0).opacity(0.4)
         case "reserved": return Color.purple.opacity(0.3)
         default: return Color.white.opacity(0.1)
         }
@@ -656,59 +752,6 @@ struct TableCardView: View {
         } else {
             return "\(minutes)m"
         }
-    }
-}
-
-// MARK: - Delivery Card (clean style)
-
-struct DeliveryCompactCard: View {
-    let order: Order
-    var iconColor: Color = .green
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: order.customerName?.hasPrefix("Uber") == true || order.customerName?.hasPrefix("Rappi") == true || order.customerName?.hasPrefix("Didi") == true ? "shippingbox.fill" : "bag.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(iconColor)
-                
-                VStack(alignment: .leading, spacing: 3) {
-                    Text((order.customerName ?? "Sin Nombre").replacingOccurrences(of: " [ENVIO]", with: ""))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    Text("#\(order.orderNumber) - \(order.items?.count ?? 0) items")
-                        .font(.caption)
-                        .foregroundColor(iconColor.opacity(0.8))
-                        .lineLimit(1)
-                }
-                
-                Spacer()
-                
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(iconColor)
-                        .frame(width: 6, height: 6)
-                    Text("Activa")
-                        .font(.caption.weight(.medium))
-                        .foregroundColor(iconColor)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(iconColor.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(iconColor.opacity(0.3), lineWidth: 1)
-                    )
-            )
-        }
-        .frame(width: 200, height: 64)
-        .buttonStyle(.plain)
     }
 }
 
