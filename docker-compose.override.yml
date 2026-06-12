@@ -5,14 +5,14 @@
 services:
   api-server:
     ports:
-      - "3000:3000"
+      - "4000:4000"
     environment:
-      - PORT=3000
+      - PORT=4000
       - CORS_ORIGIN=*
 
   nextjs:
     ports:
-      - "3002:3002"
+      - "3000:3000"
 
   print-server:
     ports:
