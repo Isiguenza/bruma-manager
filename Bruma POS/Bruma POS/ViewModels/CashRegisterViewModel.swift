@@ -76,24 +76,50 @@ class CashRegisterViewModel: ObservableObject {
     
     // MARK: - Computed Sales
     
-    // Sales calculated from cash register transactions (type="sale")
-    // This correctly handles split payments, which create one tx per method
-    private func saleTxTotal(for method: String?) -> Double {
-        let saleTxs = transactions.filter { $0.type == "sale" }
-        if let method = method {
-            return saleTxs
-                .filter { $0.paymentMethod == method }
-                .reduce(0.0) { sum, t in sum + (Double(t.amount) ?? 0) }
-        }
-        return saleTxs.reduce(0.0) { sum, t in sum + (Double(t.amount) ?? 0) }
+    // MARK: - Sales & Tips (computed from paidOrders for accuracy)
+    
+    var totalTips: Double {
+        paidOrders.reduce(0.0) { sum, order in sum + (Double(order.tip ?? "0") ?? 0) }
     }
     
-    var actualTotalSales: Double { saleTxTotal(for: nil) }
-    var actualCashSales: Double { saleTxTotal(for: "cash") }
-    var actualTerminalSales: Double {
-        saleTxTotal(for: "card") + saleTxTotal(for: "terminal_mercadopago")
+    var actualTotalSales: Double {
+        paidOrders.reduce(0.0) { sum, order in sum + (Double(order.total ?? "0") ?? 0) }
     }
-    var actualTransferSales: Double { saleTxTotal(for: "transfer") }
+    
+    var actualCashSales: Double {
+        let cashOrdersTotal = paidOrders
+            .filter { $0.paymentMethod == "cash" }
+            .reduce(0.0) { sum, order in sum + (Double(order.total ?? "0") ?? 0) }
+        return cashOrdersTotal + actualCashTips
+    }
+    
+    var actualTerminalSales: Double {
+        paidOrders
+            .filter { $0.paymentMethod == "card" || $0.paymentMethod == "terminal_mercadopago" }
+            .reduce(0.0) { sum, order in
+                let total = Double(order.total ?? "0") ?? 0
+                let tip = Double(order.tip ?? "0") ?? 0
+                // If tip was paid in cash, subtract it from terminal sales (it goes to cash)
+                if order.tipPaymentMethod == "cash" && tip > 0 {
+                    return sum + total - tip
+                }
+                return sum + total
+            }
+    }
+    
+    var actualTransferSales: Double {
+        paidOrders
+            .filter { $0.paymentMethod == "transfer" }
+            .reduce(0.0) { sum, order in
+                let total = Double(order.total ?? "0") ?? 0
+                let tip = Double(order.tip ?? "0") ?? 0
+                // If tip was paid in cash, subtract it from transfer sales (it goes to cash)
+                if order.tipPaymentMethod == "cash" && tip > 0 {
+                    return sum + total - tip
+                }
+                return sum + total
+            }
+    }
     
     // Cash tips from non-cash orders (e.g. terminal payment with cash tip)
     var actualCashTips: Double {

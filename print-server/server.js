@@ -396,7 +396,16 @@ app.post('/print', async (req, res) => {
       
       // Propina si hay
       if (tip > 0) {
-        content += `Propina: $${tip}\n`;
+        const tipMethod = req.body.tipPaymentMethod || paymentMethod;
+        const tipMethodLabel = tipMethod === 'cash' ? 'efectivo' : 
+                               tipMethod === 'card' ? 'tarjeta' : 
+                               tipMethod === 'transfer' ? 'transferencia' : 
+                               tipMethod === 'terminal_mercadopago' ? 'terminal' : tipMethod;
+        if (tipMethod !== paymentMethod) {
+          content += `Propina: $${tip} (en ${tipMethodLabel})\n`;
+        } else {
+          content += `Propina: $${tip}\n`;
+        }
         content += commands.feedLine;
       }
     }

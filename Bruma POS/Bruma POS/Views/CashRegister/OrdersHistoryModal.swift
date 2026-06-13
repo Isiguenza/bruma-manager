@@ -138,7 +138,10 @@ struct OrdersHistoryModal: View {
                         .foregroundColor(.white)
                     
                     if let tip = order.tip, let tipValue = Double(tip), tipValue > 0 {
-                        Text("Propina: \(vm.formatCurrency(tip))")
+                        let tipLabel = (order.tipPaymentMethod == "cash" && order.paymentMethod != "cash")
+                            ? "Propina (efectivo): \(vm.formatCurrency(tip))"
+                            : "Propina: \(vm.formatCurrency(tip))"
+                        Text(tipLabel)
                             .font(.caption2)
                             .foregroundColor(.gray)
                     }

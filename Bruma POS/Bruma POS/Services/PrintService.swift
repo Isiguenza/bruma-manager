@@ -60,6 +60,7 @@ class PrintService {
         isDelivery: Bool,
         discount: [String: Any]? = nil,
         paymentMethod: String? = nil,
+        tipPaymentMethod: String? = nil,
         splitPayments: [[String: Any]]? = nil,
         deliveryFee: Int = 0
     ) async {
@@ -84,6 +85,7 @@ class PrintService {
         ]
         if let discount = discount { body["discount"] = discount }
         if let pm = paymentMethod { body["paymentMethod"] = pm }
+        if let tpm = tipPaymentMethod { body["tipPaymentMethod"] = tpm }
         if let sp = splitPayments { body["splitPayments"] = sp }
         if deliveryFee > 0 { body["deliveryFee"] = deliveryFee }
         
@@ -194,6 +196,7 @@ class PrintService {
             isDelivery: order.tableId == nil,
             discount: discountData,
             paymentMethod: paymentMethodToShow,
+            tipPaymentMethod: order.tipPaymentMethod,
             splitPayments: splitPaymentsData,
             deliveryFee: 0
         )

@@ -1081,6 +1081,13 @@ struct PaymentView: View {
                 Text(vm.formatCurrency(vm.totalWithTip))
                     .font(.system(size: 48, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
+                
+                if let cash = Double(vm.cashReceived), cash > vm.totalWithTip {
+                    let change = cash - vm.totalWithTip
+                    Text("Cambio: \(vm.formatCurrency(change))")
+                        .font(.title2.weight(.semibold))
+                        .foregroundColor(.green)
+                }
             }
 
             Spacer()

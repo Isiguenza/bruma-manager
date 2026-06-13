@@ -235,9 +235,9 @@ struct CashRegisterView: View {
                 ], spacing: 12) {
                     metricCard(title: "Efectivo Inicial", value: vm.formatCurrency(register.initialCash), icon: "banknote.fill", accent: .green)
                     
-                    metricCard(title: "Ventas Totales", value: vm.formatCurrency(vm.actualTotalSales), subtitle: "\(vm.paidOrders.count) órdenes", icon: "chart.line.uptrend.xyaxis", accent: .blue)
+                    metricCard(title: "Ventas Totales", value: vm.formatCurrency(vm.actualTotalSales), subtitle: "\(vm.paidOrders.count) órdenes · Propinas: \(vm.formatCurrency(vm.totalTips))", icon: "chart.line.uptrend.xyaxis", accent: .blue)
                     
-                    metricCard(title: "Efectivo Esperado", value: vm.formatCurrency(vm.expectedCash), icon: "dollarsign.circle.fill", accent: .orange)
+                    metricCard(title: "Efectivo Esperado", value: vm.formatCurrency(vm.expectedCash), subtitle: vm.actualCashTips > 0 ? "Incluye \(vm.formatCurrency(vm.actualCashTips)) propina en efectivo" : nil, icon: "dollarsign.circle.fill", accent: .orange)
                     
                     metricCard(title: "Abierta desde", value: vm.formatDateTime(register.openedAt), subtitle: "Actualizado: \(vm.lastUpdated.map { formatTimeOnly($0) } ?? "N/A")", icon: "clock.fill", accent: .purple)
                 }
@@ -782,7 +782,9 @@ struct CashRegisterView: View {
                     VStack(spacing: 8) {
                         totalRow(label: "Subtotal", value: order.subtotal ?? "0")
                         if let tip = order.tip, Double(tip) ?? 0 > 0 {
-                            totalRow(label: "Propina", value: tip)
+                            let tipLabel = (order.tipPaymentMethod == "cash" && order.paymentMethod != "cash")
+                                ? "Propina (en efectivo)" : "Propina"
+                            totalRow(label: tipLabel, value: tip)
                         }
                         if let discount = order.discountAmount, Double(discount) ?? 0 > 0 {
                             totalRow(label: order.discountName ?? "Descuento", value: discount, isNegative: true)

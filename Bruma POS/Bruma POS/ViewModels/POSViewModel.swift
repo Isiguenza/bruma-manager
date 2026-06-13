@@ -2529,6 +2529,7 @@ class POSViewModel: ObservableObject {
             isDelivery: selectedTable == nil,
             discount: discountData,
             paymentMethod: paymentMethodToShow,
+            tipPaymentMethod: tipPaymentMethod,
             splitPayments: splitPaymentsData,
             deliveryFee: Int(deliveryFeeAmount)
         )
