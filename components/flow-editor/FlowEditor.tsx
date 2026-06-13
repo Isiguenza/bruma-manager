@@ -1,7 +1,7 @@
 // @ts-nocheck - Type compatibility issues with React Flow generics
 "use client";
 
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
 import {
   ReactFlow,
@@ -55,11 +55,18 @@ export function FlowEditor({
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
+  const hasInitialized = useRef(false);
+
   // Initialize nodes from steps
   useEffect(() => {
+    // Only initialize once when we first receive non-empty data
+    if (hasInitialized.current) return;
+
     if (initialNodes) {
       setNodes(initialNodes.nodes || []);
       setEdges(initialNodes.edges || []);
+      setSteps(initialSteps);
+      hasInitialized.current = true;
     } else if (initialSteps.length > 0) {
       // Auto-layout steps vertically
       const newNodes = initialSteps.map((step, index) => ({
@@ -78,8 +85,10 @@ export function FlowEditor({
 
       setNodes(newNodes);
       setEdges(newEdges);
+      setSteps(initialSteps);
+      hasInitialized.current = true;
     }
-  }, []);
+  }, [initialSteps, initialNodes]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -89,10 +98,16 @@ export function FlowEditor({
   const addStep = (stepType: string) => {
     const newStep: ModifierStep = {
       id: `step-${Date.now()}`,
+      categoryId: undefined,
       stepName: getStepName(stepType),
-      stepType,
+      stepType: stepType as any,
+      sortOrder: steps.length + 1,
+      isRequired: false,
+      allowMultiple: stepType === "extra",
       includeNoneOption: true,
-      options: stepType === "custom" ? [] : null,
+      active: true,
+      createdAt: new Date(),
+      options: stepType === "custom" ? [] : [],
     };
 
     const newNode: Node = {

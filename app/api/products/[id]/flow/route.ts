@@ -112,11 +112,11 @@ export async function GET(
           categoryId: stepCategoryId,
           stepType: step.stepType,
           stepName: step.stepName,
-          sortOrder: index,
-          isRequired: true,
-          allowMultiple: step.stepType === "extra",
+          sortOrder: step.sortOrder ?? index,
+          isRequired: step.isRequired ?? true,
+          allowMultiple: step.allowMultiple ?? (step.stepType === "extra"),
           includeNoneOption: step.includeNoneOption ?? true,
-          active: true,
+          active: step.active ?? true,
           options,
         };
       }));
@@ -158,12 +158,25 @@ export async function GET(
         return NextResponse.json({
           productId: id,
           useDefaultFlow: false,
-          steps: steps.map((s) => ({
+          steps: steps.map((s, index) => ({
             id: s.id,
+            categoryId: product.categoryId,
             stepName: s.stepName,
             stepType: s.stepType,
-            includeNoneOption: s.includeNoneOption,
-            options: s.options || [],
+            sortOrder: s.sortOrder ?? index + 1,
+            isRequired: s.isRequired ?? false,
+            allowMultiple: s.allowMultiple ?? (s.stepType === "extra"),
+            includeNoneOption: s.includeNoneOption ?? true,
+            active: s.active ?? true,
+            options: (s.options || []).map((o: any) => ({
+              id: o.id,
+              stepId: o.stepId ?? s.id,
+              name: o.name,
+              description: o.description ?? null,
+              price: o.price ?? "0",
+              sortOrder: o.sortOrder ?? 0,
+              active: o.active ?? true,
+            })),
           })),
           source: "category",
         });
