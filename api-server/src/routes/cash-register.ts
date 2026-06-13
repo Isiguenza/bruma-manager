@@ -341,18 +341,19 @@ router.get("/cash-register/:id/corte", async (req, res) => {
           else if (tipMethod === "transfer") transferTips += tip;
         }
       } else {
-        const total = parseFloat(order.total);
-        const tip = parseFloat(order.tip || "0");
+        const orderTotal = parseFloat(order.total || "0");
+        const orderTip = parseFloat(order.tip || "0");
+        const orderSubtotal = parseFloat(order.subtotal || "0") || (orderTotal - orderTip);
         const paymentMethod = order.paymentMethod;
         const tipMethod = order.tipPaymentMethod || paymentMethod;
 
-        if (paymentMethod === "cash") cashSales += total;
-        else if (paymentMethod === "card" || paymentMethod === "terminal_mercadopago") cardSales += total;
-        else if (paymentMethod === "transfer") transferSales += total;
+        if (paymentMethod === "cash") cashSales += orderSubtotal;
+        else if (paymentMethod === "card" || paymentMethod === "terminal_mercadopago") cardSales += orderSubtotal;
+        else if (paymentMethod === "transfer") transferSales += orderSubtotal;
 
-        if (tipMethod === "cash") cashTips += tip;
-        else if (tipMethod === "card" || tipMethod === "terminal_mercadopago") cardTips += tip;
-        else if (tipMethod === "transfer") transferTips += tip;
+        if (tipMethod === "cash") cashTips += orderTip;
+        else if (tipMethod === "card" || tipMethod === "terminal_mercadopago") cardTips += orderTip;
+        else if (tipMethod === "transfer") transferTips += orderTip;
       }
     }
 

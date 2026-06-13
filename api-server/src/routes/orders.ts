@@ -91,6 +91,8 @@ router.get("/orders/history", async (req, res) => {
       orderBy: desc(schema.orders.createdAt),
     });
 
+    const firstOrder = orders[0];
+    console.log(`[history] Found ${orders.length} orders. First order discount:`, firstOrder?.discountAmount, firstOrder?.discountName);
     res.json(orders);
   } catch (error) {
     console.error("Error fetching orders history:", error);
@@ -509,11 +511,13 @@ router.post("/orders/:id/pay", async (req, res) => {
       updates.userId = employeeId;
     }
 
+    console.log(`[pay] Updating order ${id} with:`, JSON.stringify(updates));
     const [updatedOrder] = await db
       .update(schema.orders)
       .set(updates)
       .where(eq(schema.orders.id, id))
       .returning();
+    console.log(`[pay] Order updated. discountAmount=${updatedOrder?.discountAmount}, discountName=${updatedOrder?.discountName}`);
 
     // Create cash register transaction
     if (openRegister) {

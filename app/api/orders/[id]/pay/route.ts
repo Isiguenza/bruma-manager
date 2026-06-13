@@ -43,7 +43,7 @@ export async function POST(
 
     // Mark as paid and delivered for all payment methods (cash, transfer, terminal)
     const timestamp = customTimestamp ? new Date(customTimestamp) : new Date();
-    console.log(`💰 Marcando orden ${id} como paid + delivered (${paymentMethod}) con propina: $${tipAmount}, descuento: $${discount || 0}${customTimestamp ? ` [timestamp: ${timestamp.toISOString()}]` : ''}`);
+    console.log(`💰 [pay] order=${id} method=${paymentMethod} tip=${tipAmount} discount=${discount || 0} discountName=${discountName || '-'} discountId=${discountId || '-'} subtotal=${frontendSubtotal}`);
     await db
       .update(orders)
       .set({
@@ -186,6 +186,7 @@ export async function POST(
       where: eq(orders.id, id),
       with: { items: true },
     });
+    console.log(`[pay] DB updated. discountAmount=${updatedOrder?.discountAmount}, discountName=${updatedOrder?.discountName}`);
 
     return NextResponse.json(updatedOrder);
   } catch (error) {

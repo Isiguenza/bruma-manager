@@ -38,7 +38,9 @@ export async function GET(request: NextRequest) {
     });
 
     console.log(`[History] Found ${completedOrders.length} paid orders for register ${registerId}`);
-    
+    const firstOrder = completedOrders[0];
+    console.log(`[History] First order discount:`, firstOrder?.discountAmount, firstOrder?.discountName);
+
     // Aplicar descuento del 27% a órdenes de platform_delivery
     const ordersWithDiscount = completedOrders.map(order => {
       if (order.paymentMethod === 'platform_delivery') {

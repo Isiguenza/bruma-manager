@@ -78,9 +78,9 @@ export async function GET(
       if (order.paymentStatus !== "paid") continue;
 
       totalOrders++;
-      const orderSubtotal = parseFloat(order.subtotal || "0");
       const orderTip = parseFloat(order.tip || "0");
       const orderTotal = parseFloat(order.total || "0");
+      const orderSubtotal = parseFloat(order.subtotal || "0") || (orderTotal - orderTip);
 
       // Check if this order has split payments
       const orderSplitPayments = splitPaymentsByOrder[order.id] || [];
