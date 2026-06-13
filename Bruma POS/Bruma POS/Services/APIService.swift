@@ -371,6 +371,17 @@ class APIService {
         }
     }
     
+    func openCashDrawer() async throws {
+        guard isConnected else { return }
+        let url = URL(string: "\(baseURL)/api/open-drawer")!
+        let (_, http) = try await requestRaw(url, method: "POST")
+        if !(200...299).contains(http.statusCode) {
+            print("⚠️ openCashDrawer failed: \(http.statusCode)")
+        } else {
+            print("✅ Cajón abierto")
+        }
+    }
+    
     func updateOrder(orderId: String, body: [String: Any]) async throws {
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)")!
         let (_, _) = try await requestRaw(url, method: "PATCH", body: body)

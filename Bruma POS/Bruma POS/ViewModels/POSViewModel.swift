@@ -2192,6 +2192,7 @@ class POSViewModel: ObservableObject {
                 ])
                 paymentCompleted = true
                 await handlePrint(paymentMethod: "cash")
+                try? await APIService.shared.openCashDrawer()
                 showToast("Pago en efectivo registrado")
             } catch {
                 showToast("Error procesando pago", isError: true)

@@ -162,6 +162,49 @@ function sendToPrinter(content) {
   });
 }
 
+// Abrir cajón de dinero vía ESC/POS TCP
+function openCashDrawer() {
+  return new Promise((resolve, reject) => {
+    const client = new net.Socket();
+    const OPEN_DRAWER = Buffer.from([0x1B, 0x70, 0x00, 0x19, 0xFA]);
+    let done = false;
+
+    client.connect(PRINTER_PORT, PRINTER_IP, () => {
+      console.log('💰 Conectado a impresora para abrir cajón');
+      client.write(OPEN_DRAWER, () => {
+        client.end();
+        done = true;
+        resolve();
+      });
+    });
+
+    client.on('error', (err) => {
+      if (!done) {
+        console.error('❌ Error abriendo cajón:', err.message);
+        reject(err);
+      }
+    });
+
+    setTimeout(() => {
+      if (!done) {
+        client.destroy();
+        reject(new Error('Timeout abriendo cajón'));
+      }
+    }, 5000);
+  });
+}
+
+app.post('/open-drawer', async (req, res) => {
+  try {
+    await openCashDrawer();
+    console.log('✅ Cajón abierto');
+    res.json({ success: true, message: 'Cajón abierto' });
+  } catch (error) {
+    console.error('❌ Error en /open-drawer:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Endpoint de impresión
 app.post('/print', async (req, res) => {
   try {

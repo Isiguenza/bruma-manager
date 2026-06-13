@@ -72,6 +72,22 @@ app.use("/api", extrasRouter);
 app.use("/api", discountsRouter);
 app.use("/api", reservationsRouter);
 
+// Open cash drawer — proxy to print server
+app.post("/api/open-drawer", async (req, res) => {
+  try {
+    const printServerUrl = process.env.PRINT_SERVER_URL || "http://print-server:3001";
+    const response = await fetch(`${printServerUrl}/open-drawer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error: any) {
+    console.error("❌ Error proxying open-drawer:", error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });
