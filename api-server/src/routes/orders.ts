@@ -58,6 +58,7 @@ router.get("/orders", async (req, res) => {
       where: whereConditions.length > 0 ? and(...whereConditions) : undefined,
       with: {
         items: true,
+        table: true,
       },
       orderBy: desc(schema.orders.createdAt),
     });
