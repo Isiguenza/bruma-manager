@@ -60,7 +60,26 @@ export async function GET(
     return NextResponse.json({
       categoryId: id,
       useDefaultFlow: false,
-      steps,
+      steps: steps.map((s: any, index: number) => ({
+        id: s.id,
+        categoryId: s.categoryId ?? id,
+        stepName: s.stepName,
+        stepType: s.stepType,
+        sortOrder: s.sortOrder ?? index + 1,
+        isRequired: s.isRequired ?? false,
+        allowMultiple: s.allowMultiple ?? (s.stepType === "extra"),
+        includeNoneOption: s.includeNoneOption ?? true,
+        active: s.active ?? true,
+        options: (s.options || []).map((o: any) => ({
+          id: o.id,
+          stepId: o.stepId ?? s.id,
+          name: o.name,
+          description: o.description ?? null,
+          price: o.price ?? "0",
+          sortOrder: o.sortOrder ?? 0,
+          active: o.active ?? true,
+        })),
+      })),
     });
   } catch (error) {
     console.error("Error fetching category flow:", error);

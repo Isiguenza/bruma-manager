@@ -68,7 +68,62 @@ router.get("/products/:id/flow", async (req, res) => {
 
     // If product has custom flow and not using default, return it
     if (productFlow && !productFlow.useDefaultFlow) {
-      const steps = JSON.parse(productFlow.steps || "[]");
+      const rawSteps = JSON.parse(productFlow.steps || "[]");
+
+      // Expand category steps into their products
+      const steps = await Promise.all(rawSteps.map(async (step: any, index: number) => {
+        let options = step.options || [];
+
+        // If step type is "category", fetch products from that category
+        if (step.stepType === "category") {
+          const categoryId = (options.length > 0 ? options[0].id : step.categoryId) || null;
+
+          if (categoryId) {
+            const categoryProducts = await db.query.products.findMany({
+              where: eq(schema.products.categoryId, categoryId),
+              orderBy: [asc(schema.products.name)],
+            });
+
+            const activeProducts = categoryProducts.filter((p: any) => p.active);
+
+            // Convert products to options format
+            options = activeProducts.map((prod: any, idx: number) => ({
+              id: prod.id,
+              stepId: step.id,
+              name: prod.name,
+              description: null,
+              price: "0",
+              sortOrder: idx,
+              active: true,
+            }));
+          }
+        } else {
+          // For other types, normalize the options
+          options = options.map((opt: any) => ({
+            id: opt.id,
+            stepId: opt.stepId ?? step.id,
+            name: opt.name,
+            description: opt.description ?? null,
+            price: opt.price ?? "0",
+            sortOrder: opt.sortOrder ?? 0,
+            active: opt.active ?? true,
+          }));
+        }
+
+        return {
+          id: step.id,
+          categoryId: step.categoryId ?? null,
+          stepType: step.stepType,
+          stepName: step.stepName,
+          sortOrder: step.sortOrder ?? index,
+          isRequired: step.isRequired ?? true,
+          allowMultiple: step.allowMultiple ?? (step.stepType === "extra"),
+          includeNoneOption: step.includeNoneOption ?? true,
+          active: step.active ?? true,
+          options,
+        };
+      }));
+
       return res.json({
         productId: id,
         useDefaultFlow: false,
@@ -104,7 +159,7 @@ router.get("/products/:id/flow", async (req, res) => {
       },
     });
 
-    if (!steps || steps.length === 0) {
+   if (!steps || steps.length === 0) {
       return res.json({
         productId: id,
         useDefaultFlow: true,
@@ -116,20 +171,24 @@ router.get("/products/:id/flow", async (req, res) => {
     return res.json({
       productId: id,
       useDefaultFlow: false,
-      steps: steps.map((s: any) => ({
+      steps: steps.map((s: any, index: number) => ({
         id: s.id,
+        categoryId: product.categoryId,
         stepName: s.stepName,
         stepType: s.stepType,
-        sortOrder: s.sortOrder,
-        isRequired: s.isRequired,
-        allowMultiple: s.allowMultiple,
+        sortOrder: s.sortOrder ?? index + 1,
+        isRequired: s.isRequired ?? false,
+        allowMultiple: s.allowMultiple ?? (s.stepType === "extra"),
+        includeNoneOption: s.includeNoneOption ?? true,
+        active: s.active ?? true,
         options: (s.options || []).map((o: any) => ({
           id: o.id,
-          stepId: o.stepId,
+          stepId: o.stepId ?? s.id,
           name: o.name,
-          description: o.description,
-          price: o.price,
-          sortOrder: o.sortOrder,
+          description: o.description ?? null,
+          price: o.price ?? "0",
+          sortOrder: o.sortOrder ?? 0,
+          active: o.active ?? true,
         })),
       })),
       source: "category",
