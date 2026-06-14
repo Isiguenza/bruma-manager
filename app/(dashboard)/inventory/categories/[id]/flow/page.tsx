@@ -189,7 +189,7 @@ export default function CategoryFlowPage({ params }: { params: Promise<{ id: str
       includeNoneOption: stepForm.includeNoneOption,
       active: true,
       createdAt: new Date(),
-      options: stepForm.stepType === "custom" ? stepForm.options.map((o, idx) => ({
+      options: stepForm.options.length > 0 ? stepForm.options.map((o, idx) => ({
         id: "",
         stepId: "",
         name: o.name,
@@ -240,26 +240,28 @@ export default function CategoryFlowPage({ params }: { params: Promise<{ id: str
   }
 
   function handleAddOption() {
-    setStepForm({
-      ...stepForm,
+    setStepForm((prev) => ({
+      ...prev,
       options: [
-        ...stepForm.options,
-        { name: "", price: "0", sortOrder: stepForm.options.length },
+        ...prev.options,
+        { name: "", price: "0", sortOrder: prev.options.length },
       ],
-    });
+    }));
   }
 
   function handleUpdateOption(index: number, field: "name" | "price", value: string) {
-    const updatedOptions = [...stepForm.options];
-    updatedOptions[index][field] = value;
-    setStepForm({ ...stepForm, options: updatedOptions });
+    setStepForm((prev) => {
+      const updatedOptions = [...prev.options];
+      updatedOptions[index] = { ...updatedOptions[index], [field]: value };
+      return { ...prev, options: updatedOptions };
+    });
   }
 
   function handleDeleteOption(index: number) {
-    setStepForm({
-      ...stepForm,
-      options: stepForm.options.filter((_, i) => i !== index),
-    });
+    setStepForm((prev) => ({
+      ...prev,
+      options: prev.options.filter((_, i) => i !== index),
+    }));
   }
 
   if (loading) {
@@ -378,7 +380,7 @@ export default function CategoryFlowPage({ params }: { params: Promise<{ id: str
                           </span>
                         )}
                       </div>
-                      {step.stepType === "custom" && step.options && step.options.length > 0 && (
+                      {step.options && step.options.length > 0 && (
                         <p className="text-sm text-muted-foreground mt-1">
                           {step.options.length} opción(es)
                         </p>
@@ -506,61 +508,59 @@ export default function CategoryFlowPage({ params }: { params: Promise<{ id: str
               </label>
             </div>
 
-            {stepForm.stepType === "custom" && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label>Opciones Personalizadas</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddOption}
-                  >
-                    <Plus className="mr-2 size-4" />
-                    Agregar Opción
-                  </Button>
-                </div>
-
-                {stepForm.options.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    Agrega al menos una opción
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {stepForm.options.map((option, index) => (
-                      <div key={index} className="flex gap-2 items-start">
-                        <Input
-                          placeholder="Nombre"
-                          value={option.name}
-                          onChange={(e) =>
-                            handleUpdateOption(index, "name", e.target.value)
-                          }
-                          className="flex-1"
-                        />
-                        <Input
-                          placeholder="Precio"
-                          type="number"
-                          step="0.01"
-                          value={option.price}
-                          onChange={(e) =>
-                            handleUpdateOption(index, "price", e.target.value)
-                          }
-                          className="w-24"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteOption(index)}
-                        >
-                          <Trash className="size-4 text-destructive" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Opciones Personalizadas</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddOption}
+                >
+                  <Plus className="mr-2 size-4" />
+                  Agregar Opción
+                </Button>
               </div>
-            )}
+
+              {stepForm.options.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Agrega al menos una opción
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {stepForm.options.map((option, index) => (
+                    <div key={index} className="flex gap-2 items-start">
+                      <Input
+                        placeholder="Nombre"
+                        value={option.name}
+                        onChange={(e) =>
+                          handleUpdateOption(index, "name", e.target.value)
+                        }
+                        className="flex-1"
+                      />
+                      <Input
+                        placeholder="Precio"
+                        type="number"
+                        step="0.01"
+                        value={option.price}
+                        onChange={(e) =>
+                          handleUpdateOption(index, "price", e.target.value)
+                        }
+                        className="w-24"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteOption(index)}
+                      >
+                        <Trash className="size-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <DialogFooter>
@@ -569,7 +569,7 @@ export default function CategoryFlowPage({ params }: { params: Promise<{ id: str
             </Button>
             <Button
               onClick={handleSaveStep}
-              disabled={!stepForm.stepName || (stepForm.stepType === "custom" && stepForm.options.length === 0)}
+              disabled={!stepForm.stepName || stepForm.options.length === 0}
             >
               {editingStep ? "Actualizar" : "Agregar"}
             </Button>

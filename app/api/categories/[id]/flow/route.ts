@@ -130,7 +130,7 @@ export async function POST(
         .returning();
 
       // If step has custom options, create them
-      if (step.options && step.options.length > 0 && step.stepType === "custom") {
+      if (step.options && step.options.length > 0) {
         for (const option of step.options) {
           await db.insert(modifierOptions).values({
             stepId: newStep.id,

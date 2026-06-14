@@ -341,9 +341,24 @@ class OrdersViewModel: ObservableObject {
             return nil
         }
         do {
+            // Try POS format: dictionary keyed by stepId
             let result = try JSONDecoder().decode([String: CustomModifier].self, from: data)
             return result
         } catch {
+            // Fallback: try legacy Waitress array format
+            if let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                var dict: [String: CustomModifier] = [:]
+                for entry in array {
+                    if let stepId = entry["stepId"] as? String,
+                       let optionName = entry["optionName"] as? String {
+                        let existing = dict[stepId]
+                        let stepName = entry["stepName"] as? String ?? existing?.stepName ?? ""
+                        let opts = (existing?.options ?? []) + [ModifierOption(name: optionName)]
+                        dict[stepId] = CustomModifier(stepName: stepName, options: opts)
+                    }
+                }
+                if !dict.isEmpty { return dict }
+            }
             print("❌ [parseCustomModifiers] Failed to decode: \(error)")
             print("   JSON: \(json)")
             return nil

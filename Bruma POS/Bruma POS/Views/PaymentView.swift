@@ -162,7 +162,24 @@ struct PaymentView: View {
                 if !vm.availableDiscounts.isEmpty {
                     discountPill
                 }
-                
+
+                Button {
+                    Task {
+                        try? await APIService.shared.openCashDrawer()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lock.open.fill")
+                        Text("Cajón")
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.glass)
+                .clipShape(Capsule())
+
                 Button {
                     vm.resetPaymentState()
                 } label: {

@@ -245,25 +245,30 @@ struct CashRegisterView: View {
                 
                 // Action Buttons
                 HStack(spacing: 12) {
+                    actionButton(title: "Cajón", icon: "lock.open.fill", iconColor: .cyan) {
+                        Task {
+                            try? await APIService.shared.openCashDrawer()
+                        }
+                    }
+
                     actionButton(title: "Depósito", icon: "arrow.down.circle.fill", iconColor: .green) {
                         vm.showDepositDialog = true
                     }
-                    
+
                     actionButton(title: "Sangría", icon: "arrow.up.circle.fill", iconColor: .orange) {
                         vm.showWithdrawDialog = true
                     }
-                    
-                    
+
                     actionButton(title: "Corte", icon: "doc.text.fill", iconColor: .yellow) {
                         vm.showCorte = true
                     }
-                    
+
                     actionButton(title: "Resumen", icon: "printer.fill", iconColor: .blue) {
                         Task {
                             await printSummary(register: register)
                         }
                     }
-                    
+
                     actionButton(title: "Cerrar", icon: "lock.fill", iconColor: .red) {
                         vm.showCloseDialog = true
                     }

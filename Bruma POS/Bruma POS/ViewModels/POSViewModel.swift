@@ -1441,6 +1441,23 @@ class POSViewModel: ObservableObject {
     func handleStepSelection(_ selection: Any?) {
         guard let flow = categoryFlow, currentStepIndex < flow.steps.count else { return }
         let step = flow.steps[currentStepIndex]
+        
+        // Support multi-select for custom/category/products steps
+        if (step.stepType == "custom" || step.stepType == "category" || step.stepType == "products") && step.allowMultiple {
+            var current = (stepSelections[step.id] as? [ModifierOption]) ?? []
+            if let opt = selection as? ModifierOption {
+                if current.contains(where: { $0.id == opt.id }) {
+                    current.removeAll { $0.id == opt.id }
+                } else {
+                    current.append(opt)
+                }
+                stepSelections[step.id] = current
+            } else if selection == nil {
+                stepSelections[step.id] = nil
+            }
+            return // Don't auto-advance for multi-select
+        }
+        
         stepSelections[step.id] = selection
         
         let nextIndex = currentStepIndex + 1
@@ -1448,6 +1465,16 @@ class POSViewModel: ObservableObject {
             currentStepIndex = nextIndex
         } else {
             // Move to notes step
+            currentStepIndex = flow.steps.count
+        }
+    }
+    
+    func advanceToNextStep() {
+        guard let flow = categoryFlow, currentStepIndex < flow.steps.count else { return }
+        let nextIndex = currentStepIndex + 1
+        if nextIndex < flow.steps.count {
+            currentStepIndex = nextIndex
+        } else {
             currentStepIndex = flow.steps.count
         }
     }
@@ -1500,10 +1527,22 @@ class POSViewModel: ObservableObject {
                     case "frosting":
                         if let f = sel as? Frosting {
                             frostId = f.id; frostName = f.name
+                        } else if let opt = sel as? ModifierOption {
+                            frostId = opt.id; frostName = opt.name
+                            price += opt.numericPrice
+                        } else if let opts = sel as? [ModifierOption], let first = opts.first {
+                            frostId = first.id; frostName = opts.map { $0.name }.joined(separator: ", ")
+                            price += opts.reduce(0.0) { $0 + $1.numericPrice }
                         }
                     case "topping":
                         if let t = sel as? DryTopping {
                             topId = t.id; topName = t.name
+                        } else if let opt = sel as? ModifierOption {
+                            topId = opt.id; topName = opt.name
+                            price += opt.numericPrice
+                        } else if let opts = sel as? [ModifierOption], let first = opts.first {
+                            topId = first.id; topName = opts.map { $0.name }.joined(separator: ", ")
+                            price += opts.reduce(0.0) { $0 + $1.numericPrice }
                         }
                     case "extra":
                         if let exts = sel as? [Extra], !exts.isEmpty {
@@ -1511,9 +1550,22 @@ class POSViewModel: ObservableObject {
                             extId = exts.first?.id; extName = names
                             let extrasPrice = exts.reduce(0.0) { $0 + $1.numericPrice }
                             price += extrasPrice
+                        } else if let opt = sel as? ModifierOption {
+                            extId = opt.id; extName = opt.name
+                            price += opt.numericPrice
+                        } else if let opts = sel as? [ModifierOption], let first = opts.first {
+                            extId = first.id; extName = opts.map { $0.name }.joined(separator: ", ")
+                            price += opts.reduce(0.0) { $0 + $1.numericPrice }
                         }
                     case "custom", "category", "products":
-                        if let opt = sel as? ModifierOption {
+                        if let opts = sel as? [ModifierOption], !opts.isEmpty {
+                            customModsDict[step.id] = [
+                                "stepName": step.stepName,
+                                "stepType": step.stepType,
+                                "options": opts.map { ["id": $0.id, "name": $0.name, "price": $0.price] }
+                            ]
+                            price += opts.reduce(0.0) { $0 + $1.numericPrice }
+                        } else if let opt = sel as? ModifierOption {
                             customModsDict[step.id] = [
                                 "stepName": step.stepName,
                                 "stepType": step.stepType,

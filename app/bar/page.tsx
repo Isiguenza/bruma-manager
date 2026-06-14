@@ -1460,6 +1460,27 @@ export default function BarPage() {
     
     const currentStep = categoryFlow.steps[currentStepIndex];
     
+    // Support multi-select for custom steps
+    if (currentStep.stepType === "custom" && currentStep.allowMultiple) {
+      const current = (stepSelections[currentStep.id] as ModifierOption[]) || [];
+      let next: ModifierOption[];
+      if (selection === null) {
+        next = [];
+      } else {
+        const exists = current.find((o: any) => o.id === selection.id);
+        if (exists) {
+          next = current.filter((o: any) => o.id !== selection.id);
+        } else {
+          next = [...current, selection];
+        }
+      }
+      setStepSelections({
+        ...stepSelections,
+        [currentStep.id]: next,
+      });
+      return; // Don't auto-advance for multi-select
+    }
+    
     // Guardar selección del paso actual
     setStepSelections({
       ...stepSelections,
@@ -1472,6 +1493,15 @@ export default function BarPage() {
     } else {
       // Último paso completado, mostrar pantalla de notas
       setCurrentStepIndex(categoryFlow.steps.length); // Índice especial para notas
+    }
+  }
+
+  function advanceToNextStep() {
+    if (!categoryFlow || currentStepIndex < 0) return;
+    if (currentStepIndex < categoryFlow.steps.length - 1) {
+      setCurrentStepIndex(currentStepIndex + 1);
+    } else {
+      setCurrentStepIndex(categoryFlow.steps.length);
     }
   }
 
@@ -1493,17 +1523,19 @@ export default function BarPage() {
       if (step.stepType === "custom" && step.options) {
         // Para pasos custom, guardar en customModifiers y sumar precio
         const selectedOptions = Array.isArray(selection) ? selection : [selection];
-        customModifiersData[step.id] = {
-          stepName: step.stepName,
-          options: selectedOptions.map((opt: ModifierOption) => {
-            totalPrice += parseFloat(opt.price);
-            return {
-              id: opt.id,
-              name: opt.name,
-              price: opt.price,
-            };
-          }),
-        };
+        if (selectedOptions.length > 0) {
+          customModifiersData[step.id] = {
+            stepName: step.stepName,
+            options: selectedOptions.map((opt: ModifierOption) => {
+              totalPrice += parseFloat(opt.price);
+              return {
+                id: opt.id,
+                name: opt.name,
+                price: opt.price,
+              };
+            }),
+          };
+        }
       } else if (step.stepType === "extra") {
         // Para extras, sumar precio
         const selectedExtras = Array.isArray(selection) ? selection : [selection];
@@ -4794,6 +4826,34 @@ export default function BarPage() {
           
           // Renderizar según tipo de paso
           if (currentStep.stepType === "frosting") {
+            const stepOptions = currentStep.options?.filter((o) => o.active).sort((a, b) => a.sortOrder - b.sortOrder) || [];
+            if (stepOptions.length > 0) {
+              const selectedOption = stepSelections[currentStep.id] as ModifierOption | undefined;
+              return (
+                <div className="flex-1 p-8 overflow-auto">
+                  <div className="grid grid-cols-4 gap-4 max-w-6xl">
+                    {currentStep.includeNoneOption && (
+                      <button
+                        onClick={() => handleStepSelection(null)}
+                        className={`h-32 rounded-lg flex items-center justify-center font-semibold transition-colors border-2 ${!selectedOption ? "bg-primary text-primary-foreground border-primary" : "bg-muted hover:bg-muted/80 border-transparent hover:border-primary"}`}
+                      >
+                        Sin {currentStep.stepName.toLowerCase()}
+                      </button>
+                    )}
+                    {stepOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        onClick={() => handleStepSelection(option)}
+                        className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold transition-colors border-2 ${selectedOption?.id === option.id ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 hover:bg-primary/20 border-transparent hover:border-primary"}`}
+                      >
+                        <div>{option.name}</div>
+                        {parseFloat(option.price) > 0 && <div className="text-sm opacity-80 mt-1">+{formatCurrency(parseFloat(option.price))}</div>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
             return (
               <div className="flex-1 p-8 overflow-auto">
                 <div className="grid grid-cols-4 gap-4 max-w-6xl">
@@ -4821,6 +4881,34 @@ export default function BarPage() {
               </div>
             );
           } else if (currentStep.stepType === "topping") {
+            const stepOptions = currentStep.options?.filter((o) => o.active).sort((a, b) => a.sortOrder - b.sortOrder) || [];
+            if (stepOptions.length > 0) {
+              const selectedOption = stepSelections[currentStep.id] as ModifierOption | undefined;
+              return (
+                <div className="flex-1 p-8 overflow-auto">
+                  <div className="grid grid-cols-4 gap-4 max-w-6xl">
+                    {currentStep.includeNoneOption && (
+                      <button
+                        onClick={() => handleStepSelection(null)}
+                        className={`h-32 rounded-lg flex items-center justify-center font-semibold transition-colors border-2 ${!selectedOption ? "bg-primary text-primary-foreground border-primary" : "bg-muted hover:bg-muted/80 border-transparent hover:border-primary"}`}
+                      >
+                        Sin {currentStep.stepName.toLowerCase()}
+                      </button>
+                    )}
+                    {stepOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        onClick={() => handleStepSelection(option)}
+                        className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold transition-colors border-2 ${selectedOption?.id === option.id ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 hover:bg-primary/20 border-transparent hover:border-primary"}`}
+                      >
+                        <div>{option.name}</div>
+                        {parseFloat(option.price) > 0 && <div className="text-sm opacity-80 mt-1">+{formatCurrency(parseFloat(option.price))}</div>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
             return (
               <div className="flex-1 p-8 overflow-auto">
                 <div className="grid grid-cols-4 gap-4 max-w-6xl">
@@ -4848,6 +4936,48 @@ export default function BarPage() {
               </div>
             );
           } else if (currentStep.stepType === "extra") {
+            const stepOptions = currentStep.options?.filter((o) => o.active).sort((a, b) => a.sortOrder - b.sortOrder) || [];
+            if (stepOptions.length > 0) {
+              const selectedOptions = (stepSelections[currentStep.id] as ModifierOption[]) || [];
+              const isMulti = currentStep.allowMultiple;
+              return (
+                <div className="flex-1 flex flex-col p-8 overflow-auto">
+                  <div className="grid grid-cols-4 gap-4 max-w-6xl mb-6">
+                    {currentStep.includeNoneOption && (
+                      <button
+                        onClick={() => handleStepSelection([])}
+                        className={`h-32 rounded-lg flex items-center justify-center font-semibold transition-colors border-2 ${selectedOptions.length === 0 ? "bg-primary text-primary-foreground border-primary" : "bg-muted hover:bg-muted/80 border-transparent hover:border-primary"}`}
+                      >
+                        Sin {currentStep.stepName.toLowerCase()}
+                      </button>
+                    )}
+                    {stepOptions.map((option) => {
+                      const isSelected = selectedOptions.some((o) => o.id === option.id);
+                      return (
+                        <button
+                          key={option.id}
+                          onClick={() => handleStepSelection(option)}
+                          className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold transition-colors border-2 ${isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 hover:bg-primary/20 border-transparent hover:border-primary"}`}
+                        >
+                          <div>{option.name}</div>
+                          {parseFloat(option.price) > 0 && <div className="text-sm opacity-80 mt-1">+{formatCurrency(parseFloat(option.price))}</div>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {isMulti && (
+                    <div className="max-w-6xl">
+                      <button
+                        onClick={advanceToNextStep}
+                        className="w-full h-14 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors"
+                      >
+                        Siguiente
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
             return (
               <div className="flex-1 flex flex-col p-8 overflow-auto">
                 <div className="grid grid-cols-4 gap-4 max-w-6xl mb-6">
@@ -4867,7 +4997,6 @@ export default function BarPage() {
                           ? selectedExtras.filter(e => e.id !== extra.id)
                           : [...selectedExtras, extra];
                         setSelectedExtras(newExtras);
-                        // Avanzar automáticamente después de seleccionar
                         setTimeout(() => handleStepSelection(newExtras), 300);
                       }}
                       className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold transition-colors border-2 ${
@@ -4885,32 +5014,55 @@ export default function BarPage() {
             );
           } else if (currentStep.stepType === "custom" && currentStep.options) {
             // Renderizar opciones personalizadas
+            const selectedOptions = (stepSelections[currentStep.id] as ModifierOption[]) || [];
+            const isMulti = currentStep.allowMultiple;
             return (
               <div className="flex-1 p-8 overflow-auto">
                 <div className="grid grid-cols-4 gap-4 max-w-6xl">
                   {currentStep.includeNoneOption && (
                     <button
                       onClick={() => handleStepSelection(null)}
-                      className="h-32 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center font-semibold transition-colors border-2 border-transparent hover:border-primary"
+                      className={`h-32 rounded-lg flex items-center justify-center font-semibold transition-colors border-2 ${
+                        selectedOptions.length === 0
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted hover:bg-muted/80 border-transparent hover:border-primary"
+                      }`}
                     >
                       Sin {currentStep.stepName.toLowerCase()}
                     </button>
                   )}
-                  {currentStep.options.map((option) => (
-                    <button
-                      key={option.id}
-                      onClick={() => handleStepSelection(option)}
-                      className="h-32 rounded-lg bg-primary/10 hover:bg-primary/20 flex flex-col items-center justify-center font-semibold transition-colors border-2 border-transparent hover:border-primary"
-                    >
-                      <div>{option.name}</div>
-                      {parseFloat(option.price) > 0 && (
-                        <div className="text-sm opacity-80 mt-1">
-                          +{formatCurrency(parseFloat(option.price))}
-                        </div>
-                      )}
-                    </button>
-                  ))}
+                  {currentStep.options.map((option) => {
+                    const isSelected = selectedOptions.some((o) => o.id === option.id);
+                    return (
+                      <button
+                        key={option.id}
+                        onClick={() => handleStepSelection(option)}
+                        className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold transition-colors border-2 ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-primary/10 hover:bg-primary/20 border-transparent hover:border-primary"
+                        }`}
+                      >
+                        <div>{option.name}</div>
+                        {parseFloat(option.price) > 0 && (
+                          <div className="text-sm opacity-80 mt-1">
+                            +{formatCurrency(parseFloat(option.price))}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
+                {isMulti && (
+                  <div className="max-w-6xl mt-6">
+                    <button
+                      onClick={advanceToNextStep}
+                      className="w-full h-14 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                )}
               </div>
             );
           }

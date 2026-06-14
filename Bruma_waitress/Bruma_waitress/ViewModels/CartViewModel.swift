@@ -153,16 +153,30 @@ class CartViewModel: ObservableObject {
                 if let e = item.extraName { dict["extra"] = e }
                 // Include flow steps (category, products, custom) in kitchen ticket
                 if let cm = item.customModifiers,
-                   let data = cm.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                   let data = cm.data(using: .utf8) {
                     var flowSelections: [[String: Any]] = []
-                    for entry in json {
-                        if let stepId = entry["stepId"] as? String,
-                           let optionName = entry["optionName"] as? String {
-                            flowSelections.append([
-                                "stepId": stepId,
-                                "name": optionName
-                            ])
+                    // Try new dictionary format first (POS style)
+                    if let dictJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        for (_, value) in dictJson {
+                            if let stepDict = value as? [String: Any],
+                               let options = stepDict["options"] as? [[String: Any]] {
+                                for opt in options {
+                                    if let name = opt["name"] as? String {
+                                        flowSelections.append([
+                                            "name": name
+                                        ])
+                                    }
+                                }
+                            }
+                        }
+                    } else if let arrayJson = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                        // Legacy array format fallback
+                        for entry in arrayJson {
+                            if let optionName = entry["optionName"] as? String {
+                                flowSelections.append([
+                                    "name": optionName
+                                ])
+                            }
                         }
                     }
                     if !flowSelections.isEmpty {

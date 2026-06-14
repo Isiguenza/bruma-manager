@@ -196,21 +196,22 @@ class MenuViewModel: ObservableObject {
         guard let product = selectedProduct else { return }
         
         var extraPrice: Double = 0
-        var modifiers: [[String: Any]] = []
+        var customModsDict: [String: Any] = [:]
         
-        for (stepId, options) in stepSelections {
-            for opt in options {
-                extraPrice += opt.numericPrice
-                modifiers.append([
-                    "stepId": stepId,
-                    "optionId": opt.id,
-                    "optionName": opt.name,
-                    "price": opt.price,
-                ])
+        if let flow = categoryFlow {
+            for step in flow.steps {
+                if let options = stepSelections[step.id], !options.isEmpty {
+                    extraPrice += options.reduce(0.0) { $0 + $1.numericPrice }
+                    customModsDict[step.id] = [
+                        "stepName": step.stepName,
+                        "stepType": step.stepType,
+                        "options": options.map { ["id": $0.id, "name": $0.name, "price": $0.price] }
+                    ]
+                }
             }
         }
         
-        let customModifiersJSON = (try? JSONSerialization.data(withJSONObject: modifiers))
+        let customModifiersJSON = (try? JSONSerialization.data(withJSONObject: customModsDict))
             .flatMap { String(data: $0, encoding: .utf8) }
         
         let item = CartItem(

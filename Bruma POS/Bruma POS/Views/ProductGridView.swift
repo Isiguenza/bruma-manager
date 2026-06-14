@@ -152,60 +152,151 @@ struct ProductGridView: View {
                 // Step-specific options
                 switch step.stepType {
                 case "frosting":
-                    ForEach(vm.frostings) { frosting in
-                        Button {
-                            vm.selectedFrosting = frosting
-                            vm.handleStepSelection(frosting)
-                        } label: {
-                            optionCard(name: frosting.name, price: nil, selected: vm.selectedFrosting?.id == frosting.id)
+                    if let options = step.options, !options.isEmpty {
+                        ForEach(options) { option in
+                            let isSelected = (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
+                            Button {
+                                vm.handleStepSelection(option)
+                            } label: {
+                                optionCard(name: option.name, price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil, selected: isSelected)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                    } else {
+                        ForEach(vm.frostings) { frosting in
+                            Button {
+                                vm.selectedFrosting = frosting
+                                vm.handleStepSelection(frosting)
+                            } label: {
+                                optionCard(name: frosting.name, price: nil, selected: vm.selectedFrosting?.id == frosting.id)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 case "topping":
-                    ForEach(vm.toppings) { topping in
-                        Button {
-                            vm.selectedTopping = topping
-                            vm.handleStepSelection(topping)
-                        } label: {
-                            optionCard(name: topping.name, price: nil, selected: vm.selectedTopping?.id == topping.id)
+                    if let options = step.options, !options.isEmpty {
+                        ForEach(options) { option in
+                            let isSelected = (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
+                            Button {
+                                vm.handleStepSelection(option)
+                            } label: {
+                                optionCard(name: option.name, price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil, selected: isSelected)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                    } else {
+                        ForEach(vm.toppings) { topping in
+                            Button {
+                                vm.selectedTopping = topping
+                                vm.handleStepSelection(topping)
+                            } label: {
+                                optionCard(name: topping.name, price: nil, selected: vm.selectedTopping?.id == topping.id)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 case "extra":
-                    ForEach(vm.extras) { extra in
-                        let isSelected = vm.selectedExtras.contains(where: { $0.id == extra.id })
-                        Button {
-                            if isSelected {
-                                vm.selectedExtras.removeAll { $0.id == extra.id }
-                            } else {
-                                vm.selectedExtras.append(extra)
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                vm.handleStepSelection(vm.selectedExtras)
-                            }
-                        } label: {
-                            optionCard(
-                                name: extra.name,
-                                price: extra.numericPrice > 0 ? vm.formatCurrency(extra.numericPrice) : nil,
-                                selected: isSelected
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                case "custom", "category", "products":
-                    if let options = step.options {
+                    if let options = step.options, !options.isEmpty {
+                        let selectedArray = (vm.stepSelections[step.id] as? [ModifierOption]) ?? []
+                        let isMulti = step.allowMultiple
                         ForEach(options) { option in
+                            let isSelected = isMulti
+                                ? selectedArray.contains(where: { $0.id == option.id })
+                                : (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
                             Button {
                                 vm.handleStepSelection(option)
                             } label: {
                                 optionCard(
                                     name: option.name,
                                     price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil,
-                                    selected: false
+                                    selected: isSelected
                                 )
                             }
                             .buttonStyle(.plain)
                         }
+                        if isMulti {
+                            Button {
+                                vm.advanceToNextStep()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Text("Siguiente")
+                                        .font(.subheadline.weight(.semibold))
+                                    Image(systemName: "chevron.right")
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .background(Color.blue.opacity(0.15))
+                                .cornerRadius(14)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(Color.blue.opacity(0.4), lineWidth: 1.5)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    } else {
+                        ForEach(vm.extras) { extra in
+                            let isSelected = vm.selectedExtras.contains(where: { $0.id == extra.id })
+                            Button {
+                                if isSelected {
+                                    vm.selectedExtras.removeAll { $0.id == extra.id }
+                                } else {
+                                    vm.selectedExtras.append(extra)
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    vm.handleStepSelection(vm.selectedExtras)
+                                }
+                            } label: {
+                                optionCard(
+                                    name: extra.name,
+                                    price: extra.numericPrice > 0 ? vm.formatCurrency(extra.numericPrice) : nil,
+                                    selected: isSelected
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                case "custom", "category", "products":
+                    let isMulti = step.allowMultiple
+                    let selectedArray = (vm.stepSelections[step.id] as? [ModifierOption]) ?? []
+                    if let options = step.options {
+                        ForEach(options) { option in
+                            let isSelected = isMulti
+                                ? selectedArray.contains(where: { $0.id == option.id })
+                                : (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
+                            Button {
+                                vm.handleStepSelection(option)
+                            } label: {
+                                optionCard(
+                                    name: option.name,
+                                    price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil,
+                                    selected: isSelected
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    if isMulti {
+                        Button {
+                            vm.advanceToNextStep()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text("Siguiente")
+                                    .font(.subheadline.weight(.semibold))
+                                Image(systemName: "chevron.right")
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(Color.blue.opacity(0.15))
+                            .cornerRadius(14)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.blue.opacity(0.4), lineWidth: 1.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
                 default:
                     EmptyView()
