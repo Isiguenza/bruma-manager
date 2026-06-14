@@ -43,6 +43,14 @@ struct CartView: View {
         } message: {
             Text("Hay \(vm.cart.count) items en el carrito que se perderán. ¿Deseas liberar la mesa?")
         }
+        .alert("Pausar Orden", isPresented: $vm.showingHoldConfirmation) {
+            Button("Cancelar", role: .cancel) { }
+            Button("Pausar", role: .destructive) {
+                vm.executeHold()
+            }
+        } message: {
+            Text("Esto pausará la orden en cocina. ¿Deseas continuar?")
+        }
     }
     
     private var headerButtons: some View {
@@ -75,11 +83,23 @@ struct CartView: View {
                             Button { vm.handleChangeTable() } label: {
                                 Label("Cambiar Mesa", systemImage: "arrow.left.arrow.right")
                             }
+                            
                             Button {
                                 vm.showAdminMenu = true
                             } label: {
                                 Label("Menú Admin", systemImage: "gearshape.fill")
                             }
+                            Divider()
+                            
+                            Button { vm.toggleRush() } label: {
+                                Label(vm.isCurrentOrderRush ? "Quitar Rush" : "Rush Orden", systemImage: "flame.fill")
+                            }
+                            .tint(.orange)
+                            
+                            Button { vm.toggleHold() } label: {
+                                Label(vm.isCurrentOrderOnHold ? "Reanudar Orden" : "Pausar Orden", systemImage: vm.isCurrentOrderOnHold ? "play.fill" : "hand.raised.fill")
+                            }
+                            .tint(.red)
                         } label: {
                             tableInfoPill
                         }
@@ -123,6 +143,12 @@ struct CartView: View {
                         }
                         Button { vm.handleChangeTable() } label: {
                             Label("Cambiar Mesa", systemImage: "arrow.left.arrow.right")
+                        }
+                        Button { vm.toggleRush() } label: {
+                            Label(vm.isCurrentOrderRush ? "Quitar Rush" : "Rush Orden", systemImage: "flame.fill")
+                        }
+                        Button { vm.toggleHold() } label: {
+                            Label(vm.isCurrentOrderOnHold ? "Reanudar Orden" : "Pausar Orden", systemImage: "pause.fill")
                         }
                         Button {
                             vm.showAdminMenu = true

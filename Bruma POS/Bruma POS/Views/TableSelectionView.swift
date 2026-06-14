@@ -59,9 +59,42 @@ struct TableSelectionView: View {
                                     GridItem(.flexible(), spacing: 10)
                                 ], spacing: 10) {
                                     ForEach(vm.filteredTables) { table in
-                                        TableCardView(table: table, hasReadyItems: vm.tablesWithReadyItems.contains(table.id), currentTime: currentTime) {
-                                            vm.handleSelectTable(table)
-                                        }
+                                        TableCardView(
+                                            table: table,
+                                            hasReadyItems: vm.tablesWithReadyItems.contains(table.id),
+                                            currentTime: currentTime,
+                                            action: { vm.handleSelectTable(table) },
+                                            onRush: {
+                                                Task {
+                                                    guard let orderId = table.activeOrder?.id else { return }
+                                                    do {
+                                                        let order = try await APIService.shared.fetchOrder(orderId: orderId)
+                                                        if order.priority == 1 {
+                                                            try await APIService.shared.unrushOrder(orderId: orderId)
+                                                        } else {
+                                                            try await APIService.shared.rushOrder(orderId: orderId)
+                                                        }
+                                                    } catch {
+                                                        print("❌ Error toggling rush: \(error)")
+                                                    }
+                                                }
+                                            },
+                                            onHold: {
+                                                Task {
+                                                    guard let orderId = table.activeOrder?.id else { return }
+                                                    do {
+                                                        let order = try await APIService.shared.fetchOrder(orderId: orderId)
+                                                        if order.onHold == true {
+                                                            try await APIService.shared.unholdOrder(orderId: orderId)
+                                                        } else {
+                                                            try await APIService.shared.holdOrder(orderId: orderId)
+                                                        }
+                                                    } catch {
+                                                        print("❌ Error toggling hold: \(error)")
+                                                    }
+                                                }
+                                            }
+                                        )
                                     }
                                 }
                                 .padding(.horizontal, 16)
@@ -363,15 +396,75 @@ struct TableSelectionView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(vm.deliveryOrders) { order in
-                        DeliveryCompactCard(order: order, source: "Para Llevar") {
-                            vm.handleSelectDeliveryOrder(order)
-                        }
+                        DeliveryCompactCard(
+                            order: order,
+                            source: "Para Llevar",
+                            action: { vm.handleSelectDeliveryOrder(order) },
+                            onRush: {
+                                Task {
+                                    do {
+                                        let fetched = try await APIService.shared.fetchOrder(orderId: order.id)
+                                        if fetched.priority == 1 {
+                                            try await APIService.shared.unrushOrder(orderId: order.id)
+                                        } else {
+                                            try await APIService.shared.rushOrder(orderId: order.id)
+                                        }
+                                    } catch {
+                                        print("❌ Error toggling rush: \(error)")
+                                    }
+                                }
+                            },
+                            onHold: {
+                                Task {
+                                    do {
+                                        let fetched = try await APIService.shared.fetchOrder(orderId: order.id)
+                                        if fetched.onHold == true {
+                                            try await APIService.shared.unholdOrder(orderId: order.id)
+                                        } else {
+                                            try await APIService.shared.holdOrder(orderId: order.id)
+                                        }
+                                    } catch {
+                                        print("❌ Error toggling hold: \(error)")
+                                    }
+                                }
+                            }
+                        )
                     }
                     
                     ForEach(vm.platformDeliveryOrders) { order in
-                        DeliveryCompactCard(order: order, source: order.detectedPlatform ?? "Delivery") {
-                            vm.handleSelectDeliveryOrder(order)
-                        }
+                        DeliveryCompactCard(
+                            order: order,
+                            source: order.detectedPlatform ?? "Delivery",
+                            action: { vm.handleSelectDeliveryOrder(order) },
+                            onRush: {
+                                Task {
+                                    do {
+                                        let fetched = try await APIService.shared.fetchOrder(orderId: order.id)
+                                        if fetched.priority == 1 {
+                                            try await APIService.shared.unrushOrder(orderId: order.id)
+                                        } else {
+                                            try await APIService.shared.rushOrder(orderId: order.id)
+                                        }
+                                    } catch {
+                                        print("❌ Error toggling rush: \(error)")
+                                    }
+                                }
+                            },
+                            onHold: {
+                                Task {
+                                    do {
+                                        let fetched = try await APIService.shared.fetchOrder(orderId: order.id)
+                                        if fetched.onHold == true {
+                                            try await APIService.shared.unholdOrder(orderId: order.id)
+                                        } else {
+                                            try await APIService.shared.holdOrder(orderId: order.id)
+                                        }
+                                    } catch {
+                                        print("❌ Error toggling hold: \(error)")
+                                    }
+                                }
+                            }
+                        )
                     }
                 }
                 .padding(.horizontal, 16)
@@ -388,6 +481,8 @@ struct DeliveryCompactCard: View {
     let order: Order
     let source: String
     let action: () -> Void
+    var onRush: (() -> Void)?
+    var onHold: (() -> Void)?
     
     private var statusColor: Color {
         switch order.status {
@@ -503,6 +598,18 @@ struct DeliveryCompactCard: View {
             )
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                onRush?()
+            } label: {
+                Label(order.priority == 1 ? "Quitar Rush" : "Rush Orden", systemImage: "flame.fill")
+            }
+            Button {
+                onHold?()
+            } label: {
+                Label(order.onHold == true ? "Reanudar Orden" : "Pausar Orden", systemImage: "pause.fill")
+            }
+        }
     }
 }
 
@@ -513,6 +620,8 @@ struct TableCardView: View {
     let hasReadyItems: Bool
     let currentTime: Date
     let action: () -> Void
+    var onRush: (() -> Void)?
+    var onHold: (() -> Void)?
     
     var body: some View {
         Button(action: action) {
@@ -642,6 +751,20 @@ struct TableCardView: View {
             )
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if table.isOccupied, let activeOrder = table.activeOrder {
+                Button {
+                    onRush?()
+                } label: {
+                    Label(activeOrder.priority == 1 ? "Quitar Rush" : "Rush Orden", systemImage: "flame.fill")
+                }
+                Button {
+                    onHold?()
+                } label: {
+                    Label(activeOrder.onHold == true ? "Reanudar Orden" : "Pausar Orden", systemImage: "pause.fill")
+                }
+            }
+        }
     }
     
     private func tableStatusColor(_ table: Table) -> Color {

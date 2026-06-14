@@ -423,6 +423,42 @@ class APIService {
         }
     }
     
+    func rushOrder(orderId: String) async throws {
+        guard isConnected else { return }
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/rush")!
+        let (_, http) = try await requestRaw(url, method: "PATCH")
+        if !(200...299).contains(http.statusCode) {
+            throw APIError.serverError
+        }
+    }
+    
+    func unrushOrder(orderId: String) async throws {
+        guard isConnected else { return }
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/unrush")!
+        let (_, http) = try await requestRaw(url, method: "PATCH")
+        if !(200...299).contains(http.statusCode) {
+            throw APIError.serverError
+        }
+    }
+    
+    func holdOrder(orderId: String) async throws {
+        guard isConnected else { return }
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/hold")!
+        let (_, http) = try await requestRaw(url, method: "PATCH")
+        if !(200...299).contains(http.statusCode) {
+            throw APIError.serverError
+        }
+    }
+    
+    func unholdOrder(orderId: String) async throws {
+        guard isConnected else { return }
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/unhold")!
+        let (_, http) = try await requestRaw(url, method: "PATCH")
+        if !(200...299).contains(http.statusCode) {
+            throw APIError.serverError
+        }
+    }
+    
     // MARK: - Tables with Ready Items
     
     func fetchTablesWithReadyItems() async throws -> Set<String> {

@@ -508,10 +508,6 @@ router.post("/orders/:id/pay", async (req, res) => {
       updates.loyaltyCardId = loyaltyCardId;
     }
 
-    if (employeeId) {
-      updates.userId = employeeId;
-    }
-
     console.log(`[pay] Updating order ${id} with:`, JSON.stringify(updates));
     const [updatedOrder] = await db
       .update(schema.orders)
@@ -655,10 +651,6 @@ router.post("/orders/:id/pay-split", async (req, res) => {
 
     if (loyaltyCardId) {
       updates.loyaltyCardId = loyaltyCardId;
-    }
-
-    if (employeeId) {
-      updates.userId = employeeId;
     }
 
     console.log(`[pay-split] Updating order with:`, updates);

@@ -98,19 +98,27 @@ struct BatchCardView: View {
         HStack(alignment: .top, spacing: 12) {
             // Left: icon + order # + meta
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "fork.knife")
+                Image(systemName: batch.table != nil ? "fork.knife" : "takeoutbag.and.cup.and.straw.fill")
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundColor(.blue)
+                    .foregroundColor(batch.table != nil ? .blue : .orange)
                     .padding(.top, 3)
+
+
+               
                 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("# \(batch.orderNumber)")
-                        .font(.system(size: 26, weight: .black))
+
+                     Text(customerDisplay)      
+                        .font(.system(size: 30, weight: .black))
                         .foregroundColor(Color(UIColor.label))
-                    
-                    Text(customerDisplay)
+
+
+                    Text(orderNumberDisplay)
                         .font(.system(size: 15))
-                        .foregroundColor(Color(UIColor.secondaryLabel))
+                       .foregroundColor(Color(UIColor.secondaryLabel))
+                    
+                   
+                        
                     
                     Text(timeDisplay)
                         .font(.system(size: 15))
@@ -131,11 +139,9 @@ struct BatchCardView: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white)
                 Text(elapsedLabel)
-                    .font(.system(size: 12))
+                    .font(.system(size: 26, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
-                Image(systemName: "hourglass")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
+                
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -206,7 +212,7 @@ struct BatchCardView: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 // Rush button
-                Button(action: onRush) {
+               /* Button(action: onRush) {
                     HStack(spacing: 6) {
                         Text(batch.isRush ? "Quitar Rush" : "Rush Orden")
                             .font(.system(size: 15, weight: .semibold))
@@ -223,7 +229,7 @@ struct BatchCardView: View {
                                   : Color(red: 1.0, green: 0.62, blue: 0.0))
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain)*/
                 
                 // Hold button
                 Button(action: onHold) {
@@ -252,12 +258,12 @@ struct BatchCardView: View {
             Button(action: onMarkAsReady) {
                 Text("Completar Orden")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.blue)
+                    .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(
                         Capsule()
-                            .fill(Color.blue.opacity(0.10))
+                            .fill(Color.blue)
                     )
             }
             .buttonStyle(.plain)
@@ -274,10 +280,15 @@ struct BatchCardView: View {
         if let table = batch.table {
             return "Mesa \(table.number)"
         }
-        if let name = batch.customerName, !name.isEmpty {
-            return "Para llevar - \(name)"
+        return "Llevar"
+    }
+    
+    private var orderNumberDisplay: String {
+        var text = "# \(batch.orderNumber)"
+        if batch.table == nil, let name = batch.customerName, !name.isEmpty {
+            text += " - \(name)"
         }
-        return "Para llevar"
+        return text
     }
     
     private var timeDisplay: String {
@@ -406,16 +417,16 @@ struct BatchCardView: View {
                 
                 HStack(spacing: 6) {
                     Text("\(item.quantity) x")
-                        .font(.system(size: 15, weight: .regular))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundColor(Color(UIColor.secondaryLabel))
                     Text(item.productName)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundColor(Color(UIColor.label))
                         .lineLimit(2)
                    
                 }
                 
-                Spacer()
+               /* Spacer()
                 
                 if item.deliveredToTable == true {
                     Image(systemName: "checkmark.circle.fill")
@@ -425,7 +436,7 @@ struct BatchCardView: View {
                     Image(systemName: "clock.fill")
                         .font(.system(size: 20))
                         .foregroundColor(.orange)
-                }
+                }*/
             }
             
             // Modifier / note lines

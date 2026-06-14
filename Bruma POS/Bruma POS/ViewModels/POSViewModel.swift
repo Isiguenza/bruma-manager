@@ -157,6 +157,28 @@ class POSViewModel: ObservableObject {
     @Published var isHomeDelivery = false
     let homeDeliveryFee: Double = 25.0
     
+    var isCurrentOrderRush: Bool {
+        if let table = selectedTable, let priority = table.activeOrder?.priority {
+            return priority == 1
+        }
+        if let orderId = currentOrderId,
+           let order = deliveryOrders.first(where: { $0.id == orderId }) {
+            return order.priority == 1
+        }
+        return false
+    }
+    
+    var isCurrentOrderOnHold: Bool {
+        if let table = selectedTable, let onHold = table.activeOrder?.onHold {
+            return onHold == true
+        }
+        if let orderId = currentOrderId,
+           let order = deliveryOrders.first(where: { $0.id == orderId }) {
+            return order.onHold == true
+        }
+        return false
+    }
+    
     // MARK: - Payment
     @Published var showingPayment = false
     @Published var paymentStep = "payment" // summary, payment, confirmation, done, split-assign, split-overview, split-pay-person
@@ -2925,6 +2947,56 @@ class POSViewModel: ObservableObject {
     
     func handleChangeTable() {
         showTransferTableDialog = true
+    }
+    
+    func toggleRush() {
+        guard let orderId = currentOrderId else { return }
+        Task {
+            do {
+                let order = try await APIService.shared.fetchOrder(orderId: orderId)
+                let isRush = order.priority == 1
+                if isRush {
+                    try await APIService.shared.unrushOrder(orderId: orderId)
+                    showToast("Rush desactivado")
+                } else {
+                    try await APIService.shared.rushOrder(orderId: orderId)
+                    showToast("🔥 Rush activado")
+                }
+            } catch {
+                showToast("Error al cambiar rush", isError: true)
+            }
+        }
+    }
+    
+    @Published var showingHoldConfirmation = false
+    
+    func toggleHold() {
+        guard let orderId = currentOrderId else { return }
+        let isOnHold = isCurrentOrderOnHold
+        if !isOnHold {
+            showingHoldConfirmation = true
+            return
+        }
+        Task {
+            do {
+                try await APIService.shared.unholdOrder(orderId: orderId)
+                showToast("Orden reanudada")
+            } catch {
+                showToast("Error al reanudar orden", isError: true)
+            }
+        }
+    }
+    
+    func executeHold() {
+        guard let orderId = currentOrderId else { return }
+        Task {
+            do {
+                try await APIService.shared.holdOrder(orderId: orderId)
+                showToast("⏸️ Orden pausada en cocina")
+            } catch {
+                showToast("Error al pausar orden", isError: true)
+            }
+        }
     }
     
     func transferToTable(_ targetTable: Table) async {
