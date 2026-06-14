@@ -1442,8 +1442,8 @@ class POSViewModel: ObservableObject {
         guard let flow = categoryFlow, currentStepIndex < flow.steps.count else { return }
         let step = flow.steps[currentStepIndex]
         
-        // Support multi-select for custom/category/products steps
-        if (step.stepType == "custom" || step.stepType == "category" || step.stepType == "products") && step.allowMultiple {
+        // Support multi-select for custom/category/products/extra steps
+        if (step.stepType == "custom" || step.stepType == "category" || step.stepType == "products" || step.stepType == "extra") && step.allowMultiple {
             var current = (stepSelections[step.id] as? [ModifierOption]) ?? []
             if let opt = selection as? ModifierOption {
                 if current.contains(where: { $0.id == opt.id }) {

@@ -118,8 +118,8 @@ export function StepEditPanel({
       }
     }
 
-    // For custom type, use manually created options
-    if (step.stepType === "custom") {
+    // For custom/extra type, use manually created options
+    if (step.stepType === "custom" || step.stepType === "extra" || step.stepType === "frosting" || step.stepType === "topping") {
       updatedOptions = options;
     }
 
@@ -302,8 +302,8 @@ export function StepEditPanel({
           </div>
         )}
 
-        {/* Custom Options (only for custom type) */}
-        {step.stepType === "custom" && (
+        {/* Custom Options for custom/extra/frosting/topping types */}
+        {(step.stepType === "custom" || step.stepType === "extra" || step.stepType === "frosting" || step.stepType === "topping") && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label>Opciones</Label>
