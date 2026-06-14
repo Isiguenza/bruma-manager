@@ -451,9 +451,9 @@ export default function CategoryFlowPage({ params }: { params: Promise<{ id: str
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="frosting">Escarchado (usar existentes)</SelectItem>
-                  <SelectItem value="topping">Topping Seco (usar existentes)</SelectItem>
-                  <SelectItem value="extra">Extras (usar existentes)</SelectItem>
+                  <SelectItem value="frosting">Escarchado</SelectItem>
+                  <SelectItem value="topping">Topping Seco</SelectItem>
+                  <SelectItem value="extra">Extra</SelectItem>
                   <SelectItem value="custom">Personalizado</SelectItem>
                 </SelectContent>
               </Select>
@@ -569,7 +569,7 @@ export default function CategoryFlowPage({ params }: { params: Promise<{ id: str
             </Button>
             <Button
               onClick={handleSaveStep}
-              disabled={!stepForm.stepName || stepForm.options.length === 0}
+              disabled={!stepForm.stepName || (stepForm.stepType === "custom" && stepForm.options.length === 0)}
             >
               {editingStep ? "Actualizar" : "Agregar"}
             </Button>
