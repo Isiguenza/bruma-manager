@@ -4,11 +4,13 @@ struct POSConfig: Codable {
     var deliveryEnabled: Bool
     var takeoutEnabled: Bool
     var disabledTableIds: [String]
+    var customerDisplayEnabled: Bool
     
     static let `default` = POSConfig(
         deliveryEnabled: true,
         takeoutEnabled: true,
-        disabledTableIds: []
+        disabledTableIds: [],
+        customerDisplayEnabled: false
     )
     
     static private let key = "pos_config"

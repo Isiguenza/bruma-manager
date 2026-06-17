@@ -18,6 +18,7 @@ class SocketService: ObservableObject {
     var onOrderHold: (([String: Any]) -> Void)?
     var onCashRegisterOpened: (() -> Void)?
     var onCashRegisterClosed: (() -> Void)?
+    var onCustomerDisplayUpdate: (([String: Any]) -> Void)?
     
     private init() {}
     
@@ -120,6 +121,12 @@ class SocketService: ObservableObject {
             print("💵 Cash register closed")
             self?.onCashRegisterClosed?()
         }
+        
+        socket?.on("customer_display:update") { [weak self] data, ack in
+            guard let dict = data.first as? [String: Any] else { return }
+            print("📺 customer_display:update received")
+            self?.onCustomerDisplayUpdate?(dict)
+        }
     }
     
     private func joinRooms() {
@@ -127,5 +134,14 @@ class SocketService: ObservableObject {
         socket?.emit("join", "room:pos")
         socket?.emit("join", "room:tables")
         print("🏠 Joined rooms: pos, tables")
+    }
+    
+    func joinCustomerDisplayRoom() {
+        socket?.emit("join", "room:customer_display")
+        print("📺 Joined room: customer_display")
+    }
+    
+    func emitCustomerDisplayUpdate(_ payload: [String: Any]) {
+        socket?.emit("customer_display:update", payload)
     }
 }

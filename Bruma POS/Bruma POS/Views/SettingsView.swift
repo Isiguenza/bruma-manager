@@ -102,6 +102,32 @@ struct SettingsView: View {
                     }
                     .padding(.horizontal, 20)
                     
+                    // MARK: - Dispositivos Section
+                    sectionHeader("Dispositivos")
+                    
+                    glassCard {
+                        settingsRow {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Label("Customer Display", systemImage: "tv")
+                                    .foregroundColor(.primary)
+                                Text("Activa este modo en la iPad del cliente")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } trailing: {
+                            Toggle("", isOn: $vm.config.customerDisplayEnabled)
+                                .tint(.blue)
+                                .labelsHidden()
+                                .onChange(of: vm.config.customerDisplayEnabled) { _ in
+                                    vm.config.save()
+                                    if vm.config.customerDisplayEnabled {
+                                        vm.currentScreen = .customerDisplay
+                                    }
+                                }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    
                     // MARK: - Sistema Section
                     sectionHeader("Sistema")
                     

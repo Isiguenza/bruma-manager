@@ -14,6 +14,12 @@ export function initSocket(socketServer: SocketServer) {
       console.log(`📍 ${socket.id} joined room: ${room}`);
     });
     
+    // Relay customer display updates from POS to display iPad
+    socket.on("customer_display:update", (payload: any) => {
+      io?.to("room:customer_display").emit("customer_display:update", payload);
+      console.log(`📺 Relayed customer_display:update (mode: ${payload?.mode})`);
+    });
+    
     socket.on("disconnect", () => {
       console.log(`🔌 Client disconnected: ${socket.id}`);
     });
@@ -45,7 +51,9 @@ export function emitOrderUpdated(order: any) {
 export function emitOrderPaid(order: any) {
   if (!io) return;
   io.to("room:pos").emit("order:paid", order);
-  console.log(`📡 Emitted order:paid`);
+  // Tell customer display to return to idle
+  io.to("room:customer_display").emit("customer_display:update", { mode: "idle" });
+  console.log(`📡 Emitted order:paid + customer_display idle`);
 }
 
 export function emitOrderItemsReady(orderItems: any[]) {

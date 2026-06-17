@@ -29,6 +29,9 @@ struct ContentView: View {
                 
             case .pos:
                 MainPOSView(vm: vm)
+                
+            case .customerDisplay:
+                CustomerDisplayView(posVM: vm)
             }
         }
         .preferredColorScheme(.dark)

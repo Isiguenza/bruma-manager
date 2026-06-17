@@ -10,7 +10,7 @@ class POSViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: - App State
-    enum AppScreen { case dashboard, tableSelection, pos }
+    enum AppScreen { case dashboard, tableSelection, pos, customerDisplay }
     @Published var currentScreen: AppScreen = .dashboard
     @Published var activeView: String = "pos" // "pos" or "reservations"
     @Published var selectedTab: Int = 0 // Tab selection: 0=Mesas, 1=Caja, 2=Reservas, 3=Empleados
@@ -482,6 +482,10 @@ class POSViewModel: ObservableObject {
         setupSocketCallbacks()
         socketService.connect()
         setupSyncEngine()
+        // Restore Customer Display mode if it was active
+        if config.customerDisplayEnabled {
+            currentScreen = .customerDisplay
+        }
     }
     
     private func setupSyncEngine() {
@@ -609,6 +613,7 @@ class POSViewModel: ObservableObject {
         
         socketService.onOrderPaid = { [weak self] orderId in
             Task { @MainActor in
+                self?.emitCustomerDisplayState(mode: "idle", force: true)
                 self?.showToast("Orden cobrada")
                 await self?.refreshOrderFromSocket()
                 await self?.refreshReadyItemsAndDelivery()
@@ -1675,6 +1680,7 @@ class POSViewModel: ObservableObject {
             cart.append(item)
         }
         applyPromotions()
+        emitCustomerDisplayState()
     }
     
     func updateQuantity(at index: Int, delta: Int) {
@@ -1689,6 +1695,7 @@ class POSViewModel: ObservableObject {
         } else {
             cart[index].quantity = newQty
             applyPromotions()
+            emitCustomerDisplayState()
         }
     }
     
@@ -1702,6 +1709,7 @@ class POSViewModel: ObservableObject {
         }
         cart.remove(at: index)
         applyPromotions()
+        emitCustomerDisplayState()
     }
     
     func updateCartQuantity(at index: Int, delta: Int) {
@@ -2104,6 +2112,30 @@ class POSViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Customer Display Emit
+    
+    func emitCustomerDisplayState(mode: String = "active", force: Bool = false) {
+        guard force || selectedTable == nil else { return } // Only for takeout/delivery
+        let items: [[String: Any]] = cart.map { item in
+            [
+                "name": item.productName,
+                "qty": item.quantity,
+                "unitPrice": item.unitPrice,
+                "total": item.total,
+                "modifiers": item.modifierSummary
+            ]
+        }
+        let payload: [String: Any] = [
+            "mode": mode,
+            "customerName": customerName,
+            "orderNumber": currentOrderId.map { String($0.prefix(8)) } ?? "",
+            "items": items,
+            "subtotal": cartTotal,
+            "total": cartTotalWithDiscount
+        ]
+        socketService.emitCustomerDisplayUpdate(payload)
+    }
+    
     private func itemToDict(_ item: CartItem) -> [String: Any] {
         var dict: [String: Any] = [
             "productId": item.productId,
@@ -2212,6 +2244,7 @@ class POSViewModel: ObservableObject {
                         paymentStep = "payment"
                     }
                     showingPayment = true
+                    emitCustomerDisplayState(mode: "payment")
                 }
             } else {
                 if !itemAssignments.isEmpty {
@@ -2220,6 +2253,7 @@ class POSViewModel: ObservableObject {
                     paymentStep = "payment"
                 }
                 showingPayment = true
+                emitCustomerDisplayState(mode: "payment")
             }
             return
         }
@@ -2252,10 +2286,12 @@ class POSViewModel: ObservableObject {
                 
                 paymentStep = "payment"
                 showingPayment = true
+                emitCustomerDisplayState(mode: "payment")
             } catch let error as APIError where error == .offlineQueued {
                 // Offline: order queued for sync
                 paymentStep = "payment"
                 showingPayment = true
+                emitCustomerDisplayState(mode: "payment")
                 showToast("📴 Orden guardada offline — se sincronizará automáticamente")
             } catch {
                 showToast("Error creando orden", isError: true)
@@ -2980,6 +3016,7 @@ class POSViewModel: ObservableObject {
     // MARK: - Confirm / Reset Order
     
     func handleConfirmOrder() {
+        emitCustomerDisplayState(mode: "idle", force: true)
         showToast("Orden completada")
         
         cart = []
