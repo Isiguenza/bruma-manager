@@ -30,17 +30,13 @@ struct OrderTakingView: View {
                 bottomBar
             }
         }
-        .overlay(
-            Group {
-                if cartVM.showKitchenConfirmation {
-                    KitchenSuccessView {
-                        cartVM.showKitchenConfirmation = false
-                        dismiss()
-                        onDismiss()
-                    }
-                }
+        .fullScreenCover(isPresented: $cartVM.showKitchenConfirmation) {
+            KitchenSuccessView {
+                cartVM.showKitchenConfirmation = false
+                dismiss()
+                onDismiss()
             }
-        )
+        }
         .preferredColorScheme(.dark)
         .onAppear {
             cartVM.setupForTable(table, customerName: customerName, guestCount: guestCount)
@@ -100,8 +96,12 @@ struct OrderTakingView: View {
             Button(action: handleBack) {
                 Image(systemName: "xmark")
                     .font(.body.weight(.medium))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
             }
+            .buttonStyle(.glass)
+            .clipShape(Capsule())
             
             VStack(alignment: .leading, spacing: 1) {
                 Text(titleText)
@@ -123,12 +123,14 @@ struct OrderTakingView: View {
                             .font(.caption.weight(.bold))
                     }
                 }
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .background(cartVM.hasPendingItems ? Color.orange : Color.white.opacity(0.1))
-                .cornerRadius(8)
             }
+            .buttonStyle(.glassProminent)
+            .tint(cartVM.hasPendingItems ? .orange : .clear)
+            .disabled(!cartVM.hasPendingItems)
+           
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -224,8 +226,7 @@ struct OrderTakingView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(Color.white.opacity(0.08))
-            .cornerRadius(12)
+            .glassEffect(.regular.interactive())
             .padding(.horizontal, 16)
             .padding(.top, 8)
             
@@ -316,16 +317,17 @@ struct OrderTakingView: View {
                                 ProgressView().tint(.white)
                             } else {
                                 Image(systemName: "paperplane.fill")
+                                    .font(.callout)
                                 Text("Enviar a Cocina")
                                     .font(.subheadline.weight(.semibold))
                             }
                         }
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
-                        .background(Color.orange)
-                        .cornerRadius(12)
                     }
+                    .buttonStyle(.glassProminent)
+                    .tint(.orange)
                     .disabled(cartVM.sending)
                 }
                 .padding(.horizontal, 16)

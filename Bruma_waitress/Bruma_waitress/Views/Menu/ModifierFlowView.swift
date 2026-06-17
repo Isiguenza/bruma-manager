@@ -17,8 +17,14 @@ struct ModifierFlowView: View {
                         dismiss()
                     }) {
                         Image(systemName: "xmark")
-                            .foregroundColor(.gray)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
                     }
+                    .buttonStyle(.glass)
+                    .clipShape(Capsule())
+                    
                     Spacer()
                     Text(menuVM.selectedProduct?.name ?? "")
                         .font(.headline)
@@ -60,15 +66,15 @@ struct ModifierFlowView: View {
                                 Button(action: { menuVM.skipModifierStep() }) {
                                     HStack {
                                         Text("Sin \(step.stepName)")
-                                            .font(.body)
-                                            .foregroundColor(.gray)
+                                            .font(.body.weight(.medium))
+                                            .foregroundStyle(.white)
                                         Spacer()
                                     }
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 14)
-                                    .background(Color.white.opacity(0.04))
-                                    .cornerRadius(12)
                                 }
+                                .buttonStyle(.glass)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             
                             if let options = step.options?.filter({ $0.active }).sorted(by: { $0.sortOrder < $1.sortOrder }) {
@@ -76,23 +82,28 @@ struct ModifierFlowView: View {
                                     let isSelected = menuVM.stepSelections[step.id]?.contains(where: { $0.id == option.id }) ?? false
                                     
                                     Button(action: { menuVM.selectModifierOption(option) }) {
-                                        HStack {
-                                            Text(option.name)
-                                                .font(.body.weight(.medium))
-                                                .foregroundColor(.white)
-                                            Spacer()
-                                            if option.numericPrice > 0 {
-                                                Text("+$\(option.numericPrice, specifier: "%.0f")")
-                                                    .font(.callout)
-                                                    .foregroundColor(.blue)
+                                        ZStack(alignment: .topTrailing) {
+                                            HStack {
+                                                Text(option.name)
+                                                    .font(.body.weight(.medium))
+                                                    .foregroundColor(.white)
+                                                Spacer()
+                                                if option.numericPrice > 0 {
+                                                    Text("+$\(option.numericPrice, specifier: "%.0f")")
+                                                        .font(.callout)
+                                                        .foregroundColor(.blue)
+                                                }
                                             }
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 14)
+                                            
                                             if isSelected {
                                                 Image(systemName: "checkmark.circle.fill")
-                                                    .foregroundColor(.blue)
+                                                    .font(.title3)
+                                                    .foregroundStyle(.blue)
+                                                    .padding(8)
                                             }
                                         }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 14)
                                         .background(isSelected ? Color.blue.opacity(0.15) : Color.white.opacity(0.06))
                                         .cornerRadius(12)
                                         .overlay(
@@ -100,6 +111,7 @@ struct ModifierFlowView: View {
                                                 .stroke(isSelected ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 1)
                                         )
                                     }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -107,26 +119,37 @@ struct ModifierFlowView: View {
                     }
                     
                     // Next / Finish button
+                    let hasSelection = !(menuVM.stepSelections[step.id]?.isEmpty ?? true)
+                    let canAdvance = !step.isRequired || hasSelection
+                    let isLastStep = menuVM.currentStepIndex + 1 >= (menuVM.categoryFlow?.steps.count ?? 0)
+                    
                     Button(action: {
                         menuVM.advanceModifierStep(
                             seat: cartVM.activeSeat,
                             course: cartVM.activeCourse
                         )
                     }) {
-                        let hasSelection = !(menuVM.stepSelections[step.id]?.isEmpty ?? true)
-                        let canAdvance = !step.isRequired || hasSelection
-                        
-                        Text(menuVM.currentStepIndex + 1 < (menuVM.categoryFlow?.steps.count ?? 0) ? "Siguiente" : "Agregar")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(canAdvance ? Color.blue : Color.blue.opacity(0.3))
-                            .cornerRadius(12)
+                        HStack(spacing: 8) {
+                            Image(systemName: hasSelection ? "checkmark.circle.fill" : "arrow.right.circle.fill")
+                                .font(.callout)
+                                .contentTransition(.symbolEffect(.replace))
+                                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
+                            
+                            Text(isLastStep ? (hasSelection ? "Agregar" : "Agregar sin \(step.stepName.lowercased())") : (hasSelection ? "Continuar" : "Continuar sin \(step.stepName.lowercased())"))
+                                .font(.callout.weight(.semibold))
+                                .contentTransition(.numericText())
+                                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
+                    .buttonStyle(.glassProminent)
+                    .tint(canAdvance ? Color.blue : Color.blue.opacity(0.3))
                     .disabled(step.isRequired && (menuVM.stepSelections[step.id]?.isEmpty ?? true))
                     .padding(.horizontal, 20)
                     .padding(.bottom, 16)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
                 }
             }
         }

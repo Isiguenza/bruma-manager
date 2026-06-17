@@ -121,16 +121,17 @@ struct CartView: View {
                                         ProgressView().tint(.white)
                                     } else {
                                         Image(systemName: "flame.fill")
+                                            .font(.callout)
                                         Text("Enviar a Cocina")
                                             .font(.subheadline.weight(.semibold))
                                     }
                                 }
-                                .foregroundColor(.white)
+                                .foregroundStyle(.white)
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 12)
-                                .background(Color.orange)
-                                .cornerRadius(12)
                             }
+                            .buttonStyle(.glassProminent)
+                            .tint(.orange)
                             .disabled(cartVM.sending)
                         }
                         .padding(.horizontal, 20)

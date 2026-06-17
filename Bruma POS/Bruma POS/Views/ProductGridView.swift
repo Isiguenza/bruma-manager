@@ -48,13 +48,12 @@ struct ProductGridView: View {
                             Text("Atrás")
                         }
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(10)
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
                     }
+                    .buttonStyle(.glass)
+                    .clipShape(Capsule())
                 }
             }
             .padding(16)
@@ -68,7 +67,11 @@ struct ProductGridView: View {
                 if vm.currentStepIndex < flow.steps.count {
                     modifierStepView(step: flow.steps[vm.currentStepIndex])
                 } else if vm.currentStepIndex == flow.steps.count {
-                    notesStepView
+                    // Notes dialog is shown automatically by the ViewModel
+                    Color.clear
+                        .onAppear {
+                            vm.prepareFlowItemAndShowNotes()
+                        }
                 }
             }
         }
@@ -118,217 +121,229 @@ struct ProductGridView: View {
     // MARK: - Modifier Step
     
     private func modifierStepView(step: ModifierStep) -> some View {
-        ScrollView(showsIndicators: false) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
-                // None option
-                if step.includeNoneOption {
-                    Button {
-                        if step.stepType == "extra" {
-                            vm.handleStepSelection([] as [Extra])
-                        } else {
-                            vm.handleStepSelection(nil)
-                        }
-                    } label: {
-                        VStack(spacing: 8) {
-                            Image(systemName: "xmark.circle")
-                                .font(.title2)
-                                .foregroundColor(.gray)
-                            Text("Sin \(step.stepName.lowercased())")
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 110)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color.white.opacity(0.05))
-                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-                
-                // Step-specific options
-                switch step.stepType {
-                case "frosting":
-                    if let options = step.options, !options.isEmpty {
-                        ForEach(options) { option in
-                            let isSelected = (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
-                            Button {
-                                vm.handleStepSelection(option)
-                            } label: {
-                                optionCard(name: option.name, price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil, selected: isSelected)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    } else {
-                        ForEach(vm.frostings) { frosting in
-                            Button {
-                                vm.selectedFrosting = frosting
-                                vm.handleStepSelection(frosting)
-                            } label: {
-                                optionCard(name: frosting.name, price: nil, selected: vm.selectedFrosting?.id == frosting.id)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                case "topping":
-                    if let options = step.options, !options.isEmpty {
-                        ForEach(options) { option in
-                            let isSelected = (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
-                            Button {
-                                vm.handleStepSelection(option)
-                            } label: {
-                                optionCard(name: option.name, price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil, selected: isSelected)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    } else {
-                        ForEach(vm.toppings) { topping in
-                            Button {
-                                vm.selectedTopping = topping
-                                vm.handleStepSelection(topping)
-                            } label: {
-                                optionCard(name: topping.name, price: nil, selected: vm.selectedTopping?.id == topping.id)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                case "extra":
-                    if let options = step.options, !options.isEmpty {
-                        let selectedArray = (vm.stepSelections[step.id] as? [ModifierOption]) ?? []
-                        let isMulti = step.allowMultiple
-                        ForEach(options) { option in
-                            let isSelected = isMulti
-                                ? selectedArray.contains(where: { $0.id == option.id })
-                                : (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
-                            Button {
-                                vm.handleStepSelection(option)
-                            } label: {
-                                optionCard(
-                                    name: option.name,
-                                    price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil,
-                                    selected: isSelected
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        if isMulti {
-                            Button {
-                                vm.advanceToNextStep()
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Text("Siguiente")
-                                        .font(.subheadline.weight(.semibold))
-                                    Image(systemName: "chevron.right")
-                                }
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 56)
-                                .background(Color.blue.opacity(0.15))
-                                .cornerRadius(14)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .stroke(Color.blue.opacity(0.4), lineWidth: 1.5)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    } else {
-                        ForEach(vm.extras) { extra in
-                            let isSelected = vm.selectedExtras.contains(where: { $0.id == extra.id })
-                            Button {
-                                if isSelected {
-                                    vm.selectedExtras.removeAll { $0.id == extra.id }
-                                } else {
-                                    vm.selectedExtras.append(extra)
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                    vm.handleStepSelection(vm.selectedExtras)
-                                }
-                            } label: {
-                                optionCard(
-                                    name: extra.name,
-                                    price: extra.numericPrice > 0 ? vm.formatCurrency(extra.numericPrice) : nil,
-                                    selected: isSelected
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                case "custom", "category", "products":
-                    let isMulti = step.allowMultiple
-                    let selectedArray = (vm.stepSelections[step.id] as? [ModifierOption]) ?? []
-                    if let options = step.options {
-                        ForEach(options) { option in
-                            let isSelected = isMulti
-                                ? selectedArray.contains(where: { $0.id == option.id })
-                                : (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
-                            Button {
-                                vm.handleStepSelection(option)
-                            } label: {
-                                optionCard(
-                                    name: option.name,
-                                    price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil,
-                                    selected: isSelected
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    if isMulti {
+        let showNextButton: Bool = {
+            guard step.allowMultiple else { return false }
+            switch step.stepType {
+            case "extra":
+                return step.options != nil && !step.options!.isEmpty
+            case "custom", "category", "products":
+                return true
+            default:
+                return false
+            }
+        }()
+        
+        return VStack(spacing: 0) {
+            ScrollView(showsIndicators: false) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
+                    // None option
+                    if step.includeNoneOption {
                         Button {
-                            vm.advanceToNextStep()
-                        } label: {
-                            HStack(spacing: 8) {
-                                Text("Siguiente")
-                                    .font(.subheadline.weight(.semibold))
-                                Image(systemName: "chevron.right")
+                            if step.stepType == "extra" {
+                                vm.handleStepSelection([] as [Extra])
+                            } else {
+                                vm.handleStepSelection(nil)
                             }
-                            .foregroundColor(.white)
+                        } label: {
+                            VStack(spacing: 8) {
+                                Image(systemName: "xmark.circle")
+                                    .font(.title2)
+                                    .foregroundColor(.gray)
+                                Text("Sin \(step.stepName.lowercased())")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundColor(.white)
+                                    .multilineTextAlignment(.center)
+                            }
                             .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(Color.blue.opacity(0.15))
-                            .cornerRadius(14)
-                            .overlay(
+                            .frame(height: 110)
+                            .background(
                                 RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color.blue.opacity(0.4), lineWidth: 1.5)
+                                    .fill(Color.white.opacity(0.05))
+                                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
                             )
                         }
                         .buttonStyle(.plain)
                     }
-                default:
-                    EmptyView()
+                    
+                    // Step-specific options
+                    switch step.stepType {
+                    case "frosting":
+                        if let options = step.options, !options.isEmpty {
+                            ForEach(options) { option in
+                                let isSelected = (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
+                                Button {
+                                    vm.handleStepSelection(option)
+                                } label: {
+                                    optionCard(name: option.name, price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil, selected: isSelected)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        } else {
+                            ForEach(vm.frostings) { frosting in
+                                Button {
+                                    vm.selectedFrosting = frosting
+                                    vm.handleStepSelection(frosting)
+                                } label: {
+                                    optionCard(name: frosting.name, price: nil, selected: vm.selectedFrosting?.id == frosting.id)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    case "topping":
+                        if let options = step.options, !options.isEmpty {
+                            ForEach(options) { option in
+                                let isSelected = (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
+                                Button {
+                                    vm.handleStepSelection(option)
+                                } label: {
+                                    optionCard(name: option.name, price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil, selected: isSelected)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        } else {
+                            ForEach(vm.toppings) { topping in
+                                Button {
+                                    vm.selectedTopping = topping
+                                    vm.handleStepSelection(topping)
+                                } label: {
+                                    optionCard(name: topping.name, price: nil, selected: vm.selectedTopping?.id == topping.id)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    case "extra":
+                        if let options = step.options, !options.isEmpty {
+                            let selectedArray = (vm.stepSelections[step.id] as? [ModifierOption]) ?? []
+                            let isMulti = step.allowMultiple
+                            ForEach(options) { option in
+                                let isSelected = isMulti
+                                    ? selectedArray.contains(where: { $0.id == option.id })
+                                    : (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
+                                Button {
+                                    vm.handleStepSelection(option)
+                                } label: {
+                                    optionCard(
+                                        name: option.name,
+                                        price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil,
+                                        selected: isSelected
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        } else {
+                            ForEach(vm.extras) { extra in
+                                let isSelected = vm.selectedExtras.contains(where: { $0.id == extra.id })
+                                Button {
+                                    if isSelected {
+                                        vm.selectedExtras.removeAll { $0.id == extra.id }
+                                    } else {
+                                        vm.selectedExtras.append(extra)
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                        vm.handleStepSelection(vm.selectedExtras)
+                                    }
+                                } label: {
+                                    optionCard(
+                                        name: extra.name,
+                                        price: extra.numericPrice > 0 ? vm.formatCurrency(extra.numericPrice) : nil,
+                                        selected: isSelected
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    case "custom", "category", "products":
+                        let selectedArray = (vm.stepSelections[step.id] as? [ModifierOption]) ?? []
+                        if let options = step.options {
+                            ForEach(options) { option in
+                                let isSelected = step.allowMultiple
+                                    ? selectedArray.contains(where: { $0.id == option.id })
+                                    : (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
+                                Button {
+                                    vm.handleStepSelection(option)
+                                } label: {
+                                    optionCard(
+                                        name: option.name,
+                                        price: option.numericPrice > 0 ? "+\(vm.formatCurrency(option.numericPrice))" : nil,
+                                        selected: isSelected
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    default:
+                        EmptyView()
+                    }
                 }
+                .padding(20)
             }
-            .padding(20)
+            
+            if showNextButton {
+                let hasSelection = {
+                    guard let sel = vm.stepSelections[step.id] else { return false }
+                    if let arr = sel as? [ModifierOption] { return !arr.isEmpty }
+                    if let arr = sel as? [Extra] { return !arr.isEmpty }
+                    return true
+                }()
+                
+                Button {
+                    vm.advanceToNextStep()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: hasSelection ? "checkmark.circle.fill" : "arrow.right.circle.fill")
+                            .font(.callout)
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
+                        
+                        Text(hasSelection ? "Continuar" : "Continuar sin \(step.stepName.lowercased())")
+                            .font(.callout.weight(.semibold))
+                            .contentTransition(.numericText())
+                            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(.blue)
+                .padding(20)
+                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
+            }
         }
     }
     
     private func optionCard(name: String, price: String?, selected: Bool) -> some View {
-        VStack(spacing: 8) {
-            Text(name)
-                .font(.subheadline.weight(.medium))
-                .foregroundColor(.white)
-                .multilineTextAlignment(.center)
+        ZStack(alignment: .topTrailing) {
+            VStack(spacing: 8) {
+                Text(name)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                
+                if let price = price {
+                    Text(price)
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 120)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(selected ? Color.blue.opacity(0.15) : Color.white.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(selected ? Color.blue.opacity(0.4) : Color.white.opacity(0.1), lineWidth: selected ? 1.5 : 1)
+            )
             
-            if let price = price {
-                Text(price)
-                    .font(.caption)
-                    .foregroundColor(.blue)
+            if selected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.blue)
+                    .padding(8)
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 120)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(selected ? Color.blue.opacity(0.15) : Color.white.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(selected ? Color.blue.opacity(0.4) : Color.white.opacity(0.1), lineWidth: selected ? 1.5 : 1)
-        )
     }
     
     // MARK: - Notes Step

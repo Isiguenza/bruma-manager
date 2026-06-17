@@ -27,24 +27,31 @@ struct NotesSheet: View {
                     .cornerRadius(10)
                 
                 HStack(spacing: 12) {
-                    Button(action: onSkip) {
-                        Text("Sin comentario")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.gray)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.white.opacity(0.06))
-                            .cornerRadius(12)
+                    if #available(iOS 26.0, *) {
+                        Button(action: onSkip) {
+                            Text("Sin comentario")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                        }
+                        .buttonStyle(.glass)
+                    } else {
+                        // Fallback on earlier versions
                     }
                     
-                    Button(action: onConfirm) {
-                        Text("Agregar")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.blue)
-                            .cornerRadius(12)
+                    if #available(iOS 26.0, *) {
+                        Button(action: onConfirm) {
+                            Text("Agregar")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                        }
+                        .buttonStyle(.glassProminent)
+                        .tint(.blue)
+                    } else {
+                        // Fallback on earlier versions
                     }
                 }
             }

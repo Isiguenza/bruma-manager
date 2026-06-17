@@ -13,6 +13,7 @@ struct MenuView: View {
                 TextField("Buscar producto...", text: $menuVM.searchQuery)
                     .foregroundColor(.white)
                     .autocorrectionDisabled()
+
                 
                 if !menuVM.searchQuery.isEmpty {
                     Button(action: { menuVM.searchQuery = "" }) {
@@ -23,8 +24,7 @@ struct MenuView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(Color.white.opacity(0.08))
-            .cornerRadius(12)
+            .glassEffect(.regular.interactive())
             .padding(.horizontal, 16)
             .padding(.top, 8)
             
@@ -139,12 +139,7 @@ struct CategoryPill: View {
                 .foregroundColor(isSelected ? .white : .gray)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(isSelected ? Color.blue : Color.white.opacity(0.06))
-                .cornerRadius(20)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(isSelected ? Color.clear : Color.white.opacity(0.1), lineWidth: 1)
-                )
+                .glassEffect(isSelected ? .regular.tint(.blue).interactive() : .regular.interactive())
         }
     }
 }

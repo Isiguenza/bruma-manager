@@ -103,7 +103,12 @@ class CartViewModel: ObservableObject {
                 if let t = item.dryToppingName { dict["dryToppingName"] = t }
                 if let e = item.extraId { dict["extraId"] = e }
                 if let e = item.extraName { dict["extraName"] = e }
-                if let cm = item.customModifiers { dict["customModifiers"] = cm }
+                if let cm = item.customModifiers {
+                    dict["customModifiers"] = cm
+                    print("📎 Enviando customModifiers para \(item.productName): \(cm)")
+                } else {
+                    print("⚠️ Sin customModifiers para \(item.productName)")
+                }
                 return dict
             }
             
@@ -193,11 +198,7 @@ class CartViewModel: ObservableObject {
                 guestCount: guestCount
             )
             
-            // Dismiss keyboard and wait a bit before showing confirmation
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
-            
-            // Show success confirmation
+            // Show success confirmation immediately
             showKitchenConfirmation = true
             
         } catch {

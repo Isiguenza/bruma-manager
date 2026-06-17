@@ -90,9 +90,7 @@ struct KitchenSuccessView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onTapGesture {
-            if phase == .complete {
-                onComplete()
-            }
+            onComplete()
         }
         .onAppear {
             runAnimation()
@@ -101,35 +99,35 @@ struct KitchenSuccessView: View {
     
     private func runAnimation() {
         // Phase 1: Show logo briefly (white bg)
-        withAnimation(.easeInOut(duration: 0.3)) {
+        withAnimation(.easeInOut(duration: 0.2)) {
             phase = .logoShown
             circleStrokeTrim = 1
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             // Phase 2: Morph logo to checkmark
-            withAnimation(.easeInOut(duration: 0.25)) {
+            withAnimation(.easeInOut(duration: 0.2)) {
                 phase = .morphing
                 logoOpacity = 0
             }
             
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6, blendDuration: 0)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6, blendDuration: 0)) {
                 checkmarkOpacity = 1
                 checkmarkScale = 1
             }
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             // Phase 3: Green fills screen
-            withAnimation(.easeInOut(duration: 0.6)) {
+            withAnimation(.easeInOut(duration: 0.4)) {
                 phase = .fillingGreen
                 greenFillScale = 1
             }
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
             // Phase 4: Show text
-            withAnimation(.easeOut(duration: 0.4)) {
+            withAnimation(.easeOut(duration: 0.3)) {
                 phase = .complete
                 textOpacity = 1
                 textOffset = 0

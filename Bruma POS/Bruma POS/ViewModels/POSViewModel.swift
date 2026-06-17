@@ -1063,6 +1063,11 @@ class POSViewModel: ObservableObject {
                                 for item in items where !(item.voided ?? false) {
                                     var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
                                     cartItem.orderStatus = order.status
+                                    if let cm = item.customModifiers {
+                                        print("    📎 Item \(item.productName) customModifiers: \(cm)")
+                                    } else {
+                                        print("    ⚠️ Item \(item.productName) customModifiers: nil")
+                                    }
                                     allItems.append(cartItem)
                                 }
                             }
@@ -1464,8 +1469,7 @@ class POSViewModel: ObservableObject {
         if nextIndex < flow.steps.count {
             currentStepIndex = nextIndex
         } else {
-            // Move to notes step
-            currentStepIndex = flow.steps.count
+            prepareFlowItemAndShowNotes()
         }
     }
     
@@ -1475,7 +1479,7 @@ class POSViewModel: ObservableObject {
         if nextIndex < flow.steps.count {
             currentStepIndex = nextIndex
         } else {
-            currentStepIndex = flow.steps.count
+            prepareFlowItemAndShowNotes()
         }
     }
     
@@ -1498,8 +1502,8 @@ class POSViewModel: ObservableObject {
         productNotes = ""
     }
     
-    func finishFlowAndAddToCart() {
-        guard let product = selectedProduct else { return }
+    private func buildFlowCartItem() -> CartItem? {
+        guard let product = selectedProduct else { return nil }
         
         let isPlatform = customerName.hasPrefix("Uber") || customerName.hasPrefix("Rappi") || customerName.hasPrefix("Didi")
         var price: Double
@@ -1587,10 +1591,9 @@ class POSViewModel: ObservableObject {
         }
         
         let isBev = product.category?.isBeverage ?? false
-        
         let variantName = stepSelections["_variantName"] as? String
         
-        let newItem = CartItem(
+        return CartItem(
             productId: product.id,
             productName: displayName,
             unitPrice: price,
@@ -1611,8 +1614,18 @@ class POSViewModel: ObservableObject {
             variantName: variantName,
             isGuest: false
         )
-        
-        addToCart(newItem)
+    }
+    
+    func prepareFlowItemAndShowNotes() {
+        guard let item = buildFlowCartItem() else { return }
+        pendingCartItem = item
+        tempNotes = productNotes
+        showNotesDialog = true
+    }
+    
+    func finishFlowAndAddToCart() {
+        guard let item = buildFlowCartItem() else { return }
+        addToCart(item)
         resetFlow()
     }
     
@@ -1625,13 +1638,19 @@ class POSViewModel: ObservableObject {
         showNotesDialog = false
         pendingCartItem = nil
         tempNotes = ""
+        // If this came from a custom flow, reset it
+        if categoryFlow != nil {
+            resetFlow()
+        }
     }
     
     func handleCancelNotes() {
-        // Solo cerrar el diálogo sin agregar al carrito
         showNotesDialog = false
-        pendingCartItem = nil
-        tempNotes = ""
+        // Only clear pending item if not in a custom flow (so user can go back)
+        if categoryFlow == nil {
+            pendingCartItem = nil
+            tempNotes = ""
+        }
     }
     
     // MARK: - Cart Operations

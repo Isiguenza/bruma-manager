@@ -32,23 +32,25 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     topBar
                     
-                    ZStack {
-                        switch selectedTab {
-                        case .tables:
-                            TableSelectionView(tablesVM: tablesVM) {
-                                activeTableContext = TableContext(
-                                    table: tablesVM.selectedTable,
-                                    customerName: tablesVM.isParaLlevar ? tablesVM.customerName : nil,
-                                    guestCount: tablesVM.guestCount
-                                )
-                            }
-                        case .orders:
-                            ActiveOrdersView(ordersVM: ordersVM)
+                    TabView(selection: $selectedTab) {
+                        TableSelectionView(tablesVM: tablesVM) {
+                            activeTableContext = TableContext(
+                                table: tablesVM.selectedTable,
+                                customerName: tablesVM.isParaLlevar ? tablesVM.customerName : nil,
+                                guestCount: tablesVM.guestCount
+                            )
                         }
+                        .tabItem {
+                            Label("Mesas", systemImage: "square.grid.2x2")
+                        }
+                        .tag(AppTab.tables)
+                        
+                        ActiveOrdersView(ordersVM: ordersVM)
+                        .tabItem {
+                            Label("Ordenes", systemImage: "clock")
+                        }
+                        .tag(AppTab.orders)
                     }
-                    .frame(maxHeight: .infinity)
-                    
-                    tabBar
                 }
                 .fullScreenCover(item: $activeTableContext) { ctx in
                     OrderTakingView(
@@ -93,30 +95,6 @@ struct ContentView: View {
         .background(Color(red: 0.07, green: 0.07, blue: 0.07))
     }
     
-    // MARK: - Tab Bar
-    
-    private var tabBar: some View {
-        HStack {
-            tabBarItem(icon: "square.grid.2x2", label: "Mesas", tab: .tables)
-            tabBarItem(icon: "clock", label: "Ordenes", tab: .orders)
-        }
-        .padding(.top, 8)
-        .padding(.bottom, 4)
-        .background(Color(red: 0.07, green: 0.07, blue: 0.07))
-    }
-    
-    private func tabBarItem(icon: String, label: String, tab: AppTab) -> some View {
-        Button(action: { selectedTab = tab }) {
-            VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 20))
-                Text(label)
-                    .font(.caption2)
-            }
-            .foregroundColor(selectedTab == tab ? .blue : .gray)
-            .frame(maxWidth: .infinity)
-        }
-    }
 }
 
 #Preview {

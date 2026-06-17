@@ -73,12 +73,12 @@ struct LoginView: View {
                         Text("Iniciar Sesión")
                             .font(.headline)
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(Color.blue)
-                    .cornerRadius(14)
                 }
+                .buttonStyle(.glassProminent)
+                .tint(.blue)
                 .padding(.top, 8)
             }
             
@@ -143,12 +143,11 @@ struct LoginView: View {
                 Button(action: { authVM.cancel() }) {
                     Text("Cancelar")
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(.gray)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(12)
                 }
+                .buttonStyle(.glass)
                 
                 Button(action: onSubmit) {
                     Group {
@@ -160,12 +159,12 @@ struct LoginView: View {
                                 .font(.subheadline.weight(.semibold))
                         }
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(value.count == maxLength ? Color.blue : Color.blue.opacity(0.3))
-                    .cornerRadius(12)
                 }
+                .buttonStyle(.glassProminent)
+                .tint(value.count == maxLength && !authVM.authenticating ? .blue : .blue.opacity(0.3))
                 .disabled(value.count != maxLength || authVM.authenticating)
             }
         }
@@ -187,22 +186,40 @@ struct NumpadView: View {
     ]
     
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 16) {
             ForEach(rows, id: \.self) { row in
-                HStack(spacing: 10) {
+                HStack(spacing: 16) {
                     ForEach(row, id: \.self) { key in
-                        Button(action: { handleTap(key) }) {
-                            Text(key)
-                                .font(.title2.weight(.medium))
-                                .foregroundColor(key == "C" ? .red : .white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 56)
-                                .background(Color.white.opacity(0.08))
-                                .cornerRadius(12)
-                        }
+                        numpadButton(key: key)
                     }
                 }
             }
+        }
+    }
+    
+    @ViewBuilder
+    private func numpadButton(key: String) -> some View {
+        if #available(iOS 26.0, *) {
+            Button(action: { handleTap(key) }) {
+                Text(key)
+                    .font(.title.weight(.medium))
+                    .foregroundColor(key == "C" ? .red : .white)
+                    .frame(maxWidth: .infinity, minHeight: 72)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            Button(action: { handleTap(key) }) {
+                Text(key)
+                    .font(.title.weight(.medium))
+                    .foregroundColor(key == "C" ? .red : .white)
+                    .frame(maxWidth: .infinity, minHeight: 72)
+                    .background(
+                        Circle()
+                            .fill(Color.white.opacity(0.08))
+                    )
+            }
+            .buttonStyle(.plain)
         }
     }
     

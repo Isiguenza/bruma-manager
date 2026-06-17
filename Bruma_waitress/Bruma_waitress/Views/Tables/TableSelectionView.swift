@@ -284,10 +284,13 @@ struct GuestCountSheet: View {
                 
                 HStack(spacing: 20) {
                     Button(action: { if guestCount > 1 { guestCount -= 1 } }) {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.system(size: 36))
-                            .foregroundColor(.gray)
+                        Image(systemName: "minus")
+                            .font(.title.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 56, height: 56)
                     }
+                    .buttonStyle(.glass)
+                    .clipShape(Circle())
                     
                     Text("\(guestCount)")
                         .font(.system(size: 48, weight: .bold, design: .rounded))
@@ -295,21 +298,25 @@ struct GuestCountSheet: View {
                         .frame(width: 80)
                     
                     Button(action: { if guestCount < 20 { guestCount += 1 } }) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 36))
-                            .foregroundColor(.blue)
+                        Image(systemName: "plus")
+                            .font(.title.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 56, height: 56)
                     }
+                    .buttonStyle(.glassProminent)
+                    .tint(.blue)
+                    .clipShape(Circle())
                 }
                 
                 Button(action: onConfirm) {
                     Text("Confirmar")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.blue)
-                        .cornerRadius(12)
                 }
+                .buttonStyle(.glassProminent)
+                .tint(.blue)
                 .padding(.horizontal, 32)
             }
             .padding()

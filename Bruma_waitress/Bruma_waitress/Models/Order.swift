@@ -98,10 +98,15 @@ struct CartItem: Identifiable {
         if let e = extraName { parts.append(e) }
         if let cm = customModifiers,
            let data = cm.data(using: .utf8),
-           let mods = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-            for mod in mods {
-                if let name = mod["optionName"] as? String {
-                    parts.append(name)
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for (_, value) in json {
+                if let stepDict = value as? [String: Any],
+                   let options = stepDict["options"] as? [[String: Any]] {
+                    for opt in options {
+                        if let name = opt["name"] as? String {
+                            parts.append(name)
+                        }
+                    }
                 }
             }
         }
