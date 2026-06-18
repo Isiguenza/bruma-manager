@@ -493,14 +493,28 @@ class APIService {
         return try await request(url)
     }
     
+    func searchLoyaltyCardByEmail(_ email: String) async throws -> LoyaltyCard {
+        let encoded = email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? email
+        let url = URL(string: "\(baseURL)/api/loyalty/search?email=\(encoded)")!
+        return try await request(url)
+    }
+    
     func fetchLoyaltyCardByBarcode(_ barcode: String) async throws -> LoyaltyCard {
         let url = URL(string: "\(baseURL)/api/loyalty-cards/barcode/\(barcode)")!
         return try await request(url)
     }
     
-    func addStamp(cardId: String) async throws -> LoyaltyCard {
-        let url = URL(string: "\(baseURL)/api/loyalty-cards/\(cardId)/stamp")!
-        return try await request(url, method: "POST")
+    func addStamps(cardId: String, count: Int) async throws -> LoyaltyCard {
+        let url = URL(string: "\(baseURL)/api/loyalty/\(cardId)/stamps")!
+        let body = ["stamps": count]
+        return try await request(url, method: "POST", body: body)
+    }
+    
+    func post(_ urlString: String, body: [String: Any]? = nil) async throws {
+        guard let url = URL(string: urlString) else { throw APIError.decodingError }
+        let (_, response) = try await requestRaw(url, method: "POST", body: body)
+        guard let http = response as? HTTPURLResponse else { throw APIError.serverError }
+        guard (200...299).contains(http.statusCode) else { throw APIError.serverError }
     }
     
     // MARK: - Reservations

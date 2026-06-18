@@ -102,15 +102,26 @@ MERCADOPAGO_WEBHOOK_SECRET=tu-webhook-secret
 ### 5.1 Obtener Certificados
 
 1. En [Apple Developer](https://developer.apple.com/account/resources/identifiers/list/passTypeId):
-   - Crea un **Pass Type ID** (ej: `pass.com.espantapajaros.loyalty`)
+   - Crea un **Pass Type ID** (ej: `pass.com.bruma.loyalty`)
    - Descarga el certificado `.cer`
 
-2. Convierte el certificado a `.pem`:
+2. Instala el `.cer` en tu Mac (doble click). Luego exporta como `.p12` desde **Keychain Access**:
+   - Busca el certificado de `pass.com.bruma.loyalty`
+   - Click derecho → **Exportar** → selecciona formato `.p12`
+   - Guarda como `certificate.p12` (pon una contrasena si te la pide)
+
+3. Convierte el `.p12` a los archivos `.pem` separados:
 
 ```bash
-# Exporta desde Keychain como .p12
-openssl pkcs12 -in certificate.p12 -clcerts -nokeys -out certs/signerCert.pem
-openssl pkcs12 -in certificate.p12 -nocerts -out certs/signerKey.pem
+# Crea la carpeta certs si no existe
+mkdir -p certs
+
+# Extrae el certificado (sin llave privada)
+# Si te da error de RC2-40-CBC, usa -legacy:
+openssl pkcs12 -in certificate.p12 -clcerts -nokeys -out certs/signerCert.pem -legacy
+
+# Extrae la llave privada (te pedira la contrasena del .p12)
+openssl pkcs12 -in certificate.p12 -nocerts -out certs/signerKey.pem -legacy
 ```
 
 3. Descarga el certificado **WWDR (Apple Worldwide Developer Relations)**:
@@ -129,7 +140,7 @@ openssl x509 -inform DER -in certs/wwdr.pem -out certs/wwdr.pem
 5. Agrega al `.env`:
 
 ```env
-APPLE_PASS_TYPE_ID=pass.com.espantapajaros.loyalty
+APPLE_PASS_TYPE_ID=pass.com.bruma.loyalty
 APPLE_TEAM_ID=TU_TEAM_ID
 ```
 

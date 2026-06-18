@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { loyaltyCards, loyaltyTransactions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { sendAppleWalletPush } from "@/lib/apple-push";
+import { createOrUpdateGoogleWalletObject } from "@/lib/google-wallet";
 
 export async function POST(
   request: NextRequest,
@@ -46,6 +48,12 @@ export async function POST(
     const updated = await db.query.loyaltyCards.findFirst({
       where: eq(loyaltyCards.id, id),
     });
+
+    // Push updates to Apple and Google wallets (non-blocking)
+    if (updated) {
+      sendAppleWalletPush(id).catch(console.error);
+      createOrUpdateGoogleWalletObject(updated).catch(console.error);
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

@@ -435,8 +435,10 @@ export const auditLog = pgTable("audit_log", {
 export const loyaltyCards = pgTable("loyalty_cards", {
   id: uuid("id").defaultRandom().primaryKey(),
   customerName: varchar("customer_name", { length: 255 }).notNull(),
+  customerLastName: varchar("customer_last_name", { length: 255 }).notNull(),
   customerPhone: varchar("customer_phone", { length: 20 }),
-  customerEmail: varchar("customer_email", { length: 255 }),
+  customerEmail: varchar("customer_email", { length: 255 }).notNull(),
+  birthDate: date("birth_date"),
   barcodeValue: varchar("barcode_value", { length: 100 }).notNull().unique(),
   pinHash: varchar("pin_hash", { length: 255 }),
   stamps: integer("stamps").notNull().default(0),

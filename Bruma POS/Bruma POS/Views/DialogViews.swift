@@ -1913,3 +1913,282 @@ struct GuestItemsDialog: View {
         .modifier(DialogBackground())
     }
 }
+
+// MARK: - Loyalty Email Dialog
+
+struct LoyaltyEmailDialog: View {
+    @ObservedObject var vm: POSViewModel
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Buscar por Correo")
+                .font(.title2.bold())
+                .foregroundColor(.white)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Correo electrónico")
+                    .font(.subheadline.bold())
+                    .foregroundColor(.white)
+                
+                TextField("cliente@email.com", text: $vm.loyaltyEmailInput)
+                    .foregroundColor(.white)
+                    .keyboardType(.emailAddress)
+                    .autocapitalization(.none)
+                    .padding(12)
+                    .modifier(NotesTextFieldBackground())
+                    .onSubmit { vm.searchLoyaltyByEmail() }
+            }
+            
+            HStack(spacing: 12) {
+                Button("Cancelar") {
+                    vm.showLoyaltyEmailDialog = false
+                    vm.loyaltyEmailInput = ""
+                }
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+                
+                Button {
+                    vm.searchLoyaltyByEmail()
+                } label: {
+                    HStack {
+                        if vm.loadingCard { ProgressView().tint(.white) }
+                        Text(vm.loadingCard ? "Buscando..." : "Buscar")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(Capsule().fill(vm.loyaltyEmailInput.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.3) : Color.blue))
+                }
+                .disabled(vm.loadingCard || vm.loyaltyEmailInput.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: 400)
+        .modifier(DialogBackground())
+    }
+}
+
+// MARK: - Loyalty Reward Dialog
+
+struct LoyaltyRewardDialog: View {
+    @ObservedObject var vm: POSViewModel
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 6) {
+                Text("🎉 Premio Disponible")
+                    .font(.title2.bold())
+                    .foregroundColor(.white)
+                Text("¿Cómo quieres canjear el premio?")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+            }
+            
+            // Option 1: Producto gratis
+            Button {
+                vm.loyaltyRewardMode = "product"
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "gift.fill")
+                        .font(.title2)
+                        .foregroundColor(.yellow)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Producto gratis")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text("Elige un producto del carrito")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.gray)
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(white: 0.08))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.yellow.opacity(0.3), lineWidth: 1))
+                )
+            }
+            
+            // Option 2: Descuento porcentual
+            Button {
+                vm.loyaltyRewardMode = "discount"
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "percent")
+                        .font(.title2)
+                        .foregroundColor(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Descuento porcentual")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text("Ingresa el % a aplicar")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.gray)
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(white: 0.08))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.3), lineWidth: 1))
+                )
+            }
+            
+            Button("Cancelar") {
+                vm.showLoyaltyRewardDialog = false
+                vm.loyaltyRewardMode = ""
+            }
+            .font(.headline)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(Capsule().fill(Color.white.opacity(0.08)))
+        }
+        .padding(24)
+        .frame(maxWidth: 400)
+        .modifier(DialogBackground())
+    }
+}
+
+// MARK: - Loyalty Reward Product Picker
+
+struct LoyaltyRewardProductPicker: View {
+    @ObservedObject var vm: POSViewModel
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Elige el producto gratis")
+                .font(.title2.bold())
+                .foregroundColor(.white)
+            
+            let eligible = vm.cart.enumerated().filter { !$0.element.isGuest }
+            
+            if eligible.isEmpty {
+                Text("No hay productos disponibles")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                    .padding(.vertical, 24)
+            } else {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(eligible, id: \.offset) { index, item in
+                            Button {
+                                vm.redeemLoyaltyRewardProduct(at: index)
+                                vm.showLoyaltyRewardDialog = false
+                                vm.loyaltyRewardMode = ""
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Text("\(item.quantity)x")
+                                        .font(.subheadline)
+                                        .foregroundColor(.gray)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.productName)
+                                            .font(.subheadline.bold())
+                                            .foregroundColor(.white)
+                                        Text(vm.formatCurrency(item.unitPrice * Double(item.quantity)))
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.yellow)
+                                }
+                                .padding(12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color(white: 0.08))
+                                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.yellow.opacity(0.3), lineWidth: 1))
+                                )
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 350)
+            }
+            
+            Button("Cancelar") {
+                vm.loyaltyRewardMode = ""
+            }
+            .font(.headline)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(Capsule().fill(Color.white.opacity(0.08)))
+        }
+        .padding(24)
+        .frame(maxWidth: 480)
+        .modifier(DialogBackground())
+    }
+}
+
+// MARK: - Loyalty Reward Discount Input
+
+struct LoyaltyRewardDiscountDialog: View {
+    @ObservedObject var vm: POSViewModel
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Descuento porcentual")
+                .font(.title2.bold())
+                .foregroundColor(.white)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Porcentaje de descuento")
+                    .font(.subheadline.bold())
+                    .foregroundColor(.white)
+                
+                HStack(spacing: 8) {
+                    TextField("0", text: $vm.loyaltyRewardDiscountPct)
+                        .keyboardType(.numberPad)
+                        .foregroundColor(.white)
+                        .padding(12)
+                        .modifier(NotesTextFieldBackground())
+                    
+                    Text("%")
+                        .font(.title2.bold())
+                        .foregroundColor(.green)
+                }
+            }
+            
+            HStack(spacing: 12) {
+                Button("Cancelar") {
+                    vm.loyaltyRewardMode = ""
+                    vm.loyaltyRewardDiscountPct = ""
+                }
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+                
+                Button {
+                    vm.redeemLoyaltyRewardDiscount()
+                } label: {
+                    HStack {
+                        Image(systemName: "percent")
+                        Text("Aplicar")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(Capsule().fill(Color.green))
+                }
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: 400)
+        .modifier(DialogBackground())
+    }
+}

@@ -13,8 +13,10 @@ interface CreatedCard {
 
 export default function LoyaltyRegisterPage() {
   const [name, setName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [pin, setPin] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -26,6 +28,23 @@ export default function LoyaltyRegisterPage() {
       setError("Tu nombre es requerido");
       return;
     }
+    if (!lastName.trim()) {
+      setError("Tu apellido es requerido");
+      return;
+    }
+    if (!email.trim()) {
+      setError("Tu correo es requerido");
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setError("Correo electrónico inválido");
+      return;
+    }
+    if (!birthDate.trim()) {
+      setError("Tu fecha de nacimiento es requerida");
+      return;
+    }
     setError("");
     setSubmitting(true);
     try {
@@ -34,8 +53,10 @@ export default function LoyaltyRegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerName: name.trim(),
+          customerLastName: lastName.trim(),
           customerPhone: phone.trim() || null,
-          customerEmail: email.trim() || null,
+          customerEmail: email.trim(),
+          birthDate: birthDate.trim() || null,
           pin: pin.trim() || null,
         }),
       });
@@ -135,38 +156,37 @@ export default function LoyaltyRegisterPage() {
           onSubmit={handleSubmit}
           className="space-y-4 rounded-2xl bg-white p-6 shadow-2xl"
         >
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">
-              Tu nombre *
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="¿Cómo te llamas?"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 placeholder:text-gray-400 focus:border-green-600 focus:outline-none focus:ring-2 focus:ring-green-600/20"
-              autoFocus
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">
+                Nombre *
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Nombre"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 placeholder:text-gray-400 focus:border-green-600 focus:outline-none focus:ring-2 focus:ring-green-600/20"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">
+                Apellido *
+              </label>
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Apellido"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 placeholder:text-gray-400 focus:border-green-600 focus:outline-none focus:ring-2 focus:ring-green-600/20"
+              />
+            </div>
           </div>
 
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-gray-700">
-              Teléfono
-              <span className="ml-1 text-xs text-gray-400">(opcional)</span>
-            </label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+52 ..."
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 placeholder:text-gray-400 focus:border-green-600 focus:outline-none focus:ring-2 focus:ring-green-600/20"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">
-              Email
-              <span className="ml-1 text-xs text-gray-400">(opcional)</span>
+              Correo electrónico *
             </label>
             <input
               type="email"
@@ -175,6 +195,33 @@ export default function LoyaltyRegisterPage() {
               placeholder="tu@email.com"
               className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 placeholder:text-gray-400 focus:border-green-600 focus:outline-none focus:ring-2 focus:ring-green-600/20"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">
+                Celular
+                <span className="ml-1 text-xs text-gray-400">(opcional)</span>
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+52 ..."
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 placeholder:text-gray-400 focus:border-green-600 focus:outline-none focus:ring-2 focus:ring-green-600/20"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">
+                Fecha de nacimiento *
+              </label>
+              <input
+                type="date"
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:border-green-600 focus:outline-none focus:ring-2 focus:ring-green-600/20"
+              />
+            </div>
           </div>
 
           <div className="space-y-1.5">

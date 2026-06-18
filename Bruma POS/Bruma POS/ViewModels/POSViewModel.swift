@@ -294,6 +294,12 @@ class POSViewModel: ObservableObject {
     @Published var showingLoyaltyStep = false
     @Published var manualStampDialogOpen = false
     @Published var manualBarcodeInput = ""
+    @Published var loyaltyStampsToAdd: Int = 1
+    @Published var loyaltyEmailInput: String = ""
+    @Published var showLoyaltyEmailDialog: Bool = false
+    @Published var showLoyaltyRewardDialog: Bool = false
+    @Published var loyaltyRewardMode: String = ""
+    @Published var loyaltyRewardDiscountPct: String = ""
     
     // MARK: - Guest / Courtesy
     @Published var showGuestProductDialog = false
@@ -3254,12 +3260,95 @@ class POSViewModel: ObservableObject {
                 loyaltyCard = card
                 qrDialogOpen = false
                 qrCode = ""
-                showToast("Cliente: \(card.customerName)")
+                showToast("Cliente: \(card.displayName)")
             } catch {
                 showToast("Tarjeta no encontrada", isError: true)
                 qrCode = ""
             }
             loadingCard = false
+        }
+    }
+    
+    func searchLoyaltyByEmail() {
+        let email = loyaltyEmailInput.trimmingCharacters(in: .whitespaces)
+        guard !email.isEmpty else {
+            showToast("Ingresa un correo", isError: true)
+            return
+        }
+        loadingCard = true
+        Task {
+            do {
+                let card = try await APIService.shared.searchLoyaltyCardByEmail(email)
+                loyaltyCard = card
+                showLoyaltyEmailDialog = false
+                loyaltyEmailInput = ""
+                showToast("Cliente: \(card.displayName)")
+            } catch {
+                showToast("Tarjeta no encontrada", isError: true)
+            }
+            loadingCard = false
+        }
+    }
+    
+    func addLoyaltyStamps() {
+        guard let card = loyaltyCard else { return }
+        loadingCard = true
+        Task {
+            do {
+                let updated = try await APIService.shared.addStamps(cardId: card.id, count: loyaltyStampsToAdd)
+                loyaltyCard = updated
+                showToast("\(loyaltyStampsToAdd) sello(s) agregado(s) a \(updated.displayName)")
+                loyaltyStampsToAdd = 1
+            } catch {
+                showToast("Error agregando sellos", isError: true)
+            }
+            loadingCard = false
+        }
+    }
+    
+    func redeemLoyaltyRewardProduct(at index: Int) {
+        guard let card = loyaltyCard else { return }
+        guard index < cart.count else { return }
+        cart[index].isGuest = true
+        applyPromotions()
+        emitCustomerDisplayState(mode: "payment")
+        
+        Task {
+            do {
+                try await APIService.shared.post("\(APIService.shared.baseURL)/api/loyalty/\(card.id)/redeem")
+                let refreshed = try await APIService.shared.searchLoyaltyCard(barcode: card.barcodeValue)
+                loyaltyCard = refreshed
+                showToast("Premio canjeado: \(cart[index].productName) gratis")
+            } catch {
+                showToast("Error canjeando premio", isError: true)
+            }
+        }
+    }
+    
+    func redeemLoyaltyRewardDiscount() {
+        guard let card = loyaltyCard else { return }
+        let pct = Double(loyaltyRewardDiscountPct) ?? 0
+        guard pct > 0 && pct <= 100 else {
+            showToast("Ingresa un porcentaje válido (1-100)", isError: true)
+            return
+        }
+        
+        let discount = Discount(id: "loyalty-reward", name: "Premio Lealtad \(Int(pct))%", description: nil, type: "percentage", value: pct, requiresAuthorization: false, active: true)
+        selectedDiscount = discount
+        applyPromotions()
+        emitCustomerDisplayState(mode: "payment")
+        showLoyaltyRewardDialog = false
+        loyaltyRewardDiscountPct = ""
+        
+        Task {
+            do {
+                try await APIService.shared.post("\(APIService.shared.baseURL)/api/loyalty/\(card.id)/redeem")
+                let refreshed = try await APIService.shared.searchLoyaltyCard(barcode: card.barcodeValue)
+                loyaltyCard = refreshed
+                showToast("Descuento de \(Int(pct))% aplicado")
+            } catch {
+                showToast("Error canjeando premio", isError: true)
+            }
         }
     }
     
@@ -3272,8 +3361,8 @@ class POSViewModel: ObservableObject {
         Task {
             do {
                 let card = try await APIService.shared.fetchLoyaltyCardByBarcode(manualBarcodeInput)
-                let _ = try await APIService.shared.addStamp(cardId: card.id)
-                showToast("Sello agregado a \(card.customerName)")
+                let _ = try await APIService.shared.addStamps(cardId: card.id, count: 1)
+                showToast("Sello agregado a \(card.displayName)")
                 manualStampDialogOpen = false
                 manualBarcodeInput = ""
             } catch {

@@ -204,6 +204,22 @@ export default function LoyaltyPage() {
     window.open(`/api/wallet/pass/${cardId}`, "_blank");
   }
 
+  async function addToGoogleWallet(cardId: string) {
+    try {
+      const res = await fetch(`/api/wallet/google-pass/${cardId}`);
+      if (!res.ok) {
+        toast.error("Error generando tarjeta Google Wallet");
+        return;
+      }
+      const data = await res.json();
+      if (data.saveUrl) {
+        window.open(data.saveUrl, "_blank");
+      }
+    } catch {
+      toast.error("Error generando tarjeta Google Wallet");
+    }
+  }
+
   const filtered = cards.filter((c) => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -403,9 +419,17 @@ export default function LoyaltyPage() {
                           variant="ghost"
                           size="sm"
                           onClick={() => downloadPass(card.id)}
-                          title="Descargar Apple Wallet"
+                          title="Apple Wallet"
                         >
                           <DownloadSimple className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => addToGoogleWallet(card.id)}
+                          title="Google Wallet"
+                        >
+                          <CreditCard className="size-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -628,6 +652,14 @@ export default function LoyaltyPage() {
                 >
                   <DownloadSimple className="mr-1 size-4" />
                   Apple Wallet
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => addToGoogleWallet(selectedCard.id)}
+                  className="flex-1"
+                >
+                  <CreditCard className="mr-1 size-4" />
+                  Google Wallet
                 </Button>
               </div>
             </div>

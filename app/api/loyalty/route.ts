@@ -20,10 +20,20 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { customerName, customerPhone, customerEmail, stampsPerReward, pin } = body;
+    const { customerName, customerLastName, customerPhone, customerEmail, birthDate, stampsPerReward, pin } = body;
 
-    if (!customerName) {
-      return NextResponse.json({ error: "Name required" }, { status: 400 });
+    if (!customerName?.trim()) {
+      return NextResponse.json({ error: "Nombre requerido" }, { status: 400 });
+    }
+    if (!customerLastName?.trim()) {
+      return NextResponse.json({ error: "Apellido requerido" }, { status: 400 });
+    }
+    if (!customerEmail?.trim()) {
+      return NextResponse.json({ error: "Correo electrónico requerido" }, { status: 400 });
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(customerEmail.trim())) {
+      return NextResponse.json({ error: "Correo electrónico inválido" }, { status: 400 });
     }
 
     // Validate PIN if provided (4 digits)
@@ -43,9 +53,11 @@ export async function POST(request: NextRequest) {
     const [card] = await db
       .insert(loyaltyCards)
       .values({
-        customerName,
-        customerPhone: customerPhone || null,
-        customerEmail: customerEmail || null,
+        customerName: customerName.trim(),
+        customerLastName: customerLastName.trim(),
+        customerPhone: customerPhone?.trim() || null,
+        customerEmail: customerEmail.trim(),
+        birthDate: birthDate || null,
         barcodeValue,
         pinHash,
         stampsPerReward: stampsPerReward || 8,

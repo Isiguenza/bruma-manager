@@ -72,6 +72,27 @@ struct MainPOSView: View {
                 dialogOverlay { ManualStampDialog(vm: vm) }
             }
             
+            if vm.showLoyaltyEmailDialog {
+                dialogOverlay(onDismiss: { vm.showLoyaltyEmailDialog = false }) {
+                    LoyaltyEmailDialog(vm: vm)
+                }
+            }
+            
+            if vm.showLoyaltyRewardDialog {
+                dialogOverlay(onDismiss: {
+                    vm.showLoyaltyRewardDialog = false
+                    vm.loyaltyRewardMode = ""
+                }) {
+                    if vm.loyaltyRewardMode == "product" {
+                        LoyaltyRewardProductPicker(vm: vm)
+                    } else if vm.loyaltyRewardMode == "discount" {
+                        LoyaltyRewardDiscountDialog(vm: vm)
+                    } else {
+                        LoyaltyRewardDialog(vm: vm)
+                    }
+                }
+            }
+            
             if vm.showFlexibleDiscountDialog {
                 dialogOverlay { FlexibleDiscountDialog(vm: vm) }
             }

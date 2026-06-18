@@ -140,6 +140,16 @@ struct Discount: Codable, Identifiable {
         case id, name, description, type, value, requiresAuthorization, active
     }
     
+    init(id: String, name: String, description: String?, type: String, value: Double, requiresAuthorization: Bool, active: Bool) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.type = type
+        self.value = value
+        self.requiresAuthorization = requiresAuthorization
+        self.active = active
+    }
+    
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -161,8 +171,10 @@ struct Discount: Codable, Identifiable {
 struct LoyaltyCard: Codable, Identifiable {
     let id: String
     let customerName: String
+    let customerLastName: String?
     let customerPhone: String?
     let customerEmail: String?
+    let birthDate: String?
     let barcodeValue: String
     let stamps: Int
     let totalStamps: Int
@@ -170,6 +182,11 @@ struct LoyaltyCard: Codable, Identifiable {
     let rewardsRedeemed: Int
     let stampsPerReward: Int
     let active: Bool
+    
+    var displayName: String {
+        let last = customerLastName ?? ""
+        return last.isEmpty ? customerName : "\(customerName) \(last)"
+    }
 }
 
 struct Reservation: Codable, Identifiable {

@@ -527,7 +527,154 @@ struct PaymentView: View {
             }
             .padding(20)
             .modifier(GlassCard())
+            
+            // Loyalty card
+            loyaltyCardView
         }
+    }
+    
+    private var loyaltyCardView: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "star.fill")
+                    .foregroundColor(.yellow)
+                Text("Acumular Sellos Lealtad")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(.white)
+                Spacer()
+            }
+            
+            if vm.loyaltyCard == nil {
+                HStack(spacing: 12) {
+                    Button {
+                        vm.qrDialogOpen = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "qrcode.viewfinder")
+                            Text("Leer Pase")
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(.blue)
+                    
+                    Button {
+                        vm.showLoyaltyEmailDialog = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "envelope.fill")
+                            Text("Añadir por Correo")
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(.purple)
+                }
+            } else if let card = vm.loyaltyCard {
+                VStack(spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(card.displayName)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                            Text("\(card.stamps)/\(card.stampsPerReward) sellos")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                        Spacer()
+                        Button {
+                            vm.loyaltyCard = nil
+                            vm.loyaltyStampsToAdd = 1
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    
+                    // Stamp progress bar
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.white.opacity(0.08))
+                                .frame(height: 8)
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.yellow)
+                                .frame(width: geo.size.width * CGFloat(card.stamps) / CGFloat(card.stampsPerReward), height: 8)
+                        }
+                    }
+                    .frame(height: 8)
+                    
+                    // Stepper
+                    HStack(spacing: 16) {
+                        Text("Sellos a agregar:")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Button {
+                            vm.loyaltyStampsToAdd = max(1, vm.loyaltyStampsToAdd - 1)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(.blue)
+                        }
+                        Text("\(vm.loyaltyStampsToAdd)")
+                            .font(.headline.weight(.bold))
+                            .foregroundColor(.white)
+                            .frame(minWidth: 32)
+                        Button {
+                            vm.loyaltyStampsToAdd += 1
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(.blue)
+                        }
+                        Button {
+                            vm.addLoyaltyStamps()
+                        } label: {
+                            Text("Agregar")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(Color.blue))
+                        }
+                    }
+                    
+                    // Reward available
+                    if card.rewardsAvailable > 0 {
+                        Button {
+                            vm.showLoyaltyRewardDialog = true
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "gift.fill")
+                                    .foregroundColor(.yellow)
+                                Text("Premio disponible: Canjear")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
+                            .foregroundColor(.white)
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color.yellow.opacity(0.12))
+                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.yellow.opacity(0.3), lineWidth: 1))
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .modifier(GlassCard())
     }
 
     // MARK: - Payment Footer

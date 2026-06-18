@@ -6,7 +6,7 @@ import path from "path";
 import fs from "fs";
 import sharp from "sharp";
 
-const BG_COLOR = { r: 29, g: 39, b: 27 };
+const BG_COLOR = { r: 255, g: 255, b: 255 };
 
 async function generateStripImage(
   stamps: number,
@@ -144,11 +144,11 @@ export async function GET(
           serialNumber: card.id,
           passTypeIdentifier: passTypeId,
           teamIdentifier: teamId,
-          organizationName: "Espantapájaros",
-          description: "Tarjeta de Cliente Frecuente",
-          foregroundColor: "rgb(255, 255, 255)",
+          organizationName: "BRUMA",
+          description: "Tarjeta de Lealtad",
+          foregroundColor: "rgb(0, 75, 73)",
           backgroundColor: `rgb(${BG_COLOR.r}, ${BG_COLOR.g}, ${BG_COLOR.b})`,
-          labelColor: "rgb(180, 200, 170)",
+          labelColor: "rgb(0, 75, 73)",
           webServiceURL: `${request.nextUrl.origin}/api/wallet/v1`,
           authenticationToken: card.id,
         }
@@ -173,14 +173,15 @@ export async function GET(
       // Secondary fields
       pass.secondaryFields.push({
         key: "rewards",
-        label: "BEBIDAS GRATIS",
+        label: "RECOMPENSAS",
         value: `${card.rewardsAvailable}`,
       });
 
       // Auxiliary fields - customer name (trimmed)
-      const displayName = card.customerName.length > 20 
-        ? card.customerName.substring(0, 20) + "..."
-        : card.customerName;
+      const fullName = `${card.customerName} ${card.customerLastName || ""}`.trim();
+      const displayName = fullName.length > 20 
+        ? fullName.substring(0, 20) + "..."
+        : fullName;
       pass.auxiliaryFields.push({
         key: "customer",
         label: "CLIENTE",
@@ -211,7 +212,7 @@ export async function GET(
       return new NextResponse(new Uint8Array(buffer), {
         headers: {
           "Content-Type": "application/vnd.apple.pkpass",
-          "Content-Disposition": `attachment; filename="espantapajaros-${card.barcodeValue}.pkpass"`,
+          "Content-Disposition": `attachment; filename="bruma-${card.barcodeValue}.pkpass"`,
         },
       });
     } catch (passError) {
