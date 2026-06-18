@@ -39,11 +39,15 @@ export async function GET(
     const fullClassId = `${issuerId}.${classId}`;
     const objectId = `${fullClassId}.${card.id}`;
 
-    const claims = {
-      iss: clientEmail,
+    const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
+
+    const jwt = await new SignJWT({
       aud: "google",
-      origins: [process.env.NEXT_PUBLIC_APP_URL || ""],
+      iss: clientEmail,
+      sub: clientEmail,
+      iat: Math.floor(Date.now() / 1000),
       typ: "savetowallet",
+      origins: [origin],
       payload: {
         loyaltyObjects: [
           {
@@ -78,10 +82,13 @@ export async function GET(
           },
         ],
       },
-    };
-
-    const jwt = await new SignJWT(claims)
+    })
       .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+      .setIssuer(clientEmail)
+      .setSubject(clientEmail)
+      .setAudience("google")
+      .setIssuedAt()
+      .setExpirationTime("1h")
       .sign(key);
 
     const saveUrl = `https://pay.google.com/gp/v/save/${jwt}`;
