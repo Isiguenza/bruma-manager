@@ -209,7 +209,7 @@ export async function GET(
           foregroundColor: "rgb(0, 75, 73)",
           backgroundColor: `rgb(${BG_COLOR.r}, ${BG_COLOR.g}, ${BG_COLOR.b})`,
           labelColor: "rgb(0, 75, 73)",
-          webServiceURL: `${request.nextUrl.origin}/api/wallet/v1`,
+          webServiceURL: `${process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin}/api/wallet/v1`,
           authenticationToken: card.id,
         }
       );
