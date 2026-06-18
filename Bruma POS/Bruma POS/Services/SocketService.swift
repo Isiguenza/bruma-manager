@@ -133,7 +133,8 @@ class SocketService: ObservableObject {
         // Join POS room to receive updates
         socket?.emit("join", "room:pos")
         socket?.emit("join", "room:tables")
-        print("🏠 Joined rooms: pos, tables")
+        socket?.emit("join", "room:customer_display")
+        print("🏠 Joined rooms: pos, tables, customer_display")
     }
     
     func joinCustomerDisplayRoom() {

@@ -125,6 +125,49 @@ struct SettingsView: View {
                                     }
                                 }
                         }
+                        
+                        rowDivider()
+                        
+                        settingsRow {
+                            Label("Banco", systemImage: "building.columns")
+                                .foregroundColor(.primary)
+                        } trailing: {
+                            TextField("BBVA", text: $vm.config.bankBank)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundColor(.secondary)
+                                .font(.subheadline)
+                                .frame(width: 140)
+                                .onChange(of: vm.config.bankBank) { _ in vm.config.save() }
+                        }
+                        
+                        rowDivider()
+                        
+                        settingsRow {
+                            Label("Nombre cuenta", systemImage: "person")
+                                .foregroundColor(.primary)
+                        } trailing: {
+                            TextField("Nombre", text: $vm.config.bankName)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundColor(.secondary)
+                                .font(.subheadline)
+                                .frame(width: 180)
+                                .onChange(of: vm.config.bankName) { _ in vm.config.save() }
+                        }
+                        
+                        rowDivider()
+                        
+                        settingsRow {
+                            Label("CLABE", systemImage: "number")
+                                .foregroundColor(.primary)
+                        } trailing: {
+                            TextField("18 dígitos", text: $vm.config.bankCLABE)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 14, design: .monospaced))
+                                .keyboardType(.numberPad)
+                                .frame(width: 180)
+                                .onChange(of: vm.config.bankCLABE) { _ in vm.config.save() }
+                        }
                     }
                     .padding(.horizontal, 20)
                     

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		1649115C2FD8AE27002FC108 /* SocketIO in Frameworks */ = {isa = PBXBuildFile; productRef = 1649115B2FD8AE27002FC108 /* SocketIO */; };
+		16B8B9F72FE2714100B867D7 /* QRCode in Frameworks */ = {isa = PBXBuildFile; productRef = 16B8B9F62FE2714100B867D7 /* QRCode */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1649115C2FD8AE27002FC108 /* SocketIO in Frameworks */,
+				16B8B9F72FE2714100B867D7 /* QRCode in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,6 +73,7 @@
 			name = "Bruma POS";
 			packageProductDependencies = (
 				1649115B2FD8AE27002FC108 /* SocketIO */,
+				16B8B9F62FE2714100B867D7 /* QRCode */,
 			);
 			productName = "Bruma POS";
 			productReference = 160DE4562FA690AA00A3D140 /* Bruma POS.app */;
@@ -102,6 +105,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				1649115A2FD8AE27002FC108 /* XCRemoteSwiftPackageReference "socket" */,
+				16B8B9F52FE2714100B867D7 /* XCRemoteSwiftPackageReference "qrcode" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 160DE4572FA690AA00A3D140 /* Products */;
@@ -361,6 +365,14 @@
 				kind = branch;
 			};
 		};
+		16B8B9F52FE2714100B867D7 /* XCRemoteSwiftPackageReference "qrcode" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/dagronf/qrcode.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 28.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -368,6 +380,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 1649115A2FD8AE27002FC108 /* XCRemoteSwiftPackageReference "socket" */;
 			productName = SocketIO;
+		};
+		16B8B9F62FE2714100B867D7 /* QRCode */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 16B8B9F52FE2714100B867D7 /* XCRemoteSwiftPackageReference "qrcode" */;
+			productName = QRCode;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

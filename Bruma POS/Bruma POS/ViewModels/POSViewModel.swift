@@ -11,7 +11,7 @@ class POSViewModel: ObservableObject {
     
     // MARK: - App State
     enum AppScreen { case dashboard, tableSelection, pos, customerDisplay }
-    @Published var currentScreen: AppScreen = .dashboard
+    @Published var currentScreen: AppScreen = POSConfig.load().customerDisplayEnabled ? .customerDisplay : .dashboard
     @Published var activeView: String = "pos" // "pos" or "reservations"
     @Published var selectedTab: Int = 0 // Tab selection: 0=Mesas, 1=Caja, 2=Reservas, 3=Empleados
     @Published var loading = false
@@ -482,6 +482,25 @@ class POSViewModel: ObservableObject {
         setupSocketCallbacks()
         socketService.connect()
         setupSyncEngine()
+        // Re-emit payment display when method or tip changes while on confirmation
+        Publishers.CombineLatest3($paymentMethod, $tipPercentage, $customTip)
+            .dropFirst()
+            .debounce(for: .milliseconds(200), scheduler: RunLoop.main)
+            .sink { [weak self] _, _, _ in
+                guard let self, self.showingPayment, self.paymentStep == "confirmation", self.selectedTable == nil else { return }
+                self.emitCustomerDisplayState(mode: "payment")
+            }
+            .store(in: &cancellables)
+        
+        // Emit payment display only when reaching confirmation step
+        $paymentStep
+            .dropFirst()
+            .sink { [weak self] step in
+                guard let self, step == "confirmation", self.showingPayment, self.selectedTable == nil else { return }
+                self.emitCustomerDisplayState(mode: "payment")
+            }
+            .store(in: &cancellables)
+        
         // Restore Customer Display mode if it was active
         if config.customerDisplayEnabled {
             currentScreen = .customerDisplay
@@ -1693,7 +1712,9 @@ class POSViewModel: ObservableObject {
         if newQty <= 0 {
             removeFromCart(at: index)
         } else {
-            cart[index].quantity = newQty
+            var item = cart[index]
+            item.quantity = newQty
+            cart[index] = item
             applyPromotions()
             emitCustomerDisplayState()
         }
@@ -1727,9 +1748,12 @@ class POSViewModel: ObservableObject {
             // Remove item if quantity goes below 1
             cart.remove(at: index)
         } else {
-            cart[index].quantity = newQuantity
+            var updated = cart[index]
+            updated.quantity = newQuantity
+            cart[index] = updated
         }
         applyPromotions()
+        emitCustomerDisplayState()
     }
     
     func handleVoidItem() {
@@ -2125,14 +2149,35 @@ class POSViewModel: ObservableObject {
                 "modifiers": item.modifierSummary
             ]
         }
-        let payload: [String: Any] = [
+       
+        let orderTypeLabel = selectedTable.map { "Mesa \($0.number)" } ?? (isHomeDelivery ? "Domicilio" : "Para llevar")
+        var payload: [String: Any] = [
             "mode": mode,
             "customerName": customerName,
             "orderNumber": currentOrderId.map { String($0.prefix(8)) } ?? "",
+            "orderType": orderTypeLabel,
             "items": items,
-            "subtotal": cartTotal,
-            "total": cartTotalWithDiscount
+            "subtotal": cartTotalWithDiscount,
+            "total": mode == "payment" ? totalWithTip : cartTotalWithDiscount
         ]
+        if mode == "payment" {
+            let method = paymentMethod ?? "cash"
+            payload["paymentMethod"] = method
+            payload["tipAmount"] = tipAmount
+            payload["tipPercentage"] = tipPercentage
+            payload["showCustomTip"] = showCustomTip
+            if method == "transfer" {
+                let freshConfig = POSConfig.load()
+                payload["bankCLABE"] = freshConfig.bankCLABE
+                payload["bankName"] = freshConfig.bankName
+                payload["bankBank"] = freshConfig.bankBank
+                print("📤 [CD Emit] self.config - bank: '\(self.config.bankBank)', name: '\(self.config.bankName)', clabe: '\(self.config.bankCLABE)'")
+                print("📤 [CD Emit] POSConfig.load() - bank: '\(freshConfig.bankBank)', name: '\(freshConfig.bankName)', clabe: '\(freshConfig.bankCLABE)'")
+            } else {
+                print("📤 [CD Emit] payment method: \(method) - no bank data")
+            }
+        }
+        print("📤 [CD Emit] payload mode=\(mode), paymentStep=\(paymentStep)")
         socketService.emitCustomerDisplayUpdate(payload)
     }
     
@@ -2244,7 +2289,6 @@ class POSViewModel: ObservableObject {
                         paymentStep = "payment"
                     }
                     showingPayment = true
-                    emitCustomerDisplayState(mode: "payment")
                 }
             } else {
                 if !itemAssignments.isEmpty {
@@ -2253,7 +2297,6 @@ class POSViewModel: ObservableObject {
                     paymentStep = "payment"
                 }
                 showingPayment = true
-                emitCustomerDisplayState(mode: "payment")
             }
             return
         }
@@ -2286,12 +2329,10 @@ class POSViewModel: ObservableObject {
                 
                 paymentStep = "payment"
                 showingPayment = true
-                emitCustomerDisplayState(mode: "payment")
             } catch let error as APIError where error == .offlineQueued {
                 // Offline: order queued for sync
                 paymentStep = "payment"
                 showingPayment = true
-                emitCustomerDisplayState(mode: "payment")
                 showToast("📴 Orden guardada offline — se sincronizará automáticamente")
             } catch {
                 showToast("Error creando orden", isError: true)
