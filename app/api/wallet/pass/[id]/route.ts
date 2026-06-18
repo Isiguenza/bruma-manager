@@ -113,6 +113,7 @@ export async function GET(
       let wwdr: string;
       let signerCert: string;
       let signerKey: string;
+      const signerKeyPassphrase = process.env.APPLE_SIGNER_KEY_PASSPHRASE;
 
       if (hasInlineCerts) {
         wwdr = process.env.APPLE_WWDR_PEM!;
@@ -149,22 +150,27 @@ export async function GET(
       buffers["strip.png"] = strip;
       buffers["strip@2x.png"] = strip2x;
 
-      const pass = new PKPass(
-        buffers,
-        { wwdr, signerCert, signerKey },
-        {
-          serialNumber: card.id,
-          passTypeIdentifier: passTypeId,
-          teamIdentifier: teamId,
-          organizationName: "BRUMA",
-          description: "Tarjeta de Lealtad",
-          foregroundColor: "rgb(0, 75, 73)",
-          backgroundColor: `rgb(${BG_COLOR.r}, ${BG_COLOR.g}, ${BG_COLOR.b})`,
-          labelColor: "rgb(0, 75, 73)",
-          webServiceURL: `${request.nextUrl.origin}/api/wallet/v1`,
-          authenticationToken: card.id,
-        }
-      );
+      const certOptions: any = { wwdr, signerCert, signerKey };
+      if (signerKeyPassphrase) {
+        certOptions.signerKeyPassphrase = signerKeyPassphrase;
+      }
+
+        const pass = new PKPass(
+          buffers,
+          certOptions,
+          {
+            serialNumber: card.id,
+            passTypeIdentifier: passTypeId,
+            teamIdentifier: teamId,
+            organizationName: "BRUMA",
+            description: "Tarjeta de Lealtad",
+            foregroundColor: "rgb(0, 75, 73)",
+            backgroundColor: `rgb(${BG_COLOR.r}, ${BG_COLOR.g}, ${BG_COLOR.b})`,
+            labelColor: "rgb(0, 75, 73)",
+            webServiceURL: `${request.nextUrl.origin}/api/wallet/v1`,
+            authenticationToken: card.id,
+          }
+        );
 
       pass.type = "storeCard";
 
