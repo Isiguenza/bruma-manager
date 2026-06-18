@@ -50,9 +50,16 @@ export async function GET(
     const { id } = await params;
     const debug = request.nextUrl.searchParams.get("debug") === "1";
 
-    const card = await db.query.loyaltyCards.findFirst({
+    let card = await db.query.loyaltyCards.findFirst({
       where: eq(loyaltyCards.id, id),
     });
+
+    // If not found by UUID, try barcodeValue
+    if (!card) {
+      card = await db.query.loyaltyCards.findFirst({
+        where: eq(loyaltyCards.barcodeValue, id),
+      });
+    }
 
     if (!card) {
       return NextResponse.json({ error: "Card not found" }, { status: 404 });

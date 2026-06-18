@@ -62,9 +62,15 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const card = await db.query.loyaltyCards.findFirst({
+    let card = await db.query.loyaltyCards.findFirst({
       where: eq(loyaltyCards.id, id),
     });
+
+    if (!card) {
+      card = await db.query.loyaltyCards.findFirst({
+        where: eq(loyaltyCards.barcodeValue, id),
+      });
+    }
 
     if (!card) {
       return NextResponse.json({ error: "Card not found" }, { status: 404 });
@@ -150,27 +156,47 @@ export async function GET(
       buffers["strip.png"] = strip;
       buffers["strip@2x.png"] = strip2x;
 
+      console.log("[Apple Pass] wwdr length:", wwdr?.length);
+      console.log("[Apple Pass] signerCert length:", signerCert?.length);
+      console.log("[Apple Pass] signerKey length:", signerKey?.length);
+      console.log("[Apple Pass] signerKey starts with:", signerKey?.substring(0, 50));
+
+      // Check for literal \n characters (common when env vars are copy-pasted incorrectly)
+      if (signerKey.includes("\\n")) {
+        console.warn("[Apple Pass] WARNING: signerKey contains literal \\n characters! Fixing...");
+        signerKey = signerKey.replace(/\\n/g, "\n");
+      }
+
+      if (!signerKey.includes("-----BEGIN")) {
+        console.error("[Apple Pass] ERROR: signerKey is not a valid PEM!");
+        return NextResponse.json(
+          { error: "Invalid signerKey format. Must be a valid PEM file." },
+          { status: 500 }
+        );
+      }
+
       const certOptions: any = { wwdr, signerCert, signerKey };
       if (signerKeyPassphrase) {
         certOptions.signerKeyPassphrase = signerKeyPassphrase;
+        console.log("[Apple Pass] Using signerKeyPassphrase");
       }
 
-        const pass = new PKPass(
-          buffers,
-          certOptions,
-          {
-            serialNumber: card.id,
-            passTypeIdentifier: passTypeId,
-            teamIdentifier: teamId,
-            organizationName: "BRUMA",
-            description: "Tarjeta de Lealtad",
-            foregroundColor: "rgb(0, 75, 73)",
-            backgroundColor: `rgb(${BG_COLOR.r}, ${BG_COLOR.g}, ${BG_COLOR.b})`,
-            labelColor: "rgb(0, 75, 73)",
-            webServiceURL: `${request.nextUrl.origin}/api/wallet/v1`,
-            authenticationToken: card.id,
-          }
-        );
+      const pass = new PKPass(
+        buffers,
+        certOptions,
+        {
+          serialNumber: card.id,
+          passTypeIdentifier: passTypeId,
+          teamIdentifier: teamId,
+          organizationName: "BRUMA",
+          description: "Tarjeta de Lealtad",
+          foregroundColor: "rgb(0, 75, 73)",
+          backgroundColor: `rgb(${BG_COLOR.r}, ${BG_COLOR.g}, ${BG_COLOR.b})`,
+          labelColor: "rgb(0, 75, 73)",
+          webServiceURL: `${request.nextUrl.origin}/api/wallet/v1`,
+          authenticationToken: card.id,
+        }
+      );
 
       pass.type = "storeCard";
 
