@@ -15,14 +15,14 @@ async function generateStripImage(
 ): Promise<{ strip: Buffer; strip2x: Buffer }> {
   // @2x strip: 750 x 246, 2 rows of 4 stamps
   const W2 = 750, H2 = 246;
-  const STAMP_SIZE = 90;
+  const STAMP_SIZE = 80;          // slightly smaller stamps
   const COLS = 4;
   const ROWS = 2;
-  const GAP = 30;
-  const totalW = COLS * STAMP_SIZE + (COLS - 1) * GAP;
-  const totalH = ROWS * STAMP_SIZE + (ROWS - 1) * GAP;
-  const startX = Math.round((W2 - totalW) / 2);
-  const startY = Math.round((H2 - totalH) / 2);
+  const GAP = 55;                 // wider gap between stamps
+  const MARGIN_X = 30;            // closer to left/right edges
+  const MARGIN_Y = 28;            // closer to top/bottom edges
+  const startX = MARGIN_X;
+  const startY = MARGIN_Y;
 
   const hatBuf = await sharp(path.join(assetsPath, "sello@2x.png"))
     .resize(STAMP_SIZE, STAMP_SIZE, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
@@ -139,12 +139,28 @@ export async function GET(
       // Read static pass assets (icon, logo)
       const assetsPath = path.resolve(process.cwd(), "public", "pass-assets");
       const buffers: Record<string, Buffer> = {};
-      const staticFiles = ["icon.png", "icon@2x.png", "logo.png", "logo@2x.png"];
+      const staticFiles = ["icon.png", "icon@2x.png"];
       for (const file of staticFiles) {
         const filePath = path.join(assetsPath, file);
         if (fs.existsSync(filePath)) {
           buffers[file] = fs.readFileSync(filePath);
         }
+      }
+
+      // Resize logo to be smaller (80% of original recommended size)
+      const logoPath = path.join(assetsPath, "logo.png");
+      const logo2xPath = path.join(assetsPath, "logo@2x.png");
+      if (fs.existsSync(logo2xPath)) {
+        buffers["logo@2x.png"] = await sharp(logo2xPath)
+          .resize(260, 80, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } })
+          .png()
+          .toBuffer();
+      }
+      if (fs.existsSync(logoPath)) {
+        buffers["logo.png"] = await sharp(logoPath)
+          .resize(130, 40, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } })
+          .png()
+          .toBuffer();
       }
 
       // Generate dynamic strip image with stamps
