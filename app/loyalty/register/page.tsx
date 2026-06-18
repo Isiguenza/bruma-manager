@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 
 interface CreatedCard {
   id: string;
@@ -12,6 +13,10 @@ interface CreatedCard {
 }
 
 export default function LoyaltyRegisterPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<"register" | "login">("register");
+
+  // Register form
   const [name, setName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
@@ -22,29 +27,20 @@ export default function LoyaltyRegisterPage() {
   const [error, setError] = useState("");
   const [card, setCard] = useState<CreatedCard | null>(null);
 
+  // Login form
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPin, setLoginPin] = useState("");
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [loginError, setLoginError] = useState("");
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) {
-      setError("Tu nombre es requerido");
-      return;
-    }
-    if (!lastName.trim()) {
-      setError("Tu apellido es requerido");
-      return;
-    }
-    if (!email.trim()) {
-      setError("Tu correo es requerido");
-      return;
-    }
+    if (!name.trim()) { setError("Tu nombre es requerido"); return; }
+    if (!lastName.trim()) { setError("Tu apellido es requerido"); return; }
+    if (!email.trim()) { setError("Tu correo es requerido"); return; }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
-      setError("Correo electrónico inválido");
-      return;
-    }
-    if (!birthDate.trim()) {
-      setError("Tu fecha de nacimiento es requerida");
-      return;
-    }
+    if (!emailRegex.test(email.trim())) { setError("Correo electrónico inválido"); return; }
+    if (!birthDate.trim()) { setError("Tu fecha de nacimiento es requerida"); return; }
     setError("");
     setSubmitting(true);
     try {
@@ -71,6 +67,31 @@ export default function LoyaltyRegisterPage() {
     }
   }
 
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!loginEmail.trim()) { setLoginError("Ingresa tu correo"); return; }
+    if (!loginPin.trim() || loginPin.length !== 4) { setLoginError("Ingresa tu PIN de 4 dígitos"); return; }
+    setLoginError("");
+    setLoginSubmitting(true);
+    try {
+      const res = await fetch("/api/loyalty/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmail.trim().toLowerCase(), pin: loginPin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Error al iniciar sesión");
+      if (data.verified && data.card) {
+        router.push(`/loyalty/card/${data.card.barcodeValue}`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Hubo un error, intenta de nuevo";
+      setLoginError(msg);
+    } finally {
+      setLoginSubmitting(false);
+    }
+  }
+
   function walletUrl() {
     if (!card) return "";
     const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -83,30 +104,25 @@ export default function LoyaltyRegisterPage() {
     return `${origin}/api/wallet/google-pass/${card.id}`;
   }
 
-  // Logo + title block reused in both states
-  const BrandHeader = () => (
-    <div className="flex flex-col items-center">
-      <Image
-        src="/bruma-logo.png"
-        alt="BRUMA"
-        width={220}
-        height={90}
-        className="object-contain"
-        priority
-      />
-      <h1 className="mt-4 text-2xl font-bold tracking-wide text-[#004b49]">
-        Programa de Lealtad
-      </h1>
-    </div>
-  );
-
   // Success state
   if (card) {
     const cardViewUrl = `/loyalty/card/${card.barcodeValue}`;
     return (
       <main className="flex min-h-dvh flex-col items-center bg-white px-6 py-10">
         <div className="w-full max-w-sm space-y-8">
-          <BrandHeader />
+          <div className="flex flex-col items-center">
+            <Image
+              src="/logos/BRUMA.png"
+              alt="BRUMA"
+              width={220}
+              height={90}
+              className="object-contain"
+              priority
+            />
+            <h1 className="mt-4 text-2xl font-bold tracking-wide text-[#004b49]">
+              Programa de Lealtad
+            </h1>
+          </div>
 
           <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-xl shadow-gray-100">
             <div className="text-center">
@@ -118,7 +134,6 @@ export default function LoyaltyRegisterPage() {
                 Tu tarjeta de lealtad está lista
               </p>
             </div>
-
             <div className="mt-6 space-y-4 text-center">
               <p className="font-mono text-lg tracking-widest text-[#004b49]">
                 {card.barcodeValue}
@@ -141,7 +156,6 @@ export default function LoyaltyRegisterPage() {
               </svg>
               Agregar a Apple Wallet
             </a>
-
             <a
               href={googleWalletSaveUrl()}
               target="_blank"
@@ -153,7 +167,6 @@ export default function LoyaltyRegisterPage() {
               </svg>
               Agregar a Google Wallet
             </a>
-
             <a
               href={cardViewUrl}
               className="flex w-full items-center justify-center gap-2 rounded-2xl py-4 font-semibold text-[#004b49] transition hover:bg-[#004b49]/5"
@@ -170,11 +183,94 @@ export default function LoyaltyRegisterPage() {
     );
   }
 
+  // Login form
+  if (mode === "login") {
+    return (
+      <main className="flex min-h-dvh flex-col items-center bg-white px-6 py-10">
+        <div className="w-full max-w-sm">
+          <div className="flex flex-col items-center">
+            <Image
+              src="/logos/BRUMA.png"
+              alt="BRUMA"
+              width={220}
+              height={90}
+              className="object-contain"
+              priority
+            />
+            <h1 className="mt-4 text-2xl font-bold tracking-wide text-[#004b49]">
+              Programa de Lealtad
+            </h1>
+          </div>
+
+          <form
+            onSubmit={handleLogin}
+            className="mt-8 space-y-4 rounded-3xl bg-white p-6 shadow-xl shadow-gray-100"
+          >
+            <p className="text-center text-sm text-gray-500">
+              Ingresa tu correo y PIN para ver tu tarjeta
+            </p>
+
+            <input
+              type="email"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              placeholder="Correo electrónico"
+              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 text-gray-900 placeholder:text-gray-400 focus:border-[#004b49] focus:outline-none focus:ring-1 focus:ring-[#004b49]/20"
+              autoFocus
+            />
+
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={loginPin}
+              onChange={(e) => setLoginPin(e.target.value.replace(/\D/g, ""))}
+              placeholder="PIN de 4 dígitos"
+              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 text-center text-xl tracking-widest text-gray-900 placeholder:text-gray-400 placeholder:tracking-normal placeholder:text-base focus:border-[#004b49] focus:outline-none focus:ring-1 focus:ring-[#004b49]/20"
+            />
+
+            {loginError && (
+              <p className="text-sm font-medium text-red-500">{loginError}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loginSubmitting}
+              className="w-full rounded-2xl bg-[#2d3436] py-4 font-semibold text-white transition hover:bg-black disabled:opacity-50"
+            >
+              {loginSubmitting ? "Verificando..." : "Ver mi tarjeta"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setMode("register"); setLoginError(""); }}
+              className="w-full py-2 text-sm text-gray-400 transition hover:text-[#004b49]"
+            >
+              ¿No tienes tarjeta? Regístrate
+            </button>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
   // Registration form
   return (
     <main className="flex min-h-dvh flex-col items-center bg-white px-6 py-10">
       <div className="w-full max-w-sm">
-        <BrandHeader />
+        <div className="flex flex-col items-center">
+          <Image
+            src="/logos/BRUMA.png"
+            alt="BRUMA"
+            width={220}
+            height={90}
+            className="object-contain"
+            priority
+          />
+          <h1 className="mt-4 text-2xl font-bold tracking-wide text-[#004b49]">
+            Programa de Lealtad
+          </h1>
+        </div>
 
         <form
           onSubmit={handleSubmit}
@@ -219,18 +315,14 @@ export default function LoyaltyRegisterPage() {
             className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 text-gray-900 placeholder:text-gray-400 focus:border-[#004b49] focus:outline-none focus:ring-1 focus:ring-[#004b49]/20"
           />
 
-          <div className="relative">
+          <div className="space-y-1">
+            <label className="block text-xs text-gray-400 px-1">Fecha de nacimiento *</label>
             <input
               type="date"
               value={birthDate}
               onChange={(e) => setBirthDate(e.target.value)}
               className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 text-gray-900 focus:border-[#004b49] focus:outline-none focus:ring-1 focus:ring-[#004b49]/20"
             />
-            {!birthDate && (
-              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
-                Fecha de nacimiento *
-              </span>
-            )}
           </div>
 
           <input
@@ -261,6 +353,14 @@ export default function LoyaltyRegisterPage() {
           <p className="text-center text-xs text-gray-400">
             Cada compra = 1 sello · 8 sellos = 1 recompensa
           </p>
+
+          <button
+            type="button"
+            onClick={() => { setMode("login"); setError(""); }}
+            className="w-full py-2 text-sm text-gray-400 transition hover:text-[#004b49]"
+          >
+            ¿Ya tienes tarjeta? Inicia sesión
+          </button>
         </form>
       </div>
     </main>

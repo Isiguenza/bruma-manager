@@ -70,17 +70,29 @@ export async function GET(
       return NextResponse.json({ error: "Card not found" }, { status: 404 });
     }
 
-    // Check if Apple Wallet certificates are configured
+    // Check if Apple Wallet is fully configured
     const passTypeId = process.env.APPLE_PASS_TYPE_ID;
     const teamId = process.env.APPLE_TEAM_ID;
 
-    if (!passTypeId || !teamId) {
-      // Return a JSON representation if Apple Wallet is not configured
+    const hasInlineCerts =
+      process.env.APPLE_WWDR_PEM &&
+      process.env.APPLE_SIGNER_CERT_PEM &&
+      process.env.APPLE_SIGNER_KEY_PEM;
+    const hasBase64Certs =
+      process.env.APPLE_WWDR_PEM_B64 &&
+      process.env.APPLE_SIGNER_CERT_B64 &&
+      process.env.APPLE_SIGNER_KEY_B64;
+    const hasFileCerts =
+      fs.existsSync(path.resolve(process.cwd(), "certs", "wwdr.pem")) &&
+      fs.existsSync(path.resolve(process.cwd(), "certs", "signerCert.pem")) &&
+      fs.existsSync(path.resolve(process.cwd(), "certs", "signerKey.pem"));
+
+    if (!passTypeId || !teamId || (!hasInlineCerts && !hasBase64Certs && !hasFileCerts)) {
       return NextResponse.json(
         {
           error: "Apple Wallet not configured",
           message:
-            "Configure APPLE_PASS_TYPE_ID, APPLE_TEAM_ID, and certificate files to generate .pkpass files. See SETUP.md for instructions.",
+            "Faltan certificados o configuración. Agrega APPLE_WWDR_PEM_B64, APPLE_SIGNER_CERT_B64 y APPLE_SIGNER_KEY_B64 al .env, o los archivos en /certs/",
           card: {
             customerName: card.customerName,
             barcodeValue: card.barcodeValue,
@@ -102,12 +114,12 @@ export async function GET(
       let signerCert: string;
       let signerKey: string;
 
-      if (process.env.APPLE_WWDR_PEM) {
+      if (hasInlineCerts) {
         wwdr = process.env.APPLE_WWDR_PEM!;
         signerCert = process.env.APPLE_SIGNER_CERT_PEM!;
         signerKey = process.env.APPLE_SIGNER_KEY_PEM!;
-      } else if (process.env.APPLE_WWDR_PEM_B64) {
-        wwdr = Buffer.from(process.env.APPLE_WWDR_PEM_B64, "base64").toString("utf-8");
+      } else if (hasBase64Certs) {
+        wwdr = Buffer.from(process.env.APPLE_WWDR_PEM_B64!, "base64").toString("utf-8");
         signerCert = Buffer.from(process.env.APPLE_SIGNER_CERT_B64!, "base64").toString("utf-8");
         signerKey = Buffer.from(process.env.APPLE_SIGNER_KEY_B64!, "base64").toString("utf-8");
       } else {
