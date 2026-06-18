@@ -24,10 +24,10 @@ async function generateStripImage(
   const startX = Math.round((W2 - totalW) / 2);
   const startY = Math.round((H2 - totalH) / 2);
 
-  const hatBuf = await sharp(path.join(assetsPath, "hat@2x.png"))
+  const hatBuf = await sharp(path.join(assetsPath, "sello@2x.png"))
     .resize(STAMP_SIZE, STAMP_SIZE, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .toBuffer();
-  const emptyBuf = await sharp(path.join(assetsPath, "mojito-empty@2x.png"))
+  const emptyBuf = await sharp(path.join(assetsPath, "sello_vacio@2x.png"))
     .resize(STAMP_SIZE, STAMP_SIZE, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .toBuffer();
 
@@ -130,7 +130,7 @@ export async function GET(
       }
 
       // Read static pass assets (icon, logo)
-      const assetsPath = path.resolve(process.cwd(), "certs", "pass-assets");
+      const assetsPath = path.resolve(process.cwd(), "public", "pass-assets");
       const buffers: Record<string, Buffer> = {};
       const staticFiles = ["icon.png", "icon@2x.png", "logo.png", "logo@2x.png"];
       for (const file of staticFiles) {
