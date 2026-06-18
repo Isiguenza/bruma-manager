@@ -19,10 +19,10 @@ async function generateStripImage(
   const COLS = 4;
   const ROWS = 2;
   const GAP = 55;                 // wider gap between stamps
-  const MARGIN_X = 30;            // closer to left/right edges
-  const MARGIN_Y = 28;            // closer to top/bottom edges
-  const startX = MARGIN_X;
-  const startY = MARGIN_Y;
+  const totalW = COLS * STAMP_SIZE + (COLS - 1) * GAP;
+  const totalH = ROWS * STAMP_SIZE + (ROWS - 1) * GAP;
+  const startX = Math.round((W2 - totalW) / 2);
+  const startY = Math.round((H2 - totalH) / 2);
 
   const hatBuf = await sharp(path.join(assetsPath, "sello@2x.png"))
     .resize(STAMP_SIZE, STAMP_SIZE, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
