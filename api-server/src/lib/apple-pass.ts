@@ -71,7 +71,8 @@ export async function generateApplePass(card: any): Promise<Buffer> {
     process.env.APPLE_WWDR_PEM_B64 &&
     process.env.APPLE_SIGNER_CERT_B64 &&
     process.env.APPLE_SIGNER_KEY_B64;
-  const certsPath = path.resolve(process.cwd(), "certs");
+  const projectRoot = path.resolve(__dirname, "..", "..");
+  const certsPath = path.resolve(projectRoot, "certs");
   const hasFileCerts =
     fs.existsSync(path.join(certsPath, "wwdr.pem")) &&
     fs.existsSync(path.join(certsPath, "signerCert.pem")) &&
@@ -102,7 +103,7 @@ export async function generateApplePass(card: any): Promise<Buffer> {
     signerKey = fs.readFileSync(path.join(certsPath, "signerKey.pem"), "utf-8");
   }
 
-  const assetsPath = path.resolve(process.cwd(), "public", "pass-assets");
+  const assetsPath = path.resolve(projectRoot, "public", "pass-assets");
   const buffers: Record<string, Buffer> = {};
   const staticFiles = ["icon.png", "icon@2x.png"];
   for (const file of staticFiles) {
