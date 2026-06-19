@@ -109,7 +109,7 @@ export async function createOrUpdateGoogleWalletClass() {
       programName: "Tarjeta de Lealtad BRUMA",
       programLogo: {
         sourceUri: {
-          uri: "https://api.cocinabruma.com.mx/pass-assets/logo.png",
+          uri: "https://res.cloudinary.com/dptq9t8h7/image/upload/v1781852745/logo_hedu3s.png",
         },
         contentDescription: {
           defaultValue: {
