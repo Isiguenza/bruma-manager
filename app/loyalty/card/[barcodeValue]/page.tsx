@@ -87,7 +87,7 @@ export default function CardViewPage({
           <img
             src="/logos/BRUMA.png"
             alt="BRUMA"
-            className="h-20 w-auto object-contain"
+            className="h-28 w-auto object-contain"
           />
           <h1 className="mt-4 text-2xl font-bold tracking-wide text-[#004b49]">
             Programa de Lealtad
@@ -136,6 +136,18 @@ export default function CardViewPage({
             </div>
           )}
 
+          {/* QR para escanear por la camara del POS */}
+          <div className="mt-6 flex flex-col items-center gap-2">
+            <QRCodeSVG
+              value={card.barcodeValue}
+              size={160}
+              level="M"
+              bgColor="#ffffff"
+              fgColor="#004b49"
+            />
+            <p className="text-xs text-gray-400">Presenta este QR al completar tu compra</p>
+          </div>
+
           {/* Barcode */}
           <div className="mt-6 border-t border-gray-100 pt-6 text-center">
             <p className="font-mono text-lg tracking-widest text-[#004b49]">{card.barcodeValue}</p>
@@ -152,22 +164,6 @@ export default function CardViewPage({
           <div className="rounded-2xl border border-gray-100 bg-white p-4 text-center shadow-sm">
             <p className="text-2xl font-bold text-[#004b49]">{card.rewardsRedeemed}</p>
             <p className="mt-1 text-xs text-gray-400">Recompensas canjeadas</p>
-          </div>
-        </div>
-
-        {/* QR Code */}
-        <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center shadow-sm">
-          <p className="text-xs font-medium text-gray-400">Escanea para descargar tu tarjeta</p>
-          <div className="mt-3 flex justify-center">
-            {origin && (
-              <QRCodeSVG
-                value={walletUrl}
-                size={180}
-                level="M"
-                bgColor="#ffffff"
-                fgColor="#004b49"
-              />
-            )}
           </div>
         </div>
 

@@ -409,7 +409,7 @@ export default function LoyaltyRegisterPage() {
           <button
             type="button"
             onClick={() => { setMode("login"); setError(""); }}
-            className="w-full py-2 text-sm text-gray-400 transition hover:text-[#004b49]"
+            className="w-full py-3 text-sm font-medium text-[#004b49] transition hover:text-[#003634]"
           >
             ¿Ya tienes tarjeta? Inicia sesión
           </button>
