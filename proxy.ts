@@ -10,7 +10,7 @@ export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes that don't need authentication
-  const publicRoutes = ['/login', '/bar', '/dispatch', '/orders', '/loyalty', '/logos', '/galeria'];
+  const publicRoutes = ['/login', '/loyalty'];
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
   
   if (isPublicRoute) {
@@ -39,6 +39,6 @@ export default async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|logos|pass-assets|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico|css|js|woff|woff2)).*)',
   ],
 };
