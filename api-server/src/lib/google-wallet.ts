@@ -15,19 +15,23 @@ async function getSharp() {
   return sharpModule.default || sharpModule;
 }
 
-// Generate a stamp strip image for Google Wallet heroImage (1032x336, 3:1 ratio)
+// Generate a stamp strip image for Google Wallet heroImage (2 rows x 4 stamps)
 async function generateStampImage(stamps: number, total: number): Promise<Buffer> {
   const sharp = await getSharp();
   const assetsPath = path.join(process.cwd(), "public", "pass-assets");
 
   const W = 1032;
   const H = 336;
-  const STAMP_SIZE = 72;
-  const GAP = 24;
+  const STAMP_SIZE = 120;
+  const GAP_X = 110;
+  const GAP_Y = 70;
+  const COLS = 4;
 
-  const totalW = total * STAMP_SIZE + (total - 1) * GAP;
-  const startX = Math.round((W - totalW) / 2);
-  const startY = Math.round((H - STAMP_SIZE) / 2);
+  const rowW = COLS * STAMP_SIZE + (COLS - 1) * GAP_X;
+  const startX = Math.round((W - rowW) / 2);
+
+  const totalH = 2 * STAMP_SIZE + GAP_Y;
+  const startY = Math.round((H - totalH) / 2);
 
   const composites: any[] = [];
 
@@ -38,10 +42,15 @@ async function generateStampImage(stamps: number, total: number): Promise<Buffer
     const isFilled = i < stamps;
     const imgPath = isFilled ? filledPath : emptyPath;
     if (fs.existsSync(imgPath)) {
+      const row = Math.floor(i / COLS);
+      const col = i % COLS;
+      const resizedBuf = await sharp(imgPath)
+        .resize(STAMP_SIZE, STAMP_SIZE, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } })
+        .toBuffer();
       composites.push({
-        input: imgPath,
-        top: startY,
-        left: startX + i * (STAMP_SIZE + GAP),
+        input: resizedBuf,
+        top: startY + row * (STAMP_SIZE + GAP_Y),
+        left: startX + col * (STAMP_SIZE + GAP_X),
         blend: "over" as any,
       });
     }
