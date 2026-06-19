@@ -46,6 +46,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { QRCodeSVG } from "qrcode.react";
+import { FaApple, FaGoogle } from "react-icons/fa";
 import type { LoyaltyCard } from "@/lib/types";
 import { getApiUrl } from "@/lib/utils";
 
@@ -696,7 +697,7 @@ export default function LoyaltyPage() {
                     onClick={() => downloadPass(selectedCard.id)}
                     className="flex-1"
                   >
-                    <DownloadSimple className="mr-1 size-4" />
+                    <FaApple className="mr-1 size-4" />
                     Apple Wallet
                   </Button>
                 )}
@@ -706,7 +707,7 @@ export default function LoyaltyPage() {
                     onClick={() => addToGoogleWallet(selectedCard.id)}
                     className="flex-1"
                   >
-                    <CreditCard className="mr-1 size-4" />
+                    <FaGoogle className="mr-1 size-4" />
                     Google Wallet
                   </Button>
                 )}

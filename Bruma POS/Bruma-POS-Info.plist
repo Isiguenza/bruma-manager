@@ -7,5 +7,7 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Se necesita acceso a la cámara para escanear códigos QR de las tarjetas de lealtad.</string>
 </dict>
 </plist>

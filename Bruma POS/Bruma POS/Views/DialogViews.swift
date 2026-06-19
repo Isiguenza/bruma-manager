@@ -92,9 +92,9 @@ struct GuestCountDialog: View {
                     vm.tempGuestCount = max(1, vm.tempGuestCount - 1)
                 } label: {
                     Image(systemName: "minus")
-                        .font(.title2.weight(.bold))
+                        .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 56, height: 56)
+                        .frame(width: 72, height: 72)
                         .modifier(StepperButton())
                 }
                 .buttonStyle(.plain)
@@ -110,9 +110,9 @@ struct GuestCountDialog: View {
                     vm.tempGuestCount += 1
                 } label: {
                     Image(systemName: "plus")
-                        .font(.title2.weight(.bold))
+                        .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 56, height: 56)
+                        .frame(width: 72, height: 72)
                         .modifier(StepperButton())
                 }
                 .buttonStyle(.plain)
@@ -621,6 +621,7 @@ struct CustomerNameDialog: View {
 
 struct LoyaltyDialog: View {
     @ObservedObject var vm: POSViewModel
+    @State private var showManual = false
     
     var body: some View {
         VStack(spacing: 16) {
@@ -628,21 +629,80 @@ struct LoyaltyDialog: View {
                 .font(.title2.bold())
                 .foregroundColor(.white)
             
-            Image(systemName: "qrcode.viewfinder")
-                .font(.system(size: 48))
-                .foregroundColor(.blue)
+            // Camera QR Scanner
+            if !showManual {
+                ZStack {
+                    QRScannerView { code in
+                        vm.handleQRCodeDetected(code)
+                    }
+                    .frame(height: 260)
+                    .cornerRadius(16)
+                    
+                    // Overlay frame
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.3), lineWidth: 2)
+                        .frame(height: 260)
+                    
+                    // Corner brackets
+                    VStack {
+                        HStack {
+                            Image(systemName: "viewfinder")
+                                .font(.system(size: 32))
+                                .foregroundColor(.white.opacity(0.8))
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                    .padding(20)
+                    .frame(height: 260)
+                }
+            }
             
-            Text("Ingresa el código de barras")
-                .font(.subheadline)
-                .foregroundColor(.gray)
+            // Manual input toggle
+            Button {
+                withAnimation {
+                    showManual.toggle()
+                }
+            } label: {
+                Text(showManual ? "Usar cámara" : "Ingresar código manual")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
+            }
             
-            TextField("Código de barras", text: $vm.qrCode)
-                .foregroundColor(.white)
-                .padding(12)
-                .modifier(NotesTextFieldBackground())
-                .onSubmit { vm.handleQRCodeDetected(vm.qrCode) }
-            
-            HStack(spacing: 12) {
+            if showManual {
+                TextField("Código de barras", text: $vm.qrCode)
+                    .foregroundColor(.white)
+                    .padding(12)
+                    .modifier(NotesTextFieldBackground())
+                    .onSubmit { vm.handleQRCodeDetected(vm.qrCode) }
+                
+                HStack(spacing: 12) {
+                    Button("Cancelar") {
+                        vm.qrDialogOpen = false
+                        vm.qrCode = ""
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                    
+                    Button {
+                        vm.handleQRCodeDetected(vm.qrCode)
+                    } label: {
+                        HStack {
+                            if vm.loadingCard { ProgressView().tint(.white) }
+                            Text(vm.loadingCard ? "Buscando..." : "Buscar")
+                        }
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Capsule().fill(vm.qrCode.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.3) : Color.blue))
+                    }
+                    .disabled(vm.loadingCard || vm.qrCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            } else {
                 Button("Cancelar") {
                     vm.qrDialogOpen = false
                     vm.qrCode = ""
@@ -652,25 +712,10 @@ struct LoyaltyDialog: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
                 .background(Capsule().fill(Color.white.opacity(0.08)))
-                
-                Button {
-                    vm.handleQRCodeDetected(vm.qrCode)
-                } label: {
-                    HStack {
-                        if vm.loadingCard { ProgressView().tint(.white) }
-                        Text(vm.loadingCard ? "Buscando..." : "Buscar")
-                    }
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(Capsule().fill(vm.qrCode.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.3) : Color.blue))
-                }
-                .disabled(vm.loadingCard || vm.qrCode.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(24)
-        .frame(maxWidth: 400)
+        .frame(maxWidth: 420)
         .modifier(DialogBackground())
     }
 }

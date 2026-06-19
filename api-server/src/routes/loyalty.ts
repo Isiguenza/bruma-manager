@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, schema } from "../db";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, desc, inArray, isNull } from "drizzle-orm";
 import { sendAppleWalletPush } from "../lib/apple-push";
 import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
 
@@ -393,6 +393,39 @@ router.get("/loyalty-cards/promotions", async (req, res) => {
   } catch (error) {
     console.error("Error fetching promotions:", error);
     res.status(500).json({ error: "Error al obtener promociones" });
+  }
+});
+
+// DELETE /api/loyalty-cards/:id
+router.delete("/loyalty-cards/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Unlink orders first to avoid FK constraint violation
+    await db.update(schema.orders)
+      .set({ loyaltyCardId: null })
+      .where(eq(schema.orders.loyaltyCardId, id));
+
+    // Delete related records
+    await db.delete(schema.walletDeviceRegistrations)
+      .where(eq(schema.walletDeviceRegistrations.serialNumber, id));
+
+    await db.delete(schema.loyaltyTransactions)
+      .where(eq(schema.loyaltyTransactions.cardId, id));
+
+    // Delete the card
+    const result = await db.delete(schema.loyaltyCards)
+      .where(eq(schema.loyaltyCards.id, id))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(404).json({ error: "Tarjeta no encontrada" });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting loyalty card:", error);
+    res.status(500).json({ error: "Error al eliminar tarjeta" });
   }
 });
 
