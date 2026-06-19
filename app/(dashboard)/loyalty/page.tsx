@@ -566,8 +566,8 @@ export default function LoyaltyPage() {
           {selectedCard && (
             <div className="space-y-4">
               {/* Visual stamp card */}
-              <div className="rounded-xl bg-gradient-to-br from-primary/90 to-primary p-6 text-primary-foreground">
-                <p className="text-lg font-bold">Espantapájaros</p>
+              <div className="rounded-xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #004b49 0%, #003d3b 100%)' }}>
+                <p className="text-lg font-bold">BRUMA</p>
                 <div className="mt-4 grid grid-cols-4 gap-2">
                   {Array.from({ length: selectedCard.stampsPerReward }).map(
                     (_, i) => (
@@ -575,8 +575,8 @@ export default function LoyaltyPage() {
                         key={i}
                         className={`flex size-12 items-center justify-center rounded-full border-2 ${
                           i < selectedCard.stamps
-                            ? "border-primary-foreground bg-primary-foreground/20"
-                            : "border-primary-foreground/30"
+                            ? "border-white bg-white/20"
+                            : "border-white/30"
                         }`}
                       >
                         {i < selectedCard.stamps ? (

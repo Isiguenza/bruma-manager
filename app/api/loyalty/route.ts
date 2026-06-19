@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate unique barcode value
-    const barcodeValue = `ESP-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`;
+    const barcodeValue = `BRUMA-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`;
 
     // Hash PIN if provided
     let pinHash = null;

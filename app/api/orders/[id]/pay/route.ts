@@ -12,6 +12,8 @@ import {
   orderItems,
 } from "@/lib/db/schema";
 import { eq, sql, and, inArray } from "drizzle-orm";
+import { sendAppleWalletPush } from "@/lib/apple-push";
+import { createOrUpdateGoogleWalletObject } from "@/lib/google-wallet";
 
 export async function POST(
   request: NextRequest,
@@ -179,6 +181,15 @@ export async function POST(
           orderId: order.id,
           stampsAdded: loyaltyStamps,
         });
+
+        // Push updates to Apple and Google wallets (non-blocking)
+        const updatedCard = await db.query.loyaltyCards.findFirst({
+          where: eq(loyaltyCards.id, loyaltyCardId),
+        });
+        if (updatedCard) {
+          sendAppleWalletPush(loyaltyCardId).catch(console.error);
+          createOrUpdateGoogleWalletObject(updatedCard).catch(console.error);
+        }
       }
     }
 

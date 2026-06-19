@@ -19,6 +19,14 @@ export async function GET(
   const { searchParams } = new URL(request.url);
   const passesUpdatedSince = searchParams.get("passesUpdatedSince");
 
+  console.log("[Apple Wallet] GET list passes:", {
+    deviceLibraryId,
+    passTypeId,
+    passesUpdatedSince,
+    url: request.url,
+    userAgent: request.headers.get("user-agent"),
+  });
+
   try {
     const registrations = await db.query.walletDeviceRegistrations.findMany({
       where: and(
@@ -28,6 +36,7 @@ export async function GET(
     });
 
     if (registrations.length === 0) {
+      console.log("[Apple Wallet] No registrations found for device:", deviceLibraryId);
       return new NextResponse(null, { status: 204 });
     }
 

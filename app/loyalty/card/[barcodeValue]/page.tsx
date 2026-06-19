@@ -3,6 +3,59 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 
+function RegisterDeviceButton({ cardId }: { cardId: string }) {
+  const [registering, setRegistering] = useState(false);
+  const [registered, setRegistered] = useState(false);
+
+  async function handleRegister() {
+    setRegistering(true);
+    try {
+      // Generate a simple push token (in production this would come from the device)
+      const pushToken = `push-${Date.now()}`;
+      const res = await fetch("/api/wallet/register-device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serialNumber: cardId,
+          pushToken,
+          deviceLibraryId: `web-${Date.now()}`,
+          passTypeId: "pass.com.bruma.loyalty",
+        }),
+      });
+      if (res.ok) {
+        setRegistered(true);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setRegistering(false);
+    }
+  }
+
+  if (registered) {
+    return (
+      <button
+        disabled
+        className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#004b49]/30 bg-[#004b49]/5 py-3 text-sm font-medium text-[#004b49]"
+      >
+        <svg className="size-4" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+        Notificaciones activadas
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={handleRegister}
+      disabled={registering}
+      className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#004b49]/20 py-3 text-sm font-medium text-[#004b49] transition hover:bg-[#004b49]/5"
+    >
+      <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      {registering ? "Activando..." : "Recibir notificaciones de sellos"}
+    </button>
+  );
+}
+
 interface LoyaltyCard {
   id: string;
   customerName: string;
@@ -162,6 +215,9 @@ export default function CardViewPage({
             </svg>
             Agregar a Google Wallet
           </a>
+
+          {/* Manual device registration for push notifications */}
+          <RegisterDeviceButton cardId={card.id} />
         </div>
 
         <p className="text-center text-xs text-gray-400">
