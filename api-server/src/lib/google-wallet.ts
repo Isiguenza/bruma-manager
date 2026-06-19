@@ -1,4 +1,4 @@
-import jwt from "jsonwebtoken";
+import jwt, { SignOptions } from "jsonwebtoken";
 
 const GOOGLE_AUTH_URL = "https://oauth2.googleapis.com/token";
 const WALLET_API_BASE = "https://walletobjects.googleapis.com/walletobjects/v1";
@@ -19,17 +19,17 @@ async function getGoogleAccessToken(): Promise<string> {
   const privateKey = sa.private_key.replace(/\\n/g, "\n");
   const clientEmail = sa.client_email;
 
+  const options: SignOptions = {
+    algorithm: "RS256",
+    issuer: clientEmail,
+    subject: clientEmail,
+    audience: GOOGLE_AUTH_URL,
+    expiresIn: "1h",
+  };
   const token = jwt.sign(
     { scope: "https://www.googleapis.com/auth/wallet_object.issuer" },
     privateKey,
-    {
-      algorithm: "RS256",
-      header: { typ: "JWT" },
-      issuer: clientEmail,
-      subject: clientEmail,
-      audience: GOOGLE_AUTH_URL,
-      expiresIn: "1h",
-    }
+    options
   );
 
   const res = await fetch(GOOGLE_AUTH_URL, {
@@ -73,6 +73,31 @@ function buildObjectId(cardId: string): string {
   return `${issuerId}.${classId}.${cardId}`;
 }
 
+export function generateGoogleWalletSaveUrl(cardId: string): string {
+  const serviceAccountKey = process.env.GOOGLE_WALLET_SERVICE_ACCOUNT_KEY;
+  if (!serviceAccountKey) {
+    throw new Error("Missing GOOGLE_WALLET_SERVICE_ACCOUNT_KEY");
+  }
+
+  const sa = JSON.parse(serviceAccountKey);
+  const privateKey = sa.private_key.replace(/\\n/g, "\n");
+  const clientEmail = sa.client_email;
+  const objectId = buildObjectId(cardId);
+
+  const claims = {
+    iss: clientEmail,
+    aud: "google",
+    typ: "savetowallet",
+    iat: Math.floor(Date.now() / 1000),
+    payload: {
+      loyaltyObjects: [{ id: objectId }],
+    },
+  };
+
+  const token = jwt.sign(claims, privateKey, { algorithm: "RS256" } as SignOptions);
+  return `https://pay.google.com/gp/v/save/${token}`;
+}
+
 export async function createOrUpdateGoogleWalletObject(card: any) {
   try {
     const accessToken = await getGoogleAccessToken();
@@ -104,6 +129,11 @@ export async function createOrUpdateGoogleWalletObject(card: any) {
           header: "Total Sellos",
           body: String(card.totalStamps),
           id: "total_stamps",
+        },
+        {
+          header: "Último mensaje",
+          body: card.latestMessage || "Sin mensajes recientes",
+          id: "latest_message",
         },
       ],
     };

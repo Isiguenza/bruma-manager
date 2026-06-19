@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, schema } from "../db";
 import { eq, and } from "drizzle-orm";
 import { generateApplePass } from "../lib/apple-pass";
+import { generateGoogleWalletSaveUrl, createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
 
 const router = Router();
 
@@ -186,6 +187,33 @@ router.get("/wallet/v1/passes/:passTypeId/:serialNumber", async (req, res) => {
   } catch (error) {
     console.error("[API Wallet] Error generating pass:", error);
     res.status(500).send();
+  }
+});
+
+// GET /api/wallet/google-pass/:cardId
+// Generate Google Wallet "Save to Wallet" link
+router.get("/wallet/google-pass/:cardId", async (req, res) => {
+  try {
+    const { cardId } = req.params;
+
+    const card = await db.query.loyaltyCards.findFirst({
+      where: eq(schema.loyaltyCards.id, cardId),
+    });
+
+    if (!card) {
+      return res.status(404).json({ error: "Tarjeta no encontrada" });
+    }
+
+    // Ensure the object exists in Google Wallet API
+    await createOrUpdateGoogleWalletObject(card);
+
+    // Generate the save URL
+    const saveUrl = generateGoogleWalletSaveUrl(cardId);
+
+    res.json({ saveUrl });
+  } catch (error) {
+    console.error("[API Wallet] Error generating Google Wallet pass:", error);
+    res.status(500).json({ error: "Error generando tarjeta Google Wallet" });
   }
 });
 
