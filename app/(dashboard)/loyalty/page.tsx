@@ -467,7 +467,7 @@ export default function LoyaltyPage() {
                           onClick={() => downloadPass(card.id)}
                           title="Apple Wallet"
                         >
-                          <DownloadSimple className="size-4" />
+                          <FaApple className="size-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -475,7 +475,7 @@ export default function LoyaltyPage() {
                           onClick={() => addToGoogleWallet(card.id)}
                           title="Google Wallet"
                         >
-                          <CreditCard className="size-4" />
+                          <FaGoogle className="size-4" />
                         </Button>
                         <Button
                           variant="ghost"
