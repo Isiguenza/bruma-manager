@@ -198,16 +198,13 @@ export async function generateApplePass(card: any): Promise<Buffer> {
     value: displayName,
   });
 
-  if (card.latestMessage) {
-    pass.backFields.push({
+  pass.backFields.push(
+    {
       key: "latestMessage",
       label: "Último mensaje",
-      value: card.latestMessage,
+      value: card.latestMessage || "Sin mensajes recientes",
       changeMessage: "Nuevo mensaje de BRUMA",
-    });
-  }
-
-  pass.backFields.push(
+    },
     {
       key: "totalStamps",
       label: "Total de sellos acumulados",
