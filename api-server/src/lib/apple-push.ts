@@ -40,7 +40,8 @@ export async function sendAppleWalletPush(serialNumber: string) {
     const token = generateApnToken();
     const passTypeId = process.env.APPLE_PASS_TYPE_ID || "";
 
-    const results = await Promise.allSettled(
+    let sent = 0;
+    await Promise.allSettled(
       registrations.map(async (reg) => {
         if (!reg.pushToken) return;
         const url = `${APN_URL}/3/device/${reg.pushToken}`;
@@ -62,12 +63,12 @@ export async function sendAppleWalletPush(serialNumber: string) {
             body
           );
         } else {
+          sent++;
           console.log(`[API Apple Push] Sent to ${reg.pushToken}`);
         }
       })
     );
 
-    const sent = results.filter((r) => r.status === "fulfilled").length;
     console.log(`[API Apple Push] Sent to ${sent}/${registrations.length} devices`);
   } catch (error) {
     console.error("[API Apple Push] Error:", error);
