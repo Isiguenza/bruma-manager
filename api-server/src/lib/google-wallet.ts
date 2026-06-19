@@ -313,8 +313,8 @@ async function uploadStampToR2(buffer: Buffer, cardId: string): Promise<string> 
     throw new Error(`R2 upload failed: ${res.status} ${body}`);
   }
 
-  // Return public URL
-  return `${publicUrlBase}/${key}`;
+  // Return public URL with cache-busting timestamp
+  return `${publicUrlBase}/${key}?v=${Date.now()}`;
 }
 
 export async function createOrUpdateGoogleWalletObject(card: any) {
