@@ -1,10 +1,9 @@
 import { Router } from "express";
 import { db, schema } from "../db";
 import { eq, and } from "drizzle-orm";
+import { generateApplePass } from "../lib/apple-pass";
 
 const router = Router();
-
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://admin.cocinabruma.com.mx";
 
 // GET /api/wallet/v1/devices/:deviceLibraryId/registrations/:passTypeId
 // Apple Wallet calls this to check for updates
@@ -146,21 +145,22 @@ router.delete("/wallet/v1/devices/:deviceLibraryId/registrations/:passTypeId/:se
 // GET /api/wallet/v1/pass/:passTypeId/:serialNumber
 // Apple Wallet calls this to download an updated pass
 router.get("/wallet/v1/pass/:passTypeId/:serialNumber", async (req, res) => {
-  const { passTypeId, serialNumber } = req.params;
+  const { serialNumber } = req.params;
 
-  console.log("[API Wallet] GET updated pass (singular):", { passTypeId, serialNumber });
+  console.log("[API Wallet] GET updated pass (singular):", { serialNumber });
 
   try {
-    const passUrl = `${APP_URL}/api/wallet/pass/${serialNumber}`;
-    const passRes = await fetch(passUrl);
-    if (!passRes.ok) {
-      return res.status(passRes.status).send();
+    const card = await db.query.loyaltyCards.findFirst({
+      where: eq(schema.loyaltyCards.id, serialNumber),
+    });
+    if (!card) {
+      return res.status(404).send();
     }
-    const buffer = Buffer.from(await passRes.arrayBuffer());
+    const buffer = await generateApplePass(card);
     res.setHeader("Content-Type", "application/vnd.apple.pkpass");
     res.send(buffer);
   } catch (error) {
-    console.error("[API Wallet] Error proxying pass:", error);
+    console.error("[API Wallet] Error generating pass:", error);
     res.status(500).send();
   }
 });
@@ -168,26 +168,23 @@ router.get("/wallet/v1/pass/:passTypeId/:serialNumber", async (req, res) => {
 // GET /api/wallet/v1/passes/:passTypeId/:serialNumber
 // Apple also uses /passes/ (plural) — same functionality
 router.get("/wallet/v1/passes/:passTypeId/:serialNumber", async (req, res) => {
-  const { passTypeId, serialNumber } = req.params;
+  const { serialNumber } = req.params;
 
-  console.log("[API Wallet] GET updated pass:", { passTypeId, serialNumber });
+  console.log("[API Wallet] GET updated pass:", { serialNumber });
 
   try {
-    // Proxy to Next.js pass generation endpoint
-    const passUrl = `${APP_URL}/api/wallet/pass/${serialNumber}`;
-    console.log("[API Wallet] Proxying to:", passUrl);
-
-    const passRes = await fetch(passUrl);
-    if (!passRes.ok) {
-      console.error("[API Wallet] Failed to generate pass:", passRes.status);
-      return res.status(passRes.status).send();
+    const card = await db.query.loyaltyCards.findFirst({
+      where: eq(schema.loyaltyCards.id, serialNumber),
+    });
+    if (!card) {
+      console.error("[API Wallet] Card not found:", serialNumber);
+      return res.status(404).send();
     }
-
-    const buffer = Buffer.from(await passRes.arrayBuffer());
+    const buffer = await generateApplePass(card);
     res.setHeader("Content-Type", "application/vnd.apple.pkpass");
     res.send(buffer);
   } catch (error) {
-    console.error("[API Wallet] Error proxying pass:", error);
+    console.error("[API Wallet] Error generating pass:", error);
     res.status(500).send();
   }
 });
