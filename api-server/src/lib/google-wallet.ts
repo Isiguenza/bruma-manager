@@ -15,15 +15,15 @@ async function getSharp() {
   return sharpModule.default || sharpModule;
 }
 
-// Generate a stamp strip image showing filled/empty circles
+// Generate a stamp strip image for Google Wallet heroImage (1032x336, 3:1 ratio)
 async function generateStampImage(stamps: number, total: number): Promise<Buffer> {
   const sharp = await getSharp();
   const assetsPath = path.join(process.cwd(), "public", "pass-assets");
 
-  const W = 750;
-  const H = 180;
-  const STAMP_SIZE = 70;
-  const GAP = 20;
+  const W = 1032;
+  const H = 336;
+  const STAMP_SIZE = 72;
+  const GAP = 24;
 
   const totalW = total * STAMP_SIZE + (total - 1) * GAP;
   const startX = Math.round((W - totalW) / 2);
