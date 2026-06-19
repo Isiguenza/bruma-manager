@@ -446,6 +446,7 @@ export const loyaltyCards = pgTable("loyalty_cards", {
   rewardsAvailable: integer("rewards_available").notNull().default(0),
   rewardsRedeemed: integer("rewards_redeemed").notNull().default(0),
   stampsPerReward: integer("stamps_per_reward").notNull().default(8),
+  latestMessage: text("latest_message"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -473,6 +474,17 @@ export const walletDeviceRegistrations = pgTable("wallet_device_registrations", 
     .notNull()
     .references(() => loyaltyCards.id, { onDelete: "cascade" }),
   pushToken: text("push_token"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Wallet promotions (messages sent to Apple Wallet passes)
+export const walletPromotions = pgTable("wallet_promotions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  message: text("message").notNull(),
+  targetType: varchar("target_type", { length: 20 }).notNull().default("all"),
+  targetCardIds: text("target_card_ids"),
+  sentCount: integer("sent_count").notNull().default(0),
+  createdBy: uuid("created_by").references(() => userProfiles.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
