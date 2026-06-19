@@ -46,9 +46,15 @@ struct CartItemRow: View {
                 
                 // Price per unit
                 if !isInsidePromotionGroup {
-                    Text(vm.formatCurrency(item.unitPrice) + " c/u")
-                        .font(.caption2)
-                        .foregroundColor(Color(white: 0.4))
+                    if item.isGuest {
+                        Text(vm.formatCurrency(0) + " c/u")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                    } else {
+                        Text(vm.formatCurrency(item.unitPrice) + " c/u")
+                            .font(.caption2)
+                            .foregroundColor(Color(white: 0.4))
+                    }
                 }
             }
             
@@ -128,9 +134,16 @@ struct CartItemRow: View {
                     
                     Spacer()
                     
-                    Text(vm.formatCurrency(itemTotal))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(priceColor)
+                    if item.isGuest {
+                        Text(vm.formatCurrency(0))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.gray)
+                            .strikethrough()
+                    } else {
+                        Text(vm.formatCurrency(itemTotal))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(priceColor)
+                    }
                 }
             }
             
@@ -166,15 +179,27 @@ struct CartItemRow: View {
                     
                     // Price total aligned with controls
                     VStack(alignment: .trailing, spacing: 2) {
-                        if !isInsidePromotionGroup, let origPrice = item.originalPrice, (item.promotionDiscount ?? 0) > 0 {
+                        if item.isGuest {
+                            Text(vm.formatCurrency(itemTotal))
+                                .font(.caption2)
+                                .foregroundColor(Color(white: 0.4))
+                                .strikethrough()
+                            Text(vm.formatCurrency(0))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.gray)
+                        } else if !isInsidePromotionGroup, let origPrice = item.originalPrice, (item.promotionDiscount ?? 0) > 0 {
                             Text(vm.formatCurrency(origPrice * Double(item.quantity)))
                                 .font(.caption2)
                                 .foregroundColor(Color(white: 0.4))
                                 .strikethrough()
+                            Text(vm.formatCurrency(itemTotal))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(priceColor)
+                        } else {
+                            Text(vm.formatCurrency(itemTotal))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(priceColor)
                         }
-                        Text(vm.formatCurrency(itemTotal))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(priceColor)
                     }
                 }
             }

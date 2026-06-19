@@ -2668,7 +2668,8 @@ class POSViewModel: ObservableObject {
         var itemsBySeat: [String: [[String: Any]]] = [:]
         for (seat, items) in seatGroups {
             itemsBySeat[seat] = items.values.map { item in
-                let originalTotal = Int((item.originalPrice ?? item.price) * Double(item.qty))
+                let isGuestItem = item.isGuest ?? false
+                let originalTotal = isGuestItem ? 0 : Int((item.originalPrice ?? item.price) * Double(item.qty))
                 var dict: [String: Any] = [
                     "name": item.name,
                     "qty": item.qty,
@@ -2676,7 +2677,7 @@ class POSViewModel: ObservableObject {
                 ]
                 if let pn = item.promotionName { dict["promotionName"] = pn }
                 if let pd = item.promotionDiscount, pd > 0 { dict["promotionDiscount"] = pd }
-                if let ig = item.isGuest, ig { dict["isGuest"] = true }
+                if isGuestItem { dict["isGuest"] = true }
                 return dict
             }
         }

@@ -324,7 +324,7 @@ app.post('/print', async (req, res) => {
     // Imprimir todos los items juntos
     for (const item of allItems) {
       const qtyName = `${item.qty}x ${item.name}`;
-      const price = `$${item.total}`;
+      const price = item.isGuest ? "$0" : `$${item.total}`;
       const itemSpaces = Math.max(1, 48 - qtyName.length - price.length);
       content += qtyName + " ".repeat(itemSpaces) + price + "\n";
       
