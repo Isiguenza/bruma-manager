@@ -243,7 +243,7 @@ export default function LoyaltyPage() {
 
   async function addToGoogleWallet(cardId: string) {
     try {
-      const res = await fetch(`/api/wallet/google-pass/${cardId}`);
+      const res = await fetch(`${getApiUrl()}/api/wallet/google-pass/${cardId}`);
       if (!res.ok) {
         toast.error("Error generando tarjeta Google Wallet");
         return;

@@ -98,8 +98,77 @@ export function generateGoogleWalletSaveUrl(cardId: string): string {
   return `https://pay.google.com/gp/v/save/${token}`;
 }
 
+export async function createOrUpdateGoogleWalletClass() {
+  try {
+    const accessToken = await getGoogleAccessToken();
+    const classId = buildClassId();
+
+    const loyaltyClass = {
+      id: classId,
+      issuerName: "BRUMA",
+      programName: "Tarjeta de Lealtad BRUMA",
+      programLogo: {
+        sourceUri: {
+          uri: "https://api.cocinabruma.com.mx/pass-assets/logo.png",
+        },
+        contentDescription: {
+          defaultValue: {
+            language: "es",
+            value: "BRUMA Logo",
+          },
+        },
+      },
+      hexBackgroundColor: "#1a1a2e",
+      hexPrimaryColor: "#e94560",
+      reviewStatus: "approved",
+    };
+
+    const updateRes = await fetch(
+      `${WALLET_API_BASE}/loyaltyClass/${encodeURIComponent(classId)}`,
+      {
+        method: "PUT",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(loyaltyClass),
+      }
+    );
+
+    if (updateRes.ok || updateRes.status === 200) {
+      console.log("[API Google Wallet] Class updated:", classId);
+      return;
+    }
+
+    if (updateRes.status === 404) {
+      const createRes = await fetch(`${WALLET_API_BASE}/loyaltyClass`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(loyaltyClass),
+      });
+
+      if (!createRes.ok) {
+        const body = await createRes.text();
+        throw new Error(`Google Wallet class create failed: ${createRes.status} ${body}`);
+      }
+
+      console.log("[API Google Wallet] Class created:", classId);
+      return;
+    }
+
+    const body = await updateRes.text();
+    throw new Error(`Google Wallet class update failed: ${updateRes.status} ${body}`);
+  } catch (error) {
+    console.error("[API Google Wallet] Class error:", error);
+  }
+}
+
 export async function createOrUpdateGoogleWalletObject(card: any) {
   try {
+    await createOrUpdateGoogleWalletClass();
     const accessToken = await getGoogleAccessToken();
     const classId = buildClassId();
     const objectId = buildObjectId(card.id);
