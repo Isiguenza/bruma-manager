@@ -324,7 +324,7 @@ export async function createOrUpdateGoogleWalletObject(card: any) {
     // Generate and upload stamp image
     let stampImageUrl: string | undefined;
     try {
-      const stampBuffer = await generateStampImage(card.stamps || 0, card.totalStamps || 10);
+      const stampBuffer = await generateStampImage(card.stamps || 0, card.stampsPerReward || 8);
       stampImageUrl = await uploadStampToR2(stampBuffer, card.id);
       console.log("[API Google Wallet] Stamp image uploaded:", stampImageUrl);
     } catch (imgError) {
