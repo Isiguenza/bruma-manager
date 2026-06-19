@@ -120,7 +120,7 @@ export async function createOrUpdateGoogleWalletClass() {
       },
       hexBackgroundColor: "#1a1a2e",
       hexPrimaryColor: "#e94560",
-      reviewStatus: "approved",
+      reviewStatus: "UNDER_REVIEW",
     };
 
     const updateRes = await fetch(
