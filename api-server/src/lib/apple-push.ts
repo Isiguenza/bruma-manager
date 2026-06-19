@@ -95,8 +95,14 @@ export async function sendAppleWalletPush(serialNumber: string) {
         } catch (err: any) {
           console.error(
             `[API Apple Push] NETWORK ERROR for token ${reg.pushToken.substring(0, 16)}...`,
-            err.message || err
+            "Type:", err.name,
+            "Message:", err.message,
+            "Code:", err.code,
+            "Cause:", err.cause?.message || err.cause || "N/A"
           );
+          if (err.stack) {
+            console.error("[API Apple Push] Stack:", err.stack.split("\n").slice(0, 3).join("\n"));
+          }
           return "error";
         }
       })
