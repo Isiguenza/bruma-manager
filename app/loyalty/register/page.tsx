@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import confetti from "canvas-confetti";
 import { useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { FaApple, FaGoogle } from "react-icons/fa";
@@ -119,6 +120,17 @@ export default function LoyaltyRegisterPage() {
   }
 
   // Success state
+  useEffect(() => {
+    if (card) {
+      confetti({
+        particleCount: 150,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ["#004b49", "#7fd6d0", "#ff6b6b", "#ffd93d", "#ffffff"],
+      });
+    }
+  }, [card]);
+
   if (card) {
     const cardViewUrl = `/loyalty/card/${card.barcodeValue}`;
     return (
@@ -152,20 +164,6 @@ export default function LoyaltyRegisterPage() {
               <p className="text-sm text-gray-400">
                 Muestra este código en tu próxima visita
               </p>
-            </div>
-          </div>
-
-          {/* QR Code */}
-          <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center shadow-sm">
-            <p className="text-xs font-medium text-gray-400">Escanea para descargar tu tarjeta</p>
-            <div className="mt-3 flex justify-center">
-              <QRCodeSVG
-                value={walletUrl()}
-                size={180}
-                level="M"
-                bgColor="#ffffff"
-                fgColor="#004b49"
-              />
             </div>
           </div>
 
