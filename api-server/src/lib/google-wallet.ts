@@ -168,17 +168,6 @@ export async function createOrUpdateGoogleWalletClass() {
           },
         },
       },
-      heroImage: {
-        sourceUri: {
-          uri: "https://cdn.cocinabruma.com.mx/logo.png",
-        },
-        contentDescription: {
-          defaultValue: {
-            language: "es",
-            value: "BRUMA",
-          },
-        },
-      },
       hexBackgroundColor: "#FFFFFF",
       hexPrimaryColor: "#e94560",
       reviewStatus: "UNDER_REVIEW",
@@ -337,19 +326,6 @@ export async function createOrUpdateGoogleWalletObject(card: any) {
     const classId = buildClassId();
     const objectId = buildObjectId(card.id);
 
-    const imageModulesData: any[] = [];
-    if (stampImageUrl) {
-      imageModulesData.push({
-        mainImage: {
-          sourceUri: { uri: stampImageUrl },
-          contentDescription: {
-            defaultValue: { language: "es", value: "Sellos BRUMA" },
-          },
-        },
-        id: "stamp_strip",
-      });
-    }
-
     const loyaltyObject: any = {
       id: objectId,
       classId,
@@ -364,6 +340,10 @@ export async function createOrUpdateGoogleWalletObject(card: any) {
       loyaltyPoints: {
         balance: { int: card.stamps },
         label: "Sellos",
+      },
+      secondaryLoyaltyPoints: {
+        balance: { string: `${card.customerName} ${card.customerLastName || ""}`.trim() },
+        label: "Cliente",
       },
       textModulesData: [
         {
@@ -393,8 +373,18 @@ export async function createOrUpdateGoogleWalletObject(card: any) {
       },
     };
 
-    if (imageModulesData.length > 0) {
-      loyaltyObject.imageModulesData = imageModulesData;
+    if (stampImageUrl) {
+      loyaltyObject.heroImage = {
+        sourceUri: {
+          uri: stampImageUrl,
+        },
+        contentDescription: {
+          defaultValue: {
+            language: "es",
+            value: "Sellos BRUMA",
+          },
+        },
+      };
     }
 
     const updateRes = await fetch(
