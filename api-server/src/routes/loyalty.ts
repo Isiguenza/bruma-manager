@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, schema } from "../db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 import { sendAppleWalletPush } from "../lib/apple-push";
 import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
 
@@ -320,6 +320,79 @@ router.post("/loyalty-cards/:id/redeem", async (req, res) => {
   } catch (error) {
     console.error("Error redeeming reward:", error);
     res.status(500).json({ error: "Error al canjear recompensa" });
+  }
+});
+
+// POST /api/loyalty-cards/promotions
+// Send a promotion message to Apple Wallet passes
+router.post("/loyalty-cards/promotions", async (req, res) => {
+  try {
+    const { message, targetType, targetCardIds } = req.body;
+
+    if (!message || message.trim().length === 0) {
+      return res.status(400).json({ error: "El mensaje es requerido" });
+    }
+
+    const target = targetType || "all";
+    let cards: any[] = [];
+
+    if (target === "specific" && Array.isArray(targetCardIds) && targetCardIds.length > 0) {
+      cards = await db.query.loyaltyCards.findMany({
+        where: inArray(schema.loyaltyCards.id, targetCardIds),
+      });
+    } else {
+      cards = await db.query.loyaltyCards.findMany({
+        where: eq(schema.loyaltyCards.active, true),
+      });
+    }
+
+    if (cards.length === 0) {
+      return res.status(400).json({ error: "No hay tarjetas para enviar la promoción" });
+    }
+
+    // Update latestMessage on each card
+    const now = new Date();
+    for (const card of cards) {
+      await db
+        .update(schema.loyaltyCards)
+        .set({ latestMessage: message, updatedAt: now })
+        .where(eq(schema.loyaltyCards.id, card.id));
+
+      // Send push notification (non-blocking)
+      sendAppleWalletPush(card.id).catch(console.error);
+    }
+
+    // Save promotion record
+    await db.insert(schema.walletPromotions).values({
+      message,
+      targetType: target,
+      targetCardIds: target === "specific" ? JSON.stringify(targetCardIds) : null,
+      sentCount: cards.length,
+    });
+
+    res.json({
+      success: true,
+      sentTo: cards.length,
+      message,
+    });
+  } catch (error) {
+    console.error("Error sending promotion:", error);
+    res.status(500).json({ error: "Error al enviar promoción" });
+  }
+});
+
+// GET /api/loyalty-cards/promotions
+// Get promotion history
+router.get("/loyalty-cards/promotions", async (req, res) => {
+  try {
+    const promotions = await db.query.walletPromotions.findMany({
+      orderBy: desc(schema.walletPromotions.createdAt),
+      limit: 50,
+    });
+    res.json(promotions);
+  } catch (error) {
+    console.error("Error fetching promotions:", error);
+    res.status(500).json({ error: "Error al obtener promociones" });
   }
 });
 

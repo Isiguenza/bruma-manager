@@ -40,6 +40,7 @@ import {
   Barcode,
   ArrowsClockwise,
   Trash,
+  PaperPlaneTilt,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -77,6 +78,12 @@ export default function LoyaltyPage() {
   const [stampsToAdd, setStampsToAdd] = useState(1);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [qrCard, setQrCard] = useState<LoyaltyCard | null>(null);
+
+  // Promotion dialog
+  const [promoDialogOpen, setPromoDialogOpen] = useState(false);
+  const [promoMessage, setPromoMessage] = useState("");
+  const [promoTarget, setPromoTarget] = useState<"all" | "specific">("all");
+  const [selectedCardsForPromo, setSelectedCardsForPromo] = useState<string[]>([]);
   const [origin, setOrigin] = useState("");
 
   useEffect(() => {
@@ -201,6 +208,35 @@ export default function LoyaltyPage() {
     }
   }
 
+  async function handleSendPromotion() {
+    if (!promoMessage.trim()) {
+      toast.error("El mensaje es requerido");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/loyalty-cards/promotions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: promoMessage.trim(),
+          targetType: promoTarget,
+          targetCardIds: promoTarget === "specific" ? selectedCardsForPromo : undefined,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      toast.success(`Promoción enviada a ${data.sentTo} tarjetas`);
+      setPromoDialogOpen(false);
+      setPromoMessage("");
+      setSelectedCardsForPromo([]);
+    } catch {
+      toast.error("Error enviando promoción");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   function downloadPass(cardId: string) {
     window.open(`/api/wallet/pass/${cardId}`, "_blank");
   }
@@ -238,6 +274,9 @@ export default function LoyaltyPage() {
           Clientes Frecuentes
         </h1>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setPromoDialogOpen(true)}>
+            <PaperPlaneTilt className="mr-1 size-4" /> Enviar Promoción
+          </Button>
           <Button variant="outline" onClick={handleInvalidateAll}>
             <ArrowsClockwise className="mr-1 size-4" /> Actualizar Passes
           </Button>
@@ -690,6 +729,99 @@ export default function LoyaltyPage() {
               {qrCard?.barcodeValue}
             </code>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Promotion Dialog */}
+      <Dialog open={promoDialogOpen} onOpenChange={setPromoDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Enviar Promoción</DialogTitle>
+            <DialogDescription>
+              Envía un mensaje a las tarjetas de lealtad en Apple Wallet.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="promo-message">Mensaje</Label>
+              <Input
+                id="promo-message"
+                value={promoMessage}
+                onChange={(e) => setPromoMessage(e.target.value)}
+                placeholder="Ej: ¡2x1 en cafés este fin de semana!"
+                maxLength={140}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {promoMessage.length}/140 caracteres
+              </p>
+            </div>
+
+            <div>
+              <Label>Destinatarios</Label>
+              <div className="flex gap-2 mt-2">
+                <Button
+                  type="button"
+                  variant={promoTarget === "all" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPromoTarget("all")}
+                >
+                  Todas las tarjetas
+                </Button>
+                <Button
+                  type="button"
+                  variant={promoTarget === "specific" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPromoTarget("specific")}
+                >
+                  Seleccionar tarjetas
+                </Button>
+              </div>
+            </div>
+
+            {promoTarget === "specific" && (
+              <div className="border rounded-md p-3 max-h-48 overflow-y-auto">
+                <p className="text-xs text-muted-foreground mb-2">
+                  Selecciona las tarjetas:
+                </p>
+                {filtered.map((card) => (
+                  <label
+                    key={card.id}
+                    className="flex items-center gap-2 py-1 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedCardsForPromo.includes(card.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedCardsForPromo((prev) => [...prev, card.id]);
+                        } else {
+                          setSelectedCardsForPromo((prev) =>
+                            prev.filter((id) => id !== card.id)
+                          );
+                        }
+                      }}
+                    />
+                    <span className="text-sm">
+                      {card.customerName} — {card.customerPhone}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPromoDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSendPromotion}
+              disabled={submitting || !promoMessage.trim()}
+            >
+              {submitting ? "Enviando..." : "Enviar Promoción"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
