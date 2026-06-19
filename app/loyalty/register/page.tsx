@@ -1,8 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import Image from "next/image";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { QRCodeSVG } from "qrcode.react";
+
+function getDeviceType() {
+  if (typeof navigator === "undefined") return "other";
+  const ua = navigator.userAgent.toLowerCase();
+  if (/iphone|ipad|ipod/.test(ua)) return "ios";
+  if (/android/.test(ua)) return "android";
+  return "other";
+}
 
 interface CreatedCard {
   id: string;
@@ -32,6 +40,11 @@ export default function LoyaltyRegisterPage() {
   const [loginPin, setLoginPin] = useState("");
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [deviceType, setDeviceType] = useState<string>("other");
+
+  useEffect(() => {
+    setDeviceType(getDeviceType());
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -111,13 +124,10 @@ export default function LoyaltyRegisterPage() {
       <main className="flex min-h-dvh flex-col items-center bg-white px-6 py-10">
         <div className="w-full max-w-sm space-y-8">
           <div className="flex flex-col items-center">
-            <Image
+            <img
               src="/logos/BRUMA.png"
               alt="BRUMA"
-              width={220}
-              height={90}
-              className="object-contain"
-              priority
+              className="h-20 w-auto object-contain"
             />
             <h1 className="mt-4 text-2xl font-bold tracking-wide text-[#004b49]">
               Programa de Lealtad
@@ -144,29 +154,77 @@ export default function LoyaltyRegisterPage() {
             </div>
           </div>
 
+          {/* QR Code */}
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center shadow-sm">
+            <p className="text-xs font-medium text-gray-400">Escanea para descargar tu tarjeta</p>
+            <div className="mt-3 flex justify-center">
+              <QRCodeSVG
+                value={walletUrl()}
+                size={180}
+                level="M"
+                bgColor="#ffffff"
+                fgColor="#004b49"
+              />
+            </div>
+          </div>
+
+          {/* Wallet buttons - device specific */}
           <div className="space-y-3">
-            <a
-              href={walletUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#2d3436] py-4 font-semibold text-white transition hover:bg-black"
-            >
-              <svg className="size-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
-              </svg>
-              Agregar a Apple Wallet
-            </a>
-            <a
-              href={googleWalletSaveUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-gray-200 bg-white py-4 font-semibold text-gray-800 transition hover:bg-gray-50"
-            >
-              <svg className="size-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-              </svg>
-              Agregar a Google Wallet
-            </a>
+            {deviceType === "ios" && (
+              <a
+                href={walletUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#2d3436] py-4 font-semibold text-white transition hover:bg-black"
+              >
+                <svg className="size-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
+                </svg>
+                Agregar a Apple Wallet
+              </a>
+            )}
+
+            {deviceType === "android" && (
+              <a
+                href={googleWalletSaveUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-gray-200 bg-white py-4 font-semibold text-gray-800 transition hover:bg-gray-50"
+              >
+                <svg className="size-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12.545 10.239v2.821h5.445c-.712 2.315-2.331 4.276-4.5 5.379 1.964-2.258 2.919-4.52 3.028-6.634l.017-.566h-4.19v-2l-4.19-.008v2.821h-2.349c-.446 0-.813-.36-.813-.806V3.86c0-.445.36-.806.806-.806h14.347c.446 0 .806.36.806.806v4.133c0 .446-.36.806-.806.806h-2.349zM3.81 22.19c2.081-1.846 3.54-3.73 4.379-5.65.839 1.92 2.298 3.804 4.379 5.65H3.81z" />
+                </svg>
+                Agregar a Google Wallet
+              </a>
+            )}
+
+            {deviceType === "other" && (
+              <>
+                <a
+                  href={walletUrl()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#2d3436] py-4 font-semibold text-white transition hover:bg-black"
+                >
+                  <svg className="size-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
+                  </svg>
+                  Apple Wallet
+                </a>
+                <a
+                  href={googleWalletSaveUrl()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-gray-200 bg-white py-4 font-semibold text-gray-800 transition hover:bg-gray-50"
+                >
+                  <svg className="size-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12.545 10.239v2.821h5.445c-.712 2.315-2.331 4.276-4.5 5.379 1.964-2.258 2.919-4.52 3.028-6.634l.017-.566h-4.19v-2l-4.19-.008v2.821h-2.349c-.446 0-.813-.36-.813-.806V3.86c0-.445.36-.806.806-.806h14.347c.446 0 .806.36.806.806v4.133c0 .446-.36.806-.806.806h-2.349zM3.81 22.19c2.081-1.846 3.54-3.73 4.379-5.65.839 1.92 2.298 3.804 4.379 5.65H3.81z" />
+                  </svg>
+                  Google Wallet
+                </a>
+              </>
+            )}
+
             <a
               href={cardViewUrl}
               className="flex w-full items-center justify-center gap-2 rounded-2xl py-4 font-semibold text-[#004b49] transition hover:bg-[#004b49]/5"
@@ -189,13 +247,10 @@ export default function LoyaltyRegisterPage() {
       <main className="flex min-h-dvh flex-col items-center bg-white px-6 py-10">
         <div className="w-full max-w-sm">
           <div className="flex flex-col items-center">
-            <Image
+            <img
               src="/logos/BRUMA.png"
               alt="BRUMA"
-              width={220}
-              height={90}
-              className="object-contain"
-              priority
+              className="h-20 w-auto object-contain"
             />
             <h1 className="mt-4 text-2xl font-bold tracking-wide text-[#004b49]">
               Programa de Lealtad
@@ -259,13 +314,10 @@ export default function LoyaltyRegisterPage() {
     <main className="flex min-h-dvh flex-col items-center bg-white px-6 py-10">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center">
-          <Image
+          <img
             src="/logos/BRUMA.png"
             alt="BRUMA"
-            width={220}
-            height={90}
-            className="object-contain"
-            priority
+            className="h-20 w-auto object-contain"
           />
           <h1 className="mt-4 text-2xl font-bold tracking-wide text-[#004b49]">
             Programa de Lealtad

@@ -85,9 +85,14 @@ export default function LoyaltyPage() {
   const [promoTarget, setPromoTarget] = useState<"all" | "specific">("all");
   const [selectedCardsForPromo, setSelectedCardsForPromo] = useState<string[]>([]);
   const [origin, setOrigin] = useState("");
+  const [deviceType, setDeviceType] = useState<string>("other");
 
   useEffect(() => {
     setOrigin(window.location.origin);
+    const ua = navigator.userAgent.toLowerCase();
+    if (/iphone|ipad|ipod/.test(ua)) setDeviceType("ios");
+    else if (/android/.test(ua)) setDeviceType("android");
+    else setDeviceType("other");
   }, []);
 
   const registerUrl = `${origin}/loyalty/register`;
@@ -675,7 +680,7 @@ export default function LoyaltyPage() {
                 )}
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {selectedCard.rewardsAvailable > 0 && (
                   <Button
                     onClick={() => handleRedeemReward(selectedCard.id)}
@@ -685,22 +690,26 @@ export default function LoyaltyPage() {
                     Canjear Premio
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  onClick={() => downloadPass(selectedCard.id)}
-                  className="flex-1"
-                >
-                  <DownloadSimple className="mr-1 size-4" />
-                  Apple Wallet
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => addToGoogleWallet(selectedCard.id)}
-                  className="flex-1"
-                >
-                  <CreditCard className="mr-1 size-4" />
-                  Google Wallet
-                </Button>
+                {(deviceType === "ios" || deviceType === "other") && (
+                  <Button
+                    variant="outline"
+                    onClick={() => downloadPass(selectedCard.id)}
+                    className="flex-1"
+                  >
+                    <DownloadSimple className="mr-1 size-4" />
+                    Apple Wallet
+                  </Button>
+                )}
+                {(deviceType === "android" || deviceType === "other") && (
+                  <Button
+                    variant="outline"
+                    onClick={() => addToGoogleWallet(selectedCard.id)}
+                    className="flex-1"
+                  >
+                    <CreditCard className="mr-1 size-4" />
+                    Google Wallet
+                  </Button>
+                )}
               </div>
             </div>
           )}
