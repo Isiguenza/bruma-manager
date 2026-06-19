@@ -203,7 +203,7 @@ export async function generateApplePass(card: any): Promise<Buffer> {
       key: "latestMessage",
       label: "Último mensaje",
       value: card.latestMessage || "Sin mensajes recientes",
-      changeMessage: "Nuevo mensaje de BRUMA",
+      changeMessage: "%@",
     },
     {
       key: "totalStamps",
