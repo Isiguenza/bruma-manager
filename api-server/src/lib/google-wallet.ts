@@ -342,7 +342,12 @@ export async function createOrUpdateGoogleWalletObject(card: any) {
         label: "Sellos",
       },
       secondaryLoyaltyPoints: {
-        balance: { string: `${card.customerName} ${card.customerLastName || ""}`.trim() },
+        balance: {
+          defaultValue: {
+            language: "es",
+            value: `${card.customerName} ${card.customerLastName || ""}`.trim(),
+          },
+        },
         label: "Cliente",
       },
       textModulesData: [
