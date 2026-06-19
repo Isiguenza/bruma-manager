@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { getApiUrl } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -165,7 +166,7 @@ export function ManualOrderDialog({ open, onClose, onSuccess }: ManualOrderDialo
       const order = await orderRes.json();
 
       // Mark as paid with custom timestamp
-      const payRes = await fetch(`/api/orders/${order.id}/pay`, {
+      const payRes = await fetch(`${getApiUrl()}/api/orders/${order.id}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

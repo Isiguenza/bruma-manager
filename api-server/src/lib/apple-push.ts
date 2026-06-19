@@ -1,17 +1,15 @@
-import { SignJWT, importPKCS8 } from "jose";
-import { db } from "./db";
-import { walletDeviceRegistrations } from "./db/schema";
+import jwt from "jsonwebtoken";
+import { db, schema } from "../db";
 import { eq } from "drizzle-orm";
 
 const APN_URL = "https://api.push.apple.com";
-const APN_DEV_URL = "https://api.sandbox.push.apple.com";
 
 function getApnPrivateKey(): string {
   const key = process.env.APPLE_APN_PRIVATE_KEY || "";
   return key.replace(/\\n/g, "\n");
 }
 
-async function generateApnToken(): Promise<string> {
+function generateApnToken(): string {
   const keyId = process.env.APPLE_APN_KEY_ID;
   const teamId = process.env.APPLE_APN_TEAM_ID;
   const privateKey = getApnPrivateKey();
@@ -20,66 +18,58 @@ async function generateApnToken(): Promise<string> {
     throw new Error("Missing Apple APN credentials");
   }
 
-  const key = await importPKCS8(privateKey, "ES256");
-
-  const token = await new SignJWT({})
-    .setProtectedHeader({ alg: "ES256", kid: keyId, typ: "JWT" })
-    .setIssuer(teamId)
-    .setIssuedAt()
-    .setExpirationTime("1h")
-    .sign(key);
-
-  return token;
+  return jwt.sign({}, privateKey, {
+    algorithm: "ES256",
+    header: { kid: keyId, typ: "JWT" },
+    issuer: teamId,
+    expiresIn: "1h",
+  });
 }
 
 export async function sendAppleWalletPush(serialNumber: string) {
   try {
     const registrations = await db.query.walletDeviceRegistrations.findMany({
-      where: eq(walletDeviceRegistrations.serialNumber, serialNumber),
+      where: eq(schema.walletDeviceRegistrations.serialNumber, serialNumber),
     });
 
     if (registrations.length === 0) {
-      console.log("[Apple Push] No registered devices for", serialNumber);
+      console.log("[API Apple Push] No registered devices for", serialNumber);
       return;
     }
 
-    const jwt = await generateApnToken();
+    const token = generateApnToken();
     const passTypeId = process.env.APPLE_PASS_TYPE_ID || "";
 
     const results = await Promise.allSettled(
       registrations.map(async (reg) => {
         if (!reg.pushToken) return;
-
         const url = `${APN_URL}/3/device/${reg.pushToken}`;
         const res = await fetch(url, {
           method: "POST",
           headers: {
-            authorization: `bearer ${jwt}`,
+            authorization: `bearer ${token}`,
             "apns-topic": passTypeId,
             "apns-push-type": "background",
             "content-type": "application/json",
           },
           body: JSON.stringify({}),
         });
-
         if (!res.ok) {
           const body = await res.text().catch(() => "");
           console.error(
-            `[Apple Push] Failed for ${reg.pushToken}:`,
+            `[API Apple Push] Failed for ${reg.pushToken}:`,
             res.status,
             body
           );
         } else {
-          console.log(`[Apple Push] Sent to ${reg.pushToken}`);
+          console.log(`[API Apple Push] Sent to ${reg.pushToken}`);
         }
       })
     );
 
-    const sent = results.filter(
-      (r) => r.status === "fulfilled"
-    ).length;
-    console.log(`[Apple Push] Sent to ${sent}/${registrations.length} devices`);
+    const sent = results.filter((r) => r.status === "fulfilled").length;
+    console.log(`[API Apple Push] Sent to ${sent}/${registrations.length} devices`);
   } catch (error) {
-    console.error("[Apple Push] Error:", error);
+    console.error("[API Apple Push] Error:", error);
   }
 }

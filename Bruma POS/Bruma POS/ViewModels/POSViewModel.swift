@@ -3315,7 +3315,7 @@ class POSViewModel: ObservableObject {
         
         Task {
             do {
-                try await APIService.shared.post("\(APIService.shared.baseURL)/api/loyalty/\(card.id)/redeem")
+                try await APIService.shared.post("\(APIService.shared.baseURL)/api/loyalty-cards/\(card.id)/redeem")
                 let refreshed = try await APIService.shared.searchLoyaltyCard(barcode: card.barcodeValue)
                 loyaltyCard = refreshed
                 showToast("Premio canjeado: \(cart[index].productName) gratis")
@@ -3342,7 +3342,7 @@ class POSViewModel: ObservableObject {
         
         Task {
             do {
-                try await APIService.shared.post("\(APIService.shared.baseURL)/api/loyalty/\(card.id)/redeem")
+                try await APIService.shared.post("\(APIService.shared.baseURL)/api/loyalty-cards/\(card.id)/redeem")
                 let refreshed = try await APIService.shared.searchLoyaltyCard(barcode: card.barcodeValue)
                 loyaltyCard = refreshed
                 showToast("Descuento de \(Int(pct))% aplicado")

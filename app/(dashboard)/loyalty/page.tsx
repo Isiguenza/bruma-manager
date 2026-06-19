@@ -46,6 +46,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { QRCodeSVG } from "qrcode.react";
 import type { LoyaltyCard } from "@/lib/types";
+import { getApiUrl } from "@/lib/utils";
 
 interface CardForm {
   customerName: string;
@@ -90,7 +91,7 @@ export default function LoyaltyPage() {
 
   async function fetchCards() {
     try {
-      const res = await fetch("/api/loyalty");
+      const res = await fetch(`${getApiUrl()}/api/loyalty-cards`);
       if (res.ok) setCards(await res.json());
     } catch {
       toast.error("Error cargando tarjetas");
@@ -106,7 +107,7 @@ export default function LoyaltyPage() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/loyalty", {
+      const res = await fetch(`${getApiUrl()}/api/loyalty-cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -132,7 +133,7 @@ export default function LoyaltyPage() {
     if (!stampCard) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/loyalty/${stampCard.id}/stamps`, {
+      const res = await fetch(`${getApiUrl()}/api/loyalty-cards/${stampCard.id}/stamps`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stamps: stampsToAdd }),
@@ -151,7 +152,7 @@ export default function LoyaltyPage() {
 
   async function handleRedeemReward(cardId: string) {
     try {
-      const res = await fetch(`/api/loyalty/${cardId}/redeem`, {
+      const res = await fetch(`${getApiUrl()}/api/loyalty-cards/${cardId}/redeem`, {
         method: "POST",
       });
       if (!res.ok) throw new Error();
@@ -188,7 +189,7 @@ export default function LoyaltyPage() {
     if (!confirmed) return;
     
     try {
-      const res = await fetch(`/api/loyalty/${cardId}`, {
+      const res = await fetch(`${getApiUrl()}/api/loyalty-cards/${cardId}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error();

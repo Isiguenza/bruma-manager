@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
+import { getApiUrl } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -126,7 +127,7 @@ export default function PayOrderPage({
     if (!order || !employeeId) return;
     setProcessing(true);
     try {
-      const res = await fetch(`/api/orders/${orderId}/pay`, {
+      const res = await fetch(`${getApiUrl()}/api/orders/${orderId}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -192,7 +193,7 @@ export default function PayOrderPage({
     setProcessing(true);
     setWaitingForTerminal(true);
     try {
-      const res = await fetch(`/api/orders/${orderId}/pay`, {
+      const res = await fetch(`${getApiUrl()}/api/orders/${orderId}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

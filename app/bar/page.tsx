@@ -33,6 +33,7 @@ import { SlideToConfirm } from "@/components/ui/slide-to-confirm";
 import { toast } from "sonner";
 import type { Product, Category, CartItem, Frosting, DryTopping, Extra, LoyaltyCard, CategoryFlow, ModifierStep, ModifierOption, Table, Order, Promotion, Discount } from "@/lib/types";
 import { applyPromotions, calculateDiscount } from "@/lib/utils/promotions";
+import { getApiUrl } from "@/lib/utils";
 import { Sidebar } from "./components/Sidebar";
 import { ReservationsView } from "./components/ReservationsView";
 
@@ -2184,7 +2185,7 @@ export default function BarPage() {
         ? parseFloat(customTip) || 0 
         : (cartTotalWithDiscount * tipPercentage / 100);
       
-      const res = await fetch(`/api/orders/${currentOrderId}/pay`, {
+      const res = await fetch(`${getApiUrl()}/api/orders/${currentOrderId}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2232,7 +2233,7 @@ export default function BarPage() {
         ? parseFloat(customTip) || 0 
         : (cartTotalWithDiscount * tipPercentage / 100);
       
-      const res = await fetch(`/api/orders/${currentOrderId}/pay`, {
+      const res = await fetch(`${getApiUrl()}/api/orders/${currentOrderId}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2464,7 +2465,7 @@ export default function BarPage() {
   //   setProcessing(true);
   //   setWaitingForTerminal(true);
   //   try {
-  //     const res = await fetch(`/api/orders/${currentOrderId}/pay`, {
+  //     const res = await fetch(`${getApiUrl()}/api/orders/${currentOrderId}/pay`, {
   //       method: "POST",
   //       headers: { "Content-Type": "application/json" },
   //       body: JSON.stringify({
@@ -2567,7 +2568,7 @@ export default function BarPage() {
         ? parseFloat(customTip) || 0 
         : (cartTotalWithDiscount * tipPercentage / 100);
       
-      const res = await fetch(`/api/orders/${currentOrderId}/pay`, {
+      const res = await fetch(`${getApiUrl()}/api/orders/${currentOrderId}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2616,7 +2617,7 @@ export default function BarPage() {
       const tipAmount = 0; // Sin propina en delivery de plataforma
       
       // Usar el endpoint /pay para registrar correctamente en caja e inventario
-      const res = await fetch(`/api/orders/${currentOrderId}/pay`, {
+      const res = await fetch(`${getApiUrl()}/api/orders/${currentOrderId}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3956,7 +3957,7 @@ export default function BarPage() {
                       //   });
                       // }
                       
-                      const res = await fetch(`/api/orders/${currentOrderId}/pay`, {
+                      const res = await fetch(`${getApiUrl()}/api/orders/${currentOrderId}/pay`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({

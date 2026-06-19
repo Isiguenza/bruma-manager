@@ -505,7 +505,7 @@ class APIService {
     }
     
     func addStamps(cardId: String, count: Int) async throws -> LoyaltyCard {
-        let url = URL(string: "\(baseURL)/api/loyalty/\(cardId)/stamps")!
+        let url = URL(string: "\(baseURL)/api/loyalty-cards/\(cardId)/stamps")!
         let body = ["stamps": count]
         return try await request(url, method: "POST", body: body)
     }

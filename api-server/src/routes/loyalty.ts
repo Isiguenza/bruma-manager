@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { db, schema } from "../db";
 import { eq, desc } from "drizzle-orm";
+import { sendAppleWalletPush } from "../lib/apple-push";
+import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
 
 const router = Router();
 
@@ -50,11 +52,11 @@ router.get("/loyalty-cards/:id", async (req, res) => {
 // POST /api/loyalty-cards
 router.post("/loyalty-cards", async (req, res) => {
   try {
-    const { customerName, phone, email } = req.body;
+    const { customerName, customerPhone, customerEmail, stampsPerReward } = req.body;
 
-    if (!customerName || !phone) {
+    if (!customerName || !customerPhone) {
       return res.status(400).json({
-        error: "customerName y phone son requeridos",
+        error: "customerName y customerPhone son requeridos",
       });
     }
 
@@ -62,10 +64,9 @@ router.post("/loyalty-cards", async (req, res) => {
       .insert(schema.loyaltyCards)
       .values({
         customerName,
-        phone,
-        email: email || null,
-        points: 0,
-        totalSpent: "0",
+        customerPhone,
+        customerEmail: customerEmail || null,
+        stampsPerReward: stampsPerReward || 8,
       })
       .returning();
 
@@ -221,8 +222,63 @@ router.get("/loyalty-cards/barcode/:barcode", async (req, res) => {
   }
 });
 
-// POST /api/loyalty-cards/:id/stamp
-router.post("/loyalty-cards/:id/stamp", async (req, res) => {
+// POST /api/loyalty-cards/:id/stamps
+// Adds multiple stamps (used by dashboard)
+router.post("/loyalty-cards/:id/stamps", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { stamps } = req.body;
+
+    if (!stamps || stamps < 1) {
+      return res.status(400).json({ error: "stamps debe ser mayor a 0" });
+    }
+
+    const card = await db.query.loyaltyCards.findFirst({
+      where: eq(schema.loyaltyCards.id, id),
+    });
+
+    if (!card) {
+      return res.status(404).json({ error: "Tarjeta no encontrada" });
+    }
+
+    const newStamps = card.stamps + stamps;
+    const newTotalStamps = card.totalStamps + stamps;
+    const newRewards = Math.floor(newStamps / card.stampsPerReward);
+    const remainingStamps = newStamps % card.stampsPerReward;
+    const newRewardsAvailable = card.rewardsAvailable + newRewards;
+
+    const [updatedCard] = await db
+      .update(schema.loyaltyCards)
+      .set({
+        stamps: newRewards > 0 ? remainingStamps : newStamps,
+        totalStamps: newTotalStamps,
+        rewardsAvailable: newRewardsAvailable,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.loyaltyCards.id, id))
+      .returning();
+
+    await db.insert(schema.loyaltyTransactions).values({
+      cardId: id,
+      stampsAdded: stamps,
+    });
+
+    // Wallet push (non-blocking)
+    sendAppleWalletPush(id).catch(console.error);
+    if (updatedCard) {
+      createOrUpdateGoogleWalletObject(updatedCard).catch(console.error);
+    }
+
+    res.json(updatedCard);
+  } catch (error) {
+    console.error("Error adding stamps:", error);
+    res.status(500).json({ error: "Error al agregar sellos" });
+  }
+});
+
+// POST /api/loyalty-cards/:id/redeem
+// Redeems a reward (used by dashboard)
+router.post("/loyalty-cards/:id/redeem", async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -234,41 +290,36 @@ router.post("/loyalty-cards/:id/stamp", async (req, res) => {
       return res.status(404).json({ error: "Tarjeta no encontrada" });
     }
 
-    const newStamps = card.stamps + 1;
-    const newTotalStamps = card.totalStamps + 1;
-    let newRewardsAvailable = card.rewardsAvailable;
-
-    // Check if customer earned a reward
-    if (newStamps >= card.stampsPerReward) {
-      newRewardsAvailable += 1;
-      const remainingStamps = newStamps - card.stampsPerReward;
-
-      const [updatedCard] = await db
-        .update(schema.loyaltyCards)
-        .set({
-          stamps: remainingStamps,
-          totalStamps: newTotalStamps,
-          rewardsAvailable: newRewardsAvailable,
-        })
-        .where(eq(schema.loyaltyCards.id, id))
-        .returning();
-
-      return res.json(updatedCard);
+    if (card.rewardsAvailable < 1) {
+      return res.status(400).json({ error: "No hay recompensas disponibles" });
     }
 
     const [updatedCard] = await db
       .update(schema.loyaltyCards)
       .set({
-        stamps: newStamps,
-        totalStamps: newTotalStamps,
+        rewardsAvailable: card.rewardsAvailable - 1,
+        rewardsRedeemed: card.rewardsRedeemed + 1,
+        updatedAt: new Date(),
       })
       .where(eq(schema.loyaltyCards.id, id))
       .returning();
 
+    await db.insert(schema.loyaltyTransactions).values({
+      cardId: id,
+      stampsAdded: 0,
+      rewardRedeemed: true,
+    });
+
+    // Wallet push (non-blocking)
+    sendAppleWalletPush(id).catch(console.error);
+    if (updatedCard) {
+      createOrUpdateGoogleWalletObject(updatedCard).catch(console.error);
+    }
+
     res.json(updatedCard);
   } catch (error) {
-    console.error("Error adding stamp:", error);
-    res.status(500).json({ error: "Error al agregar sello" });
+    console.error("Error redeeming reward:", error);
+    res.status(500).json({ error: "Error al canjear recompensa" });
   }
 });
 

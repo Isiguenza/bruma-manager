@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { getApiUrl } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -132,7 +133,7 @@ export function SplitPaymentModal({
     setSubmitting(true);
     try {
       // Mark all payments as completed
-      const res = await fetch(`/api/orders/${orderId}/pay`, {
+      const res = await fetch(`${getApiUrl()}/api/orders/${orderId}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

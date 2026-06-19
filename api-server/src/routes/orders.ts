@@ -10,6 +10,8 @@ import {
   emitOrderRush,
   emitOrderHold,
 } from "../sockets/events";
+import { sendAppleWalletPush } from "../lib/apple-push";
+import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
 
 const router = Router();
 
@@ -454,6 +456,7 @@ router.post("/orders/:id/pay", async (req, res) => {
       tip,
       tipPaymentMethod,
       loyaltyCardId,
+      loyaltyStamps,
       employeeId,
       discount,
       discountName,
@@ -548,6 +551,43 @@ router.post("/orders/:id/pay", async (req, res) => {
       });
       if (updatedTable) {
         emitTableUpdated(updatedTable);
+      }
+    }
+
+    // Handle loyalty stamps
+    if (loyaltyCardId && loyaltyStamps > 0) {
+      const card = await db.query.loyaltyCards.findFirst({
+        where: eq(schema.loyaltyCards.id, loyaltyCardId),
+      });
+      if (card) {
+        const newStamps = card.stamps + loyaltyStamps;
+        const newRewards = Math.floor(newStamps / card.stampsPerReward);
+        const remainingStamps = newStamps % card.stampsPerReward;
+        const additionalRewards = newRewards > 0 ? newRewards : 0;
+
+        await db
+          .update(schema.loyaltyCards)
+          .set({
+            stamps: newRewards > 0 ? remainingStamps : newStamps,
+            totalStamps: card.totalStamps + loyaltyStamps,
+            rewardsAvailable: card.rewardsAvailable + additionalRewards,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.loyaltyCards.id, loyaltyCardId));
+
+        await db.insert(schema.loyaltyTransactions).values({
+          cardId: loyaltyCardId,
+          orderId: id,
+          stampsAdded: loyaltyStamps,
+        });
+
+        const updatedCard = await db.query.loyaltyCards.findFirst({
+          where: eq(schema.loyaltyCards.id, loyaltyCardId),
+        });
+        if (updatedCard) {
+          sendAppleWalletPush(loyaltyCardId).catch(console.error);
+          createOrUpdateGoogleWalletObject(updatedCard).catch(console.error);
+        }
       }
     }
 
