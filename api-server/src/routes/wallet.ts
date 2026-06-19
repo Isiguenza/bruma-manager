@@ -148,6 +148,28 @@ router.delete("/wallet/v1/devices/:deviceLibraryId/registrations/:passTypeId/:se
 router.get("/wallet/v1/pass/:passTypeId/:serialNumber", async (req, res) => {
   const { passTypeId, serialNumber } = req.params;
 
+  console.log("[API Wallet] GET updated pass (singular):", { passTypeId, serialNumber });
+
+  try {
+    const passUrl = `${APP_URL}/api/wallet/pass/${serialNumber}`;
+    const passRes = await fetch(passUrl);
+    if (!passRes.ok) {
+      return res.status(passRes.status).send();
+    }
+    const buffer = Buffer.from(await passRes.arrayBuffer());
+    res.setHeader("Content-Type", "application/vnd.apple.pkpass");
+    res.send(buffer);
+  } catch (error) {
+    console.error("[API Wallet] Error proxying pass:", error);
+    res.status(500).send();
+  }
+});
+
+// GET /api/wallet/v1/passes/:passTypeId/:serialNumber
+// Apple also uses /passes/ (plural) — same functionality
+router.get("/wallet/v1/passes/:passTypeId/:serialNumber", async (req, res) => {
+  const { passTypeId, serialNumber } = req.params;
+
   console.log("[API Wallet] GET updated pass:", { passTypeId, serialNumber });
 
   try {
