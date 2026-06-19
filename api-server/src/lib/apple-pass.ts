@@ -197,7 +197,17 @@ export async function generateApplePass(card: any): Promise<Buffer> {
     value: displayName,
   });
 
+  const now = new Date();
+  const timeStr = now.toLocaleString("es-MX", {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+
   pass.backFields.push(
+    {
+      key: "lastMessage",
+      label: "Último mensaje",
+      value: `¡Nuevo sello! Total: ${card.stamps} sellos — ${timeStr}`,
+    },
     {
       key: "totalStamps",
       label: "Total de sellos acumulados",

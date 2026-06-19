@@ -48,38 +48,17 @@ export async function sendAppleWalletPush(serialNumber: string) {
 
     console.log(`[API Apple Push] Sending to ${tokens.length} devices via apn (HTTP/2)`);
 
-    // 1. Background push: tells Apple Wallet to update the pass silently
-    const backgroundNotif = new apn.Notification();
-    backgroundNotif.topic = passTypeId;
-    backgroundNotif.contentAvailable = true;
+    // Background push: tells Apple Wallet to update the pass
+    const notification = new apn.Notification();
+    notification.topic = passTypeId;
+    notification.contentAvailable = true;
 
-    const bgResult = await provider.send(backgroundNotif, tokens);
-    console.log(`[API Apple Push] Background sent: ${bgResult.sent.length}`);
-    if (bgResult.failed.length > 0) {
-      for (const fail of bgResult.failed) {
+    const result = await provider.send(notification, tokens);
+    console.log(`[API Apple Push] Sent: ${result.sent.length}`);
+    if (result.failed.length > 0) {
+      for (const fail of result.failed) {
         console.error(
-          `[API Apple Push] BACKGROUND FAILED for ${fail.device?.substring(0, 16)}...`,
-          "Response:", fail.response,
-          "Status:", fail.status
-        );
-      }
-    }
-
-    // 2. Alert push: visible notification to the user
-    const alertNotif = new apn.Notification();
-    alertNotif.topic = passTypeId;
-    alertNotif.alert = {
-      title: "Nuevo sello en Bruma",
-      body: "¡Acabas de recibir un sello en tu tarjeta de lealtad!",
-    };
-    alertNotif.sound = "default";
-
-    const alertResult = await provider.send(alertNotif, tokens);
-    console.log(`[API Apple Push] Alert sent: ${alertResult.sent.length}`);
-    if (alertResult.failed.length > 0) {
-      for (const fail of alertResult.failed) {
-        console.error(
-          `[API Apple Push] ALERT FAILED for ${fail.device?.substring(0, 16)}...`,
+          `[API Apple Push] FAILED for ${fail.device?.substring(0, 16)}...`,
           "Response:", fail.response,
           "Status:", fail.status
         );
