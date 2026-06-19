@@ -62,36 +62,52 @@ export async function sendAppleWalletPush(serialNumber: string) {
     console.log(`[API Apple Push] Token preview: ${token.substring(0, 20)}...`);
 
     let sent = 0;
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       registrations.map(async (reg) => {
         if (!reg.pushToken) {
           console.log("[API Apple Push] Skipping empty pushToken");
-          return;
+          return "skipped";
         }
         const url = `${APN_URL}/3/device/${reg.pushToken}`;
         console.log(`[API Apple Push] Sending to: ${url}`);
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            authorization: `bearer ${token}`,
-            "apns-topic": passTypeId,
-            "apns-push-type": "background",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({}),
-        });
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
-          console.error(
-            `[API Apple Push] FAILED HTTP ${res.status} for token ${reg.pushToken.substring(0, 16)}...`,
-            "Body:", body
-          );
-        } else {
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: {
+              authorization: `bearer ${token}`,
+              "apns-topic": passTypeId,
+              "apns-push-type": "background",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({}),
+          });
+          if (!res.ok) {
+            const body = await res.text().catch(() => "");
+            console.error(
+              `[API Apple Push] FAILED HTTP ${res.status} for token ${reg.pushToken.substring(0, 16)}...`,
+              "Body:", body
+            );
+            return "failed";
+          }
           sent++;
           console.log(`[API Apple Push] SUCCESS for token ${reg.pushToken.substring(0, 16)}...`);
+          return "success";
+        } catch (err: any) {
+          console.error(
+            `[API Apple Push] NETWORK ERROR for token ${reg.pushToken.substring(0, 16)}...`,
+            err.message || err
+          );
+          return "error";
         }
       })
     );
+
+    console.log("[API Apple Push] Per-device results:", results.map((r, i) => ({
+      token: registrations[i]?.pushToken?.substring(0, 16),
+      status: r.status,
+      value: r.status === "fulfilled" ? (r.value as string) : undefined,
+      reason: r.status === "rejected" ? String(r.reason) : undefined,
+    })));
 
     console.log(`[API Apple Push] RESULT: ${sent}/${registrations.length} devices OK`);
   } catch (error) {
