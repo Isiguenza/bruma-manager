@@ -173,7 +173,8 @@ router.post("/orders", async (req, res) => {
     let orderSubtotal = 0;
     if (items && items.length > 0) {
       const orderItems = items.map((item: any) => {
-        const itemSubtotal = parseFloat(item.subtotal) || (item.quantity * item.unitPrice);
+        const isGuestItem = item.isGuest === true;
+        const itemSubtotal = isGuestItem ? 0 : (parseFloat(item.subtotal) || (item.quantity * item.unitPrice));
         orderSubtotal += itemSubtotal;
         return {
           orderId: newOrder.id,
@@ -193,6 +194,7 @@ router.post("/orders", async (req, res) => {
           seat: item.seat || "C",
           course: item.course || 1,
           deliveredToTable: item.deliveredToTable || false,
+          isGuest: isGuestItem,
         };
       });
 
@@ -258,31 +260,36 @@ router.post("/orders/:id/items", async (req, res) => {
       return res.status(404).json({ error: "Orden no encontrada" });
     }
 
-    const orderItems = items.map((item: any) => ({
-      orderId: id,
-      productId: item.productId,
-      productName: item.productName,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      subtotal: item.subtotal || (item.quantity * item.unitPrice).toString(),
-      notes: item.notes || null,
-      frostingId: item.frostingId || null,
-      frostingName: item.frostingName || null,
-      dryToppingId: item.dryToppingId || null,
-      dryToppingName: item.dryToppingName || null,
-      extraId: item.extraId || null,
-      extraName: item.extraName || null,
-      customModifiers: item.customModifiers || null,
-      seat: item.seat || "C",
-      course: item.course || 1,
-      deliveredToTable: item.deliveredToTable || false,
-    }));
+    const orderItems = items.map((item: any) => {
+      const isGuestItem = item.isGuest === true;
+      const itemSubtotal = isGuestItem ? 0 : (parseFloat(item.subtotal) || (item.quantity * item.unitPrice));
+      return {
+        orderId: id,
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal: itemSubtotal.toString(),
+        notes: item.notes || null,
+        frostingId: item.frostingId || null,
+        frostingName: item.frostingName || null,
+        dryToppingId: item.dryToppingId || null,
+        dryToppingName: item.dryToppingName || null,
+        extraId: item.extraId || null,
+        extraName: item.extraName || null,
+        customModifiers: item.customModifiers || null,
+        seat: item.seat || "C",
+        course: item.course || 1,
+        deliveredToTable: item.deliveredToTable || false,
+        isGuest: isGuestItem,
+      };
+    });
 
     await db.insert(schema.orderItems).values(orderItems);
 
-    // Recalculate order total
+    // Recalculate order total (excluding guest items)
     const newItemsTotal = items.reduce((sum: number, item: any) => {
-      return sum + (parseFloat(item.subtotal) || (item.quantity * item.unitPrice));
+      return item.isGuest === true ? sum : sum + (parseFloat(item.subtotal) || (item.quantity * item.unitPrice));
     }, 0);
     const currentSubtotal = parseFloat(order.subtotal) || 0;
     const newSubtotal = currentSubtotal + newItemsTotal;
@@ -1172,6 +1179,55 @@ router.patch("/orders/:id/unhold", async (req, res) => {
   } catch (error) {
     console.error("Error resuming order:", error);
     res.status(500).json({ error: "Error al reanudar orden" });
+  }
+});
+
+// PATCH /api/order-items/:id/guest - Mark/unmark item as guest and recalculate order total
+router.patch("/order-items/:id/guest", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isGuest } = req.body;
+
+    const [updatedItem] = await db
+      .update(schema.orderItems)
+      .set({
+        isGuest: isGuest === true,
+        subtotal: isGuest === true ? "0" : sql`${schema.orderItems.quantity} * ${schema.orderItems.unitPrice}`,
+      })
+      .where(eq(schema.orderItems.id, id))
+      .returning();
+
+    if (!updatedItem) {
+      return res.status(404).json({ error: "Item no encontrado" });
+    }
+
+    // Recalculate order subtotal excluding guest items
+    const orderItemsList = await db.query.orderItems.findMany({
+      where: eq(schema.orderItems.orderId, updatedItem.orderId),
+    });
+    const newSubtotal = orderItemsList.reduce((sum: number, item: any) => {
+      return item.isGuest ? sum : sum + (parseFloat(item.subtotal) || 0);
+    }, 0);
+
+    await db
+      .update(schema.orders)
+      .set({
+        subtotal: newSubtotal.toString(),
+        total: newSubtotal.toString(),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.orders.id, updatedItem.orderId));
+
+    const order = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, updatedItem.orderId),
+      with: { items: true },
+    });
+
+    emitOrderUpdated(order);
+    res.json({ item: updatedItem, order });
+  } catch (error) {
+    console.error("[PATCH /order-items/:id/guest] 500 error:", error);
+    res.status(500).json({ error: "Error al actualizar item" });
   }
 });
 

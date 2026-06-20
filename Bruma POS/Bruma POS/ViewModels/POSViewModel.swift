@@ -3423,6 +3423,16 @@ class POSViewModel: ObservableObject {
         for index in guestItemsSelection {
             guard index < cart.count else { continue }
             cart[index].isGuest = true
+            // Sync with backend if item already exists in DB
+            if let itemId = cart[index].itemId {
+                Task {
+                    do {
+                        _ = try await APIService.shared.updateOrderItemGuest(itemId: itemId, isGuest: true)
+                    } catch {
+                        print("❌ Error marking item as guest:", error)
+                    }
+                }
+            }
         }
         showToast("\(guestItemsSelection.count) producto(s) marcado(s) como invitado")
         guestItemsSelection = []
@@ -3431,6 +3441,16 @@ class POSViewModel: ObservableObject {
     func unmarkItemAsGuest(at index: Int) {
         guard index < cart.count else { return }
         cart[index].isGuest = false
+        // Sync with backend if item already exists in DB
+        if let itemId = cart[index].itemId {
+            Task {
+                do {
+                    _ = try await APIService.shared.updateOrderItemGuest(itemId: itemId, isGuest: false)
+                } catch {
+                    print("❌ Error unmarking item as guest:", error)
+                }
+            }
+        }
         showToast("Producto desinvitado")
     }
 }

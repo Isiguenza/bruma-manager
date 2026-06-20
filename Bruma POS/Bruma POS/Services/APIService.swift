@@ -191,6 +191,12 @@ class APIService {
         ])
     }
     
+    @discardableResult
+    func updateOrderItemGuest(itemId: String, isGuest: Bool) async throws -> OrderItem {
+        let url = URL(string: "\(baseURL)/api/order-items/\(itemId)/guest")!
+        return try await request(url, method: "PATCH", body: ["isGuest": isGuest])
+    }
+    
     // MARK: - Products & Categories
     
     func fetchProducts() async throws -> [Product] {
