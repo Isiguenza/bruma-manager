@@ -2367,8 +2367,7 @@ class POSViewModel: ObservableObject {
                     "discountId": selectedDiscount?.id ?? ""
                 ])
                 paymentCompleted = true
-                await handlePrint(paymentMethod: "cash")
-                try? await APIService.shared.openCashDrawer()
+                await handlePrint(paymentMethod: "cash", openDrawer: true)
                 showToast("Pago en efectivo registrado")
             } catch {
                 showToast("Error procesando pago", isError: true)
@@ -2616,7 +2615,7 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Print Ticket
     
-    func handlePrint(paymentMethod: String? = nil) async {
+    func handlePrint(paymentMethod: String? = nil, openDrawer: Bool = false) async {
         let sentItems = cart.filter { $0.sentToKitchen }
         let itemsToPrint = sentItems.isEmpty ? cart : sentItems
         print("🖨️ handlePrint called — sentItems=\(sentItems.count) totalCart=\(cart.count) itemsToPrint=\(itemsToPrint.count)")
@@ -2709,7 +2708,8 @@ class POSViewModel: ObservableObject {
             paymentMethod: paymentMethodToShow,
             tipPaymentMethod: tipPaymentMethod,
             splitPayments: splitPaymentsData,
-            deliveryFee: Int(deliveryFeeAmount)
+            deliveryFee: Int(deliveryFeeAmount),
+            openDrawer: openDrawer
         )
     }
     

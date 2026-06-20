@@ -62,7 +62,8 @@ class PrintService {
         paymentMethod: String? = nil,
         tipPaymentMethod: String? = nil,
         splitPayments: [[String: Any]]? = nil,
-        deliveryFee: Int = 0
+        deliveryFee: Int = 0,
+        openDrawer: Bool = false
     ) async {
         guard let url = URL(string: "\(printServerURL)/print") else {
             print("❌ PrintService: invalid print URL: \(printServerURL)")
@@ -88,6 +89,7 @@ class PrintService {
         if let tpm = tipPaymentMethod { body["tipPaymentMethod"] = tpm }
         if let sp = splitPayments { body["splitPayments"] = sp }
         if deliveryFee > 0 { body["deliveryFee"] = deliveryFee }
+        if openDrawer { body["openDrawer"] = true }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {

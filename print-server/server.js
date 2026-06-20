@@ -62,6 +62,7 @@ const commands = {
   textSizeNormal: GS + "!" + "\x00",
   textSizeDouble: GS + "!" + "\x11",
   textSizeLarge: GS + "!" + "\x22",
+  drawerPulse: ESC + "p" + "\x00" + "\x19" + "\xFA",
 };
 
 // Función para convertir imagen a bitmap ESC/POS
@@ -218,13 +219,19 @@ app.post('/print', async (req, res) => {
       tableNumber,
       isDelivery,
       paymentMethod,
-      discount 
+      discount,
+      openDrawer
     } = req.body;
 
     let content = "";
     
     // Inicializar impresora
     content += commands.init;
+    
+    // Abrir cajón primero si se solicita (mismo socket = sin delay extra)
+    if (openDrawer) {
+      content += commands.drawerPulse;
+    }
     
     // Logo centrado sin espacio arriba
     content += commands.alignCenter;
