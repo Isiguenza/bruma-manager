@@ -353,8 +353,14 @@ class APIService {
     }
     
     func fetchDeliveryOrders() async throws -> [Order] {
-        let url = URL(string: "\(baseURL)/api/orders?status=preparing,ready,pending&noTable=true&paymentStatus=pending&excludeSource=employee")!
+        let url = URL(string: "\(baseURL)/api/orders?status=preparing,ready,pending&noTable=true&excludeSource=employee")!
         return try await request(url)
+    }
+    
+    func completeOrder(orderId: String) async throws {
+        guard isConnected else { return }
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/complete")!
+        let (_, _) = try await requestRaw(url, method: "POST")
     }
     
     func updateOrderStatus(orderId: String, status: String) async throws {

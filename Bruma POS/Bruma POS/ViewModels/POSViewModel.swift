@@ -113,6 +113,7 @@ class POSViewModel: ObservableObject {
     @Published var activeCourse = 1
     @Published var guestCount = 1
     @Published var currentOrderId: String?
+    @Published var currentOrderPaymentStatus: String?
     @Published var submitting = false
     
     // MARK: - Guest Count Dialog
@@ -206,6 +207,7 @@ class POSViewModel: ObservableObject {
         customTip = ""
         showCustomTip = false
         tipPaymentMethod = nil
+        currentOrderPaymentStatus = nil
         splitPayments = []
         showAddSplitPayment = false
         editingSplitPayment = nil
@@ -1064,6 +1066,7 @@ class POSViewModel: ObservableObject {
                 selectedTable = table
                 cart = [] // Clear cart to avoid stale data from previous table
                 currentOrderId = nil
+                currentOrderPaymentStatus = nil
                 guestCount = table.guestCount ?? 1
                 activeSeat = guestCount > 0 ? "A1" : "C"
                 
@@ -1335,6 +1338,7 @@ class POSViewModel: ObservableObject {
         }
         selectedTable = nil
         currentOrderId = order.id
+        currentOrderPaymentStatus = order.paymentStatus
         
         // Load items
         var items: [CartItem] = []
@@ -2624,6 +2628,28 @@ class POSViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Finalize Takeout Order
+    
+    func handleFinalizeOrder() {
+        guard let orderId = currentOrderId else { return }
+        processing = true
+        Task {
+            do {
+                try await APIService.shared.completeOrder(orderId: orderId)
+                showToast("Orden finalizada")
+                cart = []
+                currentOrderId = nil
+                currentOrderPaymentStatus = nil
+                selectedTable = nil
+                currentScreen = .tableSelection
+                emitCustomerDisplayState(mode: "idle")
+            } catch {
+                showToast("Error finalizando orden", isError: true)
+            }
+            processing = false
+        }
+    }
+    
     // MARK: - Print Ticket
     
     func handlePrint(paymentMethod: String? = nil, openDrawer: Bool = false) async {
@@ -3087,6 +3113,7 @@ class POSViewModel: ObservableObject {
         paymentMethod = "cash"
         cashReceived = ""
         currentOrderId = nil
+        currentOrderPaymentStatus = nil
         paymentCompleted = false
         selectedTable = nil
         customerName = ""

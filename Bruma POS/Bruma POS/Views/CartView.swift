@@ -403,6 +403,15 @@ struct CartView: View {
                     }
                 }
                 Spacer()
+                if vm.currentOrderPaymentStatus == "paid" {
+                    Text("Pagado")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.15))
+                        .clipShape(Capsule())
+                }
                 Image(systemName: "chevron.down")
                     .font(.caption)
                     .foregroundStyle(Color(white: 0.6))
@@ -496,22 +505,25 @@ struct CartView: View {
                 .opacity(vm.cart.isEmpty ? 0.3 : 1)
                 .buttonStyle(.glass)
 
-                // Morphing button: Kitchen Send / Pay
+                // Morphing button: Kitchen Send / Pay / Finalize
                 let hasUnsentItems = !vm.cart.isEmpty && vm.cart.contains(where: { !$0.sentToKitchen })
+                let isPaidTakeout = vm.selectedTable == nil && vm.currentOrderPaymentStatus == "paid"
                 
                 Button {
                     if hasUnsentItems {
                         vm.handleSendToKitchen()
+                    } else if isPaidTakeout {
+                        vm.handleFinalizeOrder()
                     } else {
                         vm.showingPayment = true
                     }
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: hasUnsentItems ? "frying.pan.fill" : "creditcard.fill")
+                        Image(systemName: hasUnsentItems ? "frying.pan.fill" : (isPaidTakeout ? "checkmark.circle.fill" : "creditcard.fill"))
                             .font(.callout)
                             .contentTransition(.symbolEffect(.replace))
                             
-                        Text(hasUnsentItems ? "Enviar a Cocina" : "Pagar")
+                        Text(hasUnsentItems ? "Enviar a Cocina" : (isPaidTakeout ? "Finalizar orden" : "Pagar"))
                             .font(.callout.weight(.semibold))
                             .contentTransition(.numericText())
                     }
@@ -521,9 +533,9 @@ struct CartView: View {
                 }
                
                 .buttonStyle(.glassProminent)
-                .tint(hasUnsentItems ? Color.orange : Color.blue)
+                .tint(hasUnsentItems ? Color.orange : (isPaidTakeout ? Color.green : Color.blue))
                 .disabled(vm.cart.isEmpty)
-                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasUnsentItems)
+                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasUnsentItems || isPaidTakeout)
             }
         }
         

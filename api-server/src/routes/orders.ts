@@ -520,10 +520,11 @@ router.post("/orders/:id/pay", async (req, res) => {
     const subtotalAmount = subtotal ? parseFloat(subtotal) : parseFloat(order.subtotal);
     const totalWithTip = (subtotalAmount + tipAmount).toString();
 
+    const isTakeout = !order.tableId;
+
     const updates: any = {
       paymentMethod,
       paymentStatus: "paid",
-      status: "completed",
       paidAt: new Date(),
       amountPaid: amountPaid || totalWithTip,
       tip: tip || "0",
@@ -544,6 +545,11 @@ router.post("/orders/:id/pay", async (req, res) => {
 
     if (loyaltyCardId) {
       updates.loyaltyCardId = loyaltyCardId;
+    }
+
+    // Only mark as completed for dine-in. Takeout stays in current status (preparing).
+    if (!isTakeout) {
+      updates.status = "completed";
     }
 
     console.log(`[pay] Updating order ${id} with:`, JSON.stringify(updates));
@@ -703,10 +709,10 @@ router.post("/orders/:id/pay-split", async (req, res) => {
 
     // Update order
     const totalWithTip = (orderTotal + totalTips).toString();
+    const isTakeout = !order.tableId;
 
     const updates: any = {
       paymentStatus: "paid",
-      status: "completed",
       paidAt: new Date(),
       amountPaid: totalPaid.toString(),
       tip: totalTips.toString(),
@@ -726,6 +732,11 @@ router.post("/orders/:id/pay-split", async (req, res) => {
 
     if (loyaltyCardId) {
       updates.loyaltyCardId = loyaltyCardId;
+    }
+
+    // Only mark as completed for dine-in. Takeout stays in current status.
+    if (!isTakeout) {
+      updates.status = "completed";
     }
 
     console.log(`[pay-split] Updating order with:`, updates);
@@ -773,6 +784,42 @@ router.post("/orders/:id/pay-split", async (req, res) => {
   } catch (error) {
     console.error("[pay-split] Error processing split payment:", error);
     res.status(500).json({ error: "Error al procesar pago dividido" });
+  }
+});
+
+// POST /api/orders/:id/complete
+// Used by POS to explicitly finalize a takeout order after payment.
+// Sets status to "completed" so the order disappears from KDS.
+router.post("/orders/:id/complete", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const order = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, id),
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
+
+    await db
+      .update(schema.orders)
+      .set({ status: "completed" })
+      .where(eq(schema.orders.id, id));
+
+    const updatedOrder = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, id),
+      with: { items: true },
+    });
+
+    if (updatedOrder) {
+      emitOrderUpdated(updatedOrder);
+    }
+
+    res.json(updatedOrder);
+  } catch (error) {
+    console.error("Error completing order:", error);
+    res.status(500).json({ error: "Error al finalizar orden" });
   }
 });
 
@@ -1099,8 +1146,9 @@ router.post("/order-items/batch-ready", async (req, res) => {
         with: { items: true },
       });
       
-      // If all non-voided items are deliveredToTable, mark order as ready
-      if (order && order.items) {
+      // If all non-voided items are deliveredToTable, mark dine-in order as ready.
+      // Takeout orders stay in "preparing" until POS explicitly finalizes them.
+      if (order && order.items && order.tableId) {
         const activeItems = order.items.filter((item: any) => !item.voided);
         const allDelivered = activeItems.length > 0 && activeItems.every((item: any) => item.deliveredToTable);
         console.log("🛎️ batch-ready: order", order.id, "has", activeItems.length, "active items, allDelivered=", allDelivered);
