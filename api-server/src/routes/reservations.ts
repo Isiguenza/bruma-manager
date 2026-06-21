@@ -11,13 +11,10 @@ router.get("/reservations", async (req, res) => {
 
     let reservations;
     if (date) {
-      const startOfDay = new Date(`${date}T00:00:00`);
-      const endOfDay = new Date(`${date}T23:59:59`);
-
       reservations = await db.query.reservations.findMany({
         where: and(
-          gte(schema.reservations.reservationDate, startOfDay),
-          lte(schema.reservations.reservationDate, endOfDay)
+          gte(schema.reservations.reservationDate, date as string),
+          lte(schema.reservations.reservationDate, date as string)
         ),
         with: {
           table: true,
@@ -43,9 +40,10 @@ router.get("/reservations", async (req, res) => {
 // POST /api/reservations
 router.post("/reservations", async (req, res) => {
   try {
-    const { tableId, customerName, customerPhone, partySize, reservationDate, reservationTime, notes } = req.body;
+    const { tableId, customerName, customerPhone, guestCount, partySize, reservationDate, reservationTime, notes, duration } = req.body;
 
-    if (!tableId || !customerName || !partySize || !reservationDate || !reservationTime) {
+    const actualGuestCount = guestCount ?? partySize;
+    if (!tableId || !customerName || !actualGuestCount || !reservationDate || !reservationTime) {
       return res.status(400).json({ error: "Faltan campos requeridos" });
     }
 
@@ -55,10 +53,11 @@ router.post("/reservations", async (req, res) => {
         tableId,
         customerName,
         customerPhone,
-        partySize,
-        reservationDate: new Date(reservationDate),
+        guestCount: actualGuestCount,
+        reservationDate: reservationDate,
         reservationTime,
         notes,
+        duration: duration ?? 120,
         status: "pending",
       })
       .returning();
