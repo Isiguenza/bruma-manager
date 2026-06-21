@@ -68,6 +68,31 @@ class CustomerDisplayViewModel: ObservableObject {
         progressTimer?.invalidate()
     }
     
+    // MARK: - Navigation
+    
+    func goBackToIdle() {
+        idleTimer?.cancel()
+        thankYouTimer?.cancel()
+        inactivityResumeTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.5)) {
+            mode = .idle
+            items = []
+            customerName = ""
+            orderNumber = ""
+            total = 0
+            subtotal = 0
+        }
+    }
+    
+    func goBackToActive() {
+        idleTimer?.cancel()
+        thankYouTimer?.cancel()
+        inactivityResumeTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.5)) {
+            mode = .active
+        }
+    }
+    
     // MARK: - Carousel Control
     
     func setCarouselImages(_ items: [(imageName: String, dishName: String)]) {

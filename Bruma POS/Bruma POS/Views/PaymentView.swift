@@ -136,6 +136,7 @@ struct PaymentView: View {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         vm.paymentStep = "payment"
                     }
+                    vm.emitCustomerDisplayState(mode: "active")
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
@@ -909,6 +910,7 @@ struct PaymentView: View {
                 Spacer()
                 Button {
                     vm.paymentStep = "payment"
+                    vm.emitCustomerDisplayState(mode: "active")
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")

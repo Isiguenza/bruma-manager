@@ -11,6 +11,7 @@ struct ContentView: View {
     @StateObject private var viewModel = OrdersViewModel()
     @StateObject private var soundPlayer = SoundPlayer.shared
     @AppStorage("appColorScheme") private var appColorScheme: String = "system"
+    @AppStorage("kdsViewMode") private var kdsViewMode: String = "all"
     @State private var showSettings = false
 
     private var preferredScheme: ColorScheme? {
@@ -53,7 +54,14 @@ struct ContentView: View {
             }
             .navigationBarHidden(true)
             .sheet(isPresented: $showSettings) {
-                SettingsSheet(appColorScheme: $appColorScheme)
+                SettingsSheet(appColorScheme: $appColorScheme, kdsViewMode: $kdsViewMode)
+            }
+            .onAppear {
+                viewModel.viewMode = kdsViewMode
+            }
+            .onChange(of: kdsViewMode) { newValue in
+                viewModel.viewMode = newValue
+                Task { await viewModel.fetchOrders() }
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
@@ -178,9 +186,10 @@ struct ContentView: View {
 
 struct SettingsSheet: View {
     @Binding var appColorScheme: String
+    @Binding var kdsViewMode: String
     @Environment(\.dismiss) private var dismiss
 
-    private let options: [(String, String, String)] = [
+    private let schemeOptions: [(String, String, String)] = [
         ("system", "Automático", "circle.lefthalf.filled"),
         ("light",  "Claro",      "sun.max.fill"),
         ("dark",   "Oscuro",     "moon.fill"),
@@ -189,8 +198,14 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationView {
             Form {
+                Section(header: Text("Filtro de comanda")) {
+                    Toggle("Mostrar toda la comanda", isOn: binding(for: "all"))
+                    Toggle("Mostrar solo alimentos", isOn: binding(for: "food"))
+                    Toggle("Mostrar solo bebidas", isOn: binding(for: "beverages"))
+                }
+
                 Section(header: Text("Apariencia")) {
-                    ForEach(options, id: \.0) { value, label, icon in
+                    ForEach(schemeOptions, id: \.0) { value, label, icon in
                         Button {
                             appColorScheme = value
                         } label: {
@@ -221,5 +236,16 @@ struct SettingsSheet: View {
                 }
             }
         }
+    }
+
+    private func binding(for mode: String) -> Binding<Bool> {
+        Binding(
+            get: { kdsViewMode == mode },
+            set: { isOn in
+                if isOn {
+                    kdsViewMode = mode
+                }
+            }
+        )
     }
 }

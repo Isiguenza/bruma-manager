@@ -17,6 +17,7 @@ class OrdersViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var currentTime = Date() // Para forzar actualización del timer
+    @Published var viewMode: String = "all" // all | food | beverages
     
     private var timer: Timer?
     private var uiTimer: Timer?
@@ -150,12 +151,23 @@ class OrdersViewModel: ObservableObject {
                 $0.voided != true && $0.deliveredToTable != true 
             }
             
-            guard !activeItems.isEmpty else { continue }
+            // Apply KDS view mode filter (food / beverages / all)
+            let filteredItems: [OrderItem]
+            switch viewMode {
+            case "food":
+                filteredItems = activeItems.filter { $0.product?.category?.isBeverage != true }
+            case "beverages":
+                filteredItems = activeItems.filter { $0.product?.category?.isBeverage == true }
+            default:
+                filteredItems = activeItems
+            }
             
-            print("🔍 Order #\(order.orderNumber): \(activeItems.count) active items (total: \(order.items?.count ?? 0))")
+            guard !filteredItems.isEmpty else { continue }
+            
+            print("🔍 Order #\(order.orderNumber): \(filteredItems.count) filtered items (total: \(order.items?.count ?? 0))")
             
             // Sort items by createdAt
-            let sortedItems = activeItems.sorted { item1, item2 in
+            let sortedItems = filteredItems.sorted { item1, item2 in
                 guard let date1 = item1.createdAt.flatMap({ parseDate($0) }),
                       let date2 = item2.createdAt.flatMap({ parseDate($0) }) else {
                     return false

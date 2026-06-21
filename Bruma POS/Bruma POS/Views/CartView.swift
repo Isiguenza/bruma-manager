@@ -59,6 +59,7 @@ struct CartView: View {
                 GlassEffectContainer(spacing: 8) {
                     HStack(spacing: 8) {
                         Button {
+                            vm.emitCustomerDisplayState(mode: "idle", force: true)
                             vm.currentScreen = .tableSelection
                             Task { await vm.refreshTables() }
                         } label: {
@@ -122,6 +123,7 @@ struct CartView: View {
                     GlassCircleButton(
                         systemImage: "chevron.left",
                         action: {
+                            vm.emitCustomerDisplayState(mode: "idle", force: true)
                             vm.currentScreen = .tableSelection
                             Task { await vm.refreshTables() }
                         },

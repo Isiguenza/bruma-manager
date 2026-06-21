@@ -257,12 +257,13 @@ struct ActiveOrderView: View {
     @ObservedObject var vm: CustomerDisplayViewModel
     
     var body: some View {
-        HStack(spacing: 0) {
-            // Left panel - item list
-            VStack(alignment: .leading, spacing: 0) {
-                // Header
-                VStack(alignment: .leading, spacing: 4) {
-                    if !vm.customerName.isEmpty {
+        ZStack(alignment: .topLeading) {
+            HStack(spacing: 0) {
+                // Left panel - item list
+                VStack(alignment: .leading, spacing: 0) {
+                    // Header
+                    VStack(alignment: .leading, spacing: 4) {
+                        if !vm.customerName.isEmpty {
                         Text(vm.customerName.uppercased())
                             .font(.system(size: 28, weight: .black))
                             .tracking(4)
@@ -347,7 +348,22 @@ struct ActiveOrderView: View {
             .frame(width: 300)
             .background(Color(white: 0.03))
         }
+        
+        // X button to go back to idle/photos
+        Button(action: {
+            vm.goBackToIdle()
+        }) {
+            Image(systemName: "xmark")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundColor(.white.opacity(0.7))
+                .frame(width: 56, height: 56)
+                .background(Color.white.opacity(0.08))
+                .clipShape(Circle())
+        }
+        .padding(.top, 24)
+        .padding(.leading, 24)
     }
+}
 }
 
 struct ItemRow: View {
@@ -417,7 +433,7 @@ struct CashPaymentView: View {
     @ObservedObject var vm: CustomerDisplayViewModel
     
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             Color(hex: "004B48").ignoresSafeArea()
             
             VStack(spacing: 24) {
@@ -446,6 +462,20 @@ struct CashPaymentView: View {
                     .frame(width: 150)
                     .padding(.bottom, 36)
             }
+            
+            // Back button
+            Button(action: {
+                vm.goBackToActive()
+            }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.7))
+                    .frame(width: 56, height: 56)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            .padding(.top, 24)
+            .padding(.leading, 24)
         }
     }
 }
@@ -458,7 +488,7 @@ struct CardPaymentView: View {
     @State private var iconOpacity: Double = 1.0
     
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             Color(hex: "004B48").ignoresSafeArea()
             
             VStack(spacing: 0) {
@@ -512,6 +542,20 @@ struct CardPaymentView: View {
                     .padding(.bottom, 36)
             }
             .padding(.horizontal, 40)
+            
+            // Back button
+            Button(action: {
+                vm.goBackToActive()
+            }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.7))
+                    .frame(width: 56, height: 56)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            .padding(.top, 24)
+            .padding(.leading, 24)
         }
     }
 }
@@ -523,70 +567,86 @@ struct TransferPaymentView: View {
     @State private var qrImage: UIImage?
     
     var body: some View {
-        HStack(spacing: 0) {
-            // Left: bank info
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer()
-                
-                VStack(alignment: .leading, spacing: 32) {
-                    Image(systemName: "building.columns.fill")
-                        .font(.system(size: 44))
-                        .foregroundColor(.white.opacity(0.5))
+        ZStack(alignment: .topLeading) {
+            HStack(spacing: 0) {
+                // Left: bank info
+                VStack(alignment: .leading, spacing: 0) {
+                    Spacer()
                     
-                    VStack(alignment: .leading, spacing: 24) {
-                        BankInfoRow(label: "Banco", value: vm.bankBank.isEmpty ? "—" : vm.bankBank)
-                        BankInfoRow(label: "Nombre", value: vm.bankName.isEmpty ? "—" : vm.bankName)
-                        BankInfoRow(label: "CLABE", value: vm.bankCLABE.isEmpty ? "—" : vm.bankCLABE)
+                    VStack(alignment: .leading, spacing: 32) {
+                        Image(systemName: "building.columns.fill")
+                            .font(.system(size: 44))
+                            .foregroundColor(.white.opacity(0.5))
+                        
+                        VStack(alignment: .leading, spacing: 24) {
+                            BankInfoRow(label: "Banco", value: vm.bankBank.isEmpty ? "—" : vm.bankBank)
+                            BankInfoRow(label: "Nombre", value: vm.bankName.isEmpty ? "—" : vm.bankName)
+                            BankInfoRow(label: "CLABE", value: vm.bankCLABE.isEmpty ? "—" : vm.bankCLABE)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Total a transferir")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(.white.opacity(0.45))
+                            Text(vm.formattedPrice(vm.total))
+                                .font(.system(size: 52, weight: .black, design: .rounded))
+                                .foregroundColor(.white)
+                        }
                     }
                     
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Total a transferir")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(.white.opacity(0.45))
-                        Text(vm.formattedPrice(vm.total))
-                            .font(.system(size: 52, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
-                    }
-                }
-                
-                Spacer()
-                
-                Image("BRUMA")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 150)
-                    .padding(.bottom, 36)
-            }
-            .padding(.horizontal, 56)
-            .frame(maxWidth: .infinity)
-            .background(Color(white: 0.05))
-            
-            // Right: QR code
-            VStack {
-                Spacer()
-                if let qr = qrImage, !vm.bankCLABE.isEmpty {
-                    Image(uiImage: qr)
-                        .interpolation(.none)
+                    Spacer()
+                    
+                    Image("BRUMA")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 260, height: 260)
-                        .padding(24)
-                        .background(Color.white)
-                        .cornerRadius(20)
-                    
-                    Text("Escanear para copiar CLABE")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white.opacity(0.35))
-                        .padding(.top, 16)
-                } else {
-                    Image(systemName: "qrcode")
-                        .font(.system(size: 80))
-                        .foregroundColor(.white.opacity(0.1))
+                        .frame(width: 150)
+                        .padding(.bottom, 36)
                 }
-                Spacer()
+                .padding(.horizontal, 56)
+                .frame(maxWidth: .infinity)
+                .background(Color(white: 0.05))
+                
+                // Right: QR code
+                VStack {
+                    Spacer()
+                    if let qr = qrImage, !vm.bankCLABE.isEmpty {
+                        Image(uiImage: qr)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 260, height: 260)
+                            .padding(24)
+                            .background(Color.white)
+                            .cornerRadius(20)
+                        
+                        Text("Escanear para copiar CLABE")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white.opacity(0.35))
+                            .padding(.top, 16)
+                    } else {
+                        Image(systemName: "qrcode")
+                            .font(.system(size: 80))
+                            .foregroundColor(.white.opacity(0.1))
+                    }
+                    Spacer()
+                }
+                .frame(width: 380)
+                .background(Color(white: 0.03))
             }
-            .frame(width: 380)
-            .background(Color(white: 0.03))
+            
+            // Back button
+            Button(action: {
+                vm.goBackToActive()
+            }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.7))
+                    .frame(width: 56, height: 56)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            .padding(.top, 24)
+            .padding(.leading, 24)
         }
         .onAppear {
             qrImage = generateQRCode(from: vm.bankCLABE)

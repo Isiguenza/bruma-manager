@@ -59,7 +59,35 @@ router.get("/orders", async (req, res) => {
     const orders = await db.query.orders.findMany({
       where: whereConditions.length > 0 ? and(...whereConditions) : undefined,
       with: {
-        items: true,
+        items: {
+          with: {
+            product: {
+              columns: {
+                id: true,
+                name: true,
+                description: true,
+                price: true,
+                categoryId: true,
+                groupId: true,
+                hasVariants: true,
+                variants: true,
+                active: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+              with: {
+                category: {
+                  columns: {
+                    id: true,
+                    name: true,
+                    isBeverage: true,
+                    createdAt: true,
+                  },
+                },
+              },
+            },
+          },
+        },
         table: true,
       },
       orderBy: desc(schema.orders.createdAt),

@@ -1580,15 +1580,26 @@ class POSViewModel: ObservableObject {
                         }
                     case "extra":
                         if let exts = sel as? [Extra], !exts.isEmpty {
+                            // Real extras from DB table — valid UUID
                             let names = exts.map { $0.name }.joined(separator: ", ")
                             extId = exts.first?.id; extName = names
                             let extrasPrice = exts.reduce(0.0) { $0 + $1.numericPrice }
                             price += extrasPrice
                         } else if let opt = sel as? ModifierOption {
-                            extId = opt.id; extName = opt.name
+                            // Flow step option — NOT a valid DB UUID, store in customModifiers
+                            customModsDict[step.id] = [
+                                "stepName": step.stepName,
+                                "stepType": step.stepType,
+                                "options": [["id": opt.id, "name": opt.name, "price": opt.price]]
+                            ]
                             price += opt.numericPrice
-                        } else if let opts = sel as? [ModifierOption], let first = opts.first {
-                            extId = first.id; extName = opts.map { $0.name }.joined(separator: ", ")
+                        } else if let opts = sel as? [ModifierOption], !opts.isEmpty {
+                            // Flow step options — NOT valid DB UUIDs, store in customModifiers
+                            customModsDict[step.id] = [
+                                "stepName": step.stepName,
+                                "stepType": step.stepType,
+                                "options": opts.map { ["id": $0.id, "name": $0.name, "price": $0.price] }
+                            ]
                             price += opts.reduce(0.0) { $0 + $1.numericPrice }
                         }
                     case "custom", "category", "products":
@@ -3234,7 +3245,10 @@ class POSViewModel: ObservableObject {
                 // 4. Recargar mesas
                 await refreshTables()
                 
-                // 5. Navegar de regreso al selector de mesas
+                // 5. Enviar customer display a idle (fotos)
+                emitCustomerDisplayState(mode: "idle", force: true)
+                
+                // 6. Navegar de regreso al selector de mesas
                 await MainActor.run {
                     currentScreen = .tableSelection
                     selectedTab = 0 // Tab 0 = Mesas
