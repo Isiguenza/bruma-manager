@@ -37,9 +37,18 @@ struct NotesSheet: View {
                         }
                         .buttonStyle(.glass)
                     } else {
-                        // Fallback on earlier versions
+                        Button(action: onSkip) {
+                            Text("Sin comentario")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(.ultraThinMaterial)
+                                .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    
+
                     if #available(iOS 26.0, *) {
                         Button(action: onConfirm) {
                             Text("Agregar")
@@ -51,7 +60,16 @@ struct NotesSheet: View {
                         .buttonStyle(.glassProminent)
                         .tint(.blue)
                     } else {
-                        // Fallback on earlier versions
+                        Button(action: onConfirm) {
+                            Text("Agregar")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.blue)
+                                .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }

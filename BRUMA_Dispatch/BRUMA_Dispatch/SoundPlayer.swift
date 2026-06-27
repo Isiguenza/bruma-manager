@@ -13,11 +13,12 @@ class SoundPlayer: ObservableObject {
     static let shared = SoundPlayer()
     
     private var audioPlayer: AVAudioPlayer?
+    private var secondaryAudioPlayer: AVAudioPlayer?
     @Published var isEnabled: Bool = true // Always enabled
     
     private init() {
         setupAudioSession()
-        loadSound()
+        loadSounds()
     }
     
     private func setupAudioSession() {
@@ -33,37 +34,54 @@ class SoundPlayer: ObservableObject {
         }
     }
     
-    private func loadSound() {
-        guard let soundURL = Bundle.main.url(forResource: "chime_alert", withExtension: "wav") else {
-            print("❌ Sound file not found")
-            return
+    private func loadSounds() {
+        // Primary sound (default / food mode)
+        if let primaryURL = Bundle.main.url(forResource: "chime_alert", withExtension: "wav") {
+            do {
+                audioPlayer = try AVAudioPlayer(contentsOf: primaryURL)
+                audioPlayer?.volume = 1.0
+                audioPlayer?.prepareToPlay()
+                print("✅ Primary sound loaded (chime_alert.wav)")
+            } catch {
+                print("❌ Error loading primary sound: \(error)")
+            }
+        } else {
+            print("❌ Primary sound file not found")
         }
         
-        do {
-            audioPlayer = try AVAudioPlayer(contentsOf: soundURL)
-            audioPlayer?.volume = 1.0 // Volumen al máximo
-            audioPlayer?.prepareToPlay()
-            print("✅ Sound loaded successfully (chime_alert.wav)")
-        } catch {
-            print("❌ Error loading sound: \(error)")
+        // Secondary sound (beverages mode)
+        if let secondaryURL = Bundle.main.url(forResource: "notification_sound_secondary", withExtension: "wav") {
+            do {
+                secondaryAudioPlayer = try AVAudioPlayer(contentsOf: secondaryURL)
+                secondaryAudioPlayer?.volume = 1.0
+                secondaryAudioPlayer?.prepareToPlay()
+                print("✅ Secondary sound loaded (notification_sound_secondary.wav)")
+            } catch {
+                print("❌ Error loading secondary sound: \(error)")
+            }
+        } else {
+            print("⚠️ Secondary sound file not found (notification_sound_secondary.wav)")
         }
     }
     
-    func playNotification() {
-        // Always play sound, no check for isEnabled
-        guard let player = audioPlayer else {
-            print("❌ Audio player not initialized")
+    func playNotification(viewMode: String = "all") {
+        let isBeverageMode = (viewMode == "beverages")
+        let player = isBeverageMode ? secondaryAudioPlayer : audioPlayer
+        let soundName = isBeverageMode ? "notification_sound_secondary.wav" : "chime_alert.wav"
+        
+        guard let p = player else {
+            print("❌ Audio player not initialized for \(soundName)")
             return
         }
         
         // Vibrate device
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
         
-        // Forzar volumen al máximo antes de reproducir
-        player.volume = 1.0
-        player.currentTime = 0
-        player.play()
-        print("🔔 Playing chime_alert.wav at MAX VOLUME (forced)")
+        // Force max volume before playing
+        p.volume = 1.0
+        p.currentTime = 0
+        p.play()
+        print("🔔 Playing \(soundName) at MAX VOLUME (forced)")
     }
     
     func toggleSound() {

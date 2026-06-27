@@ -66,19 +66,38 @@ struct LoginView: View {
                     .tint(.white)
                     .padding(.top, 8)
             } else {
-                Button(action: { authVM.startAuth() }) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "person.crop.circle")
-                            .font(.title3)
-                        Text("Iniciar Sesión")
-                            .font(.headline)
+                Group {
+                    if #available(iOS 26.0, *) {
+                        Button(action: { authVM.startAuth() }) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "person.crop.circle")
+                                    .font(.title3)
+                                Text("Iniciar Sesión")
+                                    .font(.headline)
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                        }
+                        .buttonStyle(.glassProminent)
+                        .tint(.blue)
+                    } else {
+                        Button(action: { authVM.startAuth() }) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "person.crop.circle")
+                                    .font(.title3)
+                                Text("Iniciar Sesión")
+                                    .font(.headline)
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.blue)
+                            .cornerRadius(14)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
                 }
-                .buttonStyle(.glassProminent)
-                .tint(.blue)
                 .padding(.top, 8)
             }
             
@@ -140,32 +159,66 @@ struct LoginView: View {
             
             // Action buttons
             HStack(spacing: 12) {
-                Button(action: { authVM.cancel() }) {
-                    Text("Cancelar")
-                        .font(.subheadline.weight(.medium))
+                if #available(iOS 26.0, *) {
+                    Button(action: { authVM.cancel() }) {
+                        Text("Cancelar")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.glass)
+                } else {
+                    Button(action: { authVM.cancel() }) {
+                        Text("Cancelar")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(12)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if #available(iOS 26.0, *) {
+                    Button(action: onSubmit) {
+                        Group {
+                            if authVM.authenticating {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Text(authVM.authStep == .pin ? "Entrar" : "Siguiente")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                        }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                }
-                .buttonStyle(.glass)
-                
-                Button(action: onSubmit) {
-                    Group {
-                        if authVM.authenticating {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Text(authVM.authStep == .pin ? "Entrar" : "Siguiente")
-                                .font(.subheadline.weight(.semibold))
-                        }
                     }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .buttonStyle(.glassProminent)
+                    .tint(value.count == maxLength && !authVM.authenticating ? .blue : .blue.opacity(0.3))
+                    .disabled(value.count != maxLength || authVM.authenticating)
+                } else {
+                    Button(action: onSubmit) {
+                        Group {
+                            if authVM.authenticating {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Text(authVM.authStep == .pin ? "Entrar" : "Siguiente")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(value.count == maxLength && !authVM.authenticating ? Color.blue : Color.blue.opacity(0.3))
+                        .cornerRadius(12)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(value.count != maxLength || authVM.authenticating)
                 }
-                .buttonStyle(.glassProminent)
-                .tint(value.count == maxLength && !authVM.authenticating ? .blue : .blue.opacity(0.3))
-                .disabled(value.count != maxLength || authVM.authenticating)
             }
         }
     }

@@ -93,15 +93,28 @@ struct OrderTakingView: View {
     
     private var headerBar: some View {
         HStack(spacing: 12) {
-            Button(action: handleBack) {
-                Image(systemName: "xmark")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+            if #available(iOS 26.0, *) {
+                Button(action: handleBack) {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.glass)
+                .clipShape(Capsule())
+            } else {
+                Button(action: handleBack) {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.glass)
-            .clipShape(Capsule())
             
             VStack(alignment: .leading, spacing: 1) {
                 Text(titleText)
@@ -114,22 +127,42 @@ struct OrderTakingView: View {
             
             Spacer()
             
-            Button(action: { showCart = true }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "list.bullet.clipboard")
-                        .font(.subheadline)
-                    if !cartVM.items.isEmpty {
-                        Text("\(cartVM.items.count)")
-                            .font(.caption.weight(.bold))
+            if #available(iOS 26.0, *) {
+                Button(action: { showCart = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet.clipboard")
+                            .font(.subheadline)
+                        if !cartVM.items.isEmpty {
+                            Text("\(cartVM.items.count)")
+                                .font(.caption.weight(.bold))
+                        }
                     }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
+                .buttonStyle(.glassProminent)
+                .tint(cartVM.hasPendingItems ? .orange : .clear)
+                .disabled(!cartVM.hasPendingItems)
+            } else {
+                Button(action: { showCart = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet.clipboard")
+                            .font(.subheadline)
+                        if !cartVM.items.isEmpty {
+                            Text("\(cartVM.items.count)")
+                                .font(.caption.weight(.bold))
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(cartVM.hasPendingItems ? Color.orange : Color.white.opacity(0.1))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(!cartVM.hasPendingItems)
             }
-            .buttonStyle(.glassProminent)
-            .tint(cartVM.hasPendingItems ? .orange : .clear)
-            .disabled(!cartVM.hasPendingItems)
            
         }
         .padding(.horizontal, 16)
@@ -210,23 +243,44 @@ struct OrderTakingView: View {
     
     private var menuContent: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.gray)
-                TextField("Buscar producto...", text: $menuVM.searchQuery)
-                    .foregroundColor(.white)
-                    .autocorrectionDisabled()
-                
-                if !menuVM.searchQuery.isEmpty {
-                    Button(action: { menuVM.searchQuery = "" }) {
-                        Image(systemName: "xmark.circle.fill")
+            Group {
+                if #available(iOS 26.0, *) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
                             .foregroundColor(.gray)
+                        TextField("Buscar producto...", text: $menuVM.searchQuery)
+                            .foregroundColor(.white)
+                            .autocorrectionDisabled()
+                        if !menuVM.searchQuery.isEmpty {
+                            Button(action: { menuVM.searchQuery = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
+                            }
+                        }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .glassEffect(.regular.interactive())
+                } else {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.gray)
+                        TextField("Buscar producto...", text: $menuVM.searchQuery)
+                            .foregroundColor(.white)
+                            .autocorrectionDisabled()
+                        if !menuVM.searchQuery.isEmpty {
+                            Button(action: { menuVM.searchQuery = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(12)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .glassEffect(.regular.interactive())
             .padding(.horizontal, 16)
             .padding(.top, 8)
             
@@ -307,28 +361,50 @@ struct OrderTakingView: View {
                     
                     Spacer()
                     
-                    Button(action: {
-                        Task {
-                            await cartVM.sendToKitchen()
-                        }
-                    }) {
-                        HStack(spacing: 8) {
-                            if cartVM.sending {
-                                ProgressView().tint(.white)
-                            } else {
-                                Image(systemName: "paperplane.fill")
-                                    .font(.callout)
-                                Text("Enviar a Cocina")
-                                    .font(.subheadline.weight(.semibold))
+                    if #available(iOS 26.0, *) {
+                        Button(action: {
+                            Task { await cartVM.sendToKitchen() }
+                        }) {
+                            HStack(spacing: 8) {
+                                if cartVM.sending {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Image(systemName: "paperplane.fill")
+                                        .font(.callout)
+                                    Text("Enviar a Cocina")
+                                        .font(.subheadline.weight(.semibold))
+                                }
                             }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
                         }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
+                        .buttonStyle(.glassProminent)
+                        .tint(.orange)
+                        .disabled(cartVM.sending)
+                    } else {
+                        Button(action: {
+                            Task { await cartVM.sendToKitchen() }
+                        }) {
+                            HStack(spacing: 8) {
+                                if cartVM.sending {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Image(systemName: "paperplane.fill")
+                                        .font(.callout)
+                                    Text("Enviar a Cocina")
+                                        .font(.subheadline.weight(.semibold))
+                                }
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .background(Color.orange)
+                            .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(cartVM.sending)
                     }
-                    .buttonStyle(.glassProminent)
-                    .tint(.orange)
-                    .disabled(cartVM.sending)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)

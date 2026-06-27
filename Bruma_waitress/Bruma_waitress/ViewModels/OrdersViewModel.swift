@@ -11,7 +11,7 @@ class OrdersViewModel: ObservableObject {
     func startPolling() {
         fetchOrders()
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            self?.fetchOrders()
+            Task { @MainActor [weak self] in self?.fetchOrders() }
         }
     }
     

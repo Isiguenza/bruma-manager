@@ -111,28 +111,50 @@ struct CartView: View {
                             
                             Spacer()
                             
-                            Button(action: {
-                                Task {
-                                    await cartVM.sendToKitchen()
-                                }
-                            }) {
-                                HStack(spacing: 8) {
-                                    if cartVM.sending {
-                                        ProgressView().tint(.white)
-                                    } else {
-                                        Image(systemName: "flame.fill")
-                                            .font(.callout)
-                                        Text("Enviar a Cocina")
-                                            .font(.subheadline.weight(.semibold))
+                            if #available(iOS 26.0, *) {
+                                Button(action: {
+                                    Task { await cartVM.sendToKitchen() }
+                                }) {
+                                    HStack(spacing: 8) {
+                                        if cartVM.sending {
+                                            ProgressView().tint(.white)
+                                        } else {
+                                            Image(systemName: "flame.fill")
+                                                .font(.callout)
+                                            Text("Enviar a Cocina")
+                                                .font(.subheadline.weight(.semibold))
+                                        }
                                     }
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
                                 }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
+                                .buttonStyle(.glassProminent)
+                                .tint(.orange)
+                                .disabled(cartVM.sending)
+                            } else {
+                                Button(action: {
+                                    Task { await cartVM.sendToKitchen() }
+                                }) {
+                                    HStack(spacing: 8) {
+                                        if cartVM.sending {
+                                            ProgressView().tint(.white)
+                                        } else {
+                                            Image(systemName: "flame.fill")
+                                                .font(.callout)
+                                            Text("Enviar a Cocina")
+                                                .font(.subheadline.weight(.semibold))
+                                        }
+                                    }
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                    .background(Color.orange)
+                                    .cornerRadius(12)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(cartVM.sending)
                             }
-                            .buttonStyle(.glassProminent)
-                            .tint(.orange)
-                            .disabled(cartVM.sending)
                         }
                         .padding(.horizontal, 20)
                         .padding(.bottom, 8)

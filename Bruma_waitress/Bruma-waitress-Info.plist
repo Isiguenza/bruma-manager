@@ -9,6 +9,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Bruma Waitress usa la cámara para escanear códigos QR de tarjetas de lealtad.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Bruma Waitress necesita acceso a la red local para conectarse al servidor POS y al servidor de impresion.</string>
 </dict>

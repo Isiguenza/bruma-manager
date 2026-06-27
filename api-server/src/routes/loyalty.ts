@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, schema } from "../db";
-import { eq, desc, inArray, isNull } from "drizzle-orm";
+import { eq, desc, inArray, isNull, sql } from "drizzle-orm";
 import { sendAppleWalletPush } from "../lib/apple-push";
 import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
 
@@ -178,18 +178,26 @@ router.post("/loyalty-cards/:id/redeem-points", async (req, res) => {
   }
 });
 
-// GET /api/loyalty/search?barcode=...
+// GET /api/loyalty/search?barcode=...&email=...
 router.get("/loyalty/search", async (req, res) => {
   try {
-    const { barcode } = req.query;
+    const { barcode, email } = req.query;
 
-    if (!barcode) {
-      return res.status(400).json({ error: "barcode es requerido" });
+    if (!barcode && !email) {
+      return res.status(400).json({ error: "barcode o email es requerido" });
     }
 
-    const card = await db.query.loyaltyCards.findFirst({
-      where: eq(schema.loyaltyCards.barcodeValue, barcode as string),
-    });
+    let card;
+    if (barcode) {
+      card = await db.query.loyaltyCards.findFirst({
+        where: eq(schema.loyaltyCards.barcodeValue, barcode as string),
+      });
+    } else {
+      const emailNorm = (email as string).toLowerCase().trim();
+      card = await db.query.loyaltyCards.findFirst({
+        where: sql`lower(${schema.loyaltyCards.customerEmail}) = ${emailNorm}`,
+      });
+    }
 
     if (!card) {
       return res.status(404).json({ error: "Tarjeta no encontrada" });

@@ -283,40 +283,79 @@ struct GuestCountSheet: View {
                     .foregroundColor(.white)
                 
                 HStack(spacing: 20) {
-                    Button(action: { if guestCount > 1 { guestCount -= 1 } }) {
-                        Image(systemName: "minus")
-                            .font(.title.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 56, height: 56)
+                    if #available(iOS 26.0, *) {
+                        Button(action: { if guestCount > 1 { guestCount -= 1 } }) {
+                            Image(systemName: "minus")
+                                .font(.title.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 56, height: 56)
+                        }
+                        .buttonStyle(.glass)
+                        .clipShape(Circle())
+                    } else {
+                        Button(action: { if guestCount > 1 { guestCount -= 1 } }) {
+                            Image(systemName: "minus")
+                                .font(.title.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.glass)
-                    .clipShape(Circle())
-                    
+
                     Text("\(guestCount)")
                         .font(.system(size: 48, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .frame(width: 80)
-                    
-                    Button(action: { if guestCount < 20 { guestCount += 1 } }) {
-                        Image(systemName: "plus")
-                            .font(.title.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 56, height: 56)
+
+                    if #available(iOS 26.0, *) {
+                        Button(action: { if guestCount < 20 { guestCount += 1 } }) {
+                            Image(systemName: "plus")
+                                .font(.title.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 56, height: 56)
+                        }
+                        .buttonStyle(.glassProminent)
+                        .tint(.blue)
+                        .clipShape(Circle())
+                    } else {
+                        Button(action: { if guestCount < 20 { guestCount += 1 } }) {
+                            Image(systemName: "plus")
+                                .font(.title.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 56, height: 56)
+                                .background(Color.blue)
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.glassProminent)
-                    .tint(.blue)
-                    .clipShape(Circle())
                 }
                 
-                Button(action: onConfirm) {
-                    Text("Confirmar")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                Group {
+                    if #available(iOS 26.0, *) {
+                        Button(action: onConfirm) {
+                            Text("Confirmar")
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                        }
+                        .buttonStyle(.glassProminent)
+                        .tint(.blue)
+                    } else {
+                        Button(action: onConfirm) {
+                            Text("Confirmar")
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.blue)
+                                .cornerRadius(14)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.glassProminent)
-                .tint(.blue)
                 .padding(.horizontal, 32)
             }
             .padding()

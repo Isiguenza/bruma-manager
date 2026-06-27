@@ -44,7 +44,7 @@ class OrdersViewModel: ObservableObject {
         SocketService.shared.onNewOrder = { [weak self] in
             Task { @MainActor in
                 print("📦 Dispatch: New order received via WebSocket")
-                self?.soundPlayer.playNotification()
+                self?.soundPlayer.playNotification(viewMode: self?.viewMode ?? "all")
                 await self?.fetchOrders()
             }
         }
@@ -116,7 +116,7 @@ class OrdersViewModel: ObservableObject {
             // Play sound for new batches
             if hasNewBatch {
                 print("🔔 New batch detected!")
-                soundPlayer.playNotification()
+                soundPlayer.playNotification(viewMode: viewMode)
                 
                 // Auto-expand new batches
                 for batch in newBatches where !previousBatchIds.contains(batch.id) {

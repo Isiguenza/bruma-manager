@@ -12,18 +12,34 @@ struct ModifierFlowView: View {
             VStack(spacing: 16) {
                 // Header
                 HStack {
-                    Button(action: {
-                        menuVM.showModifierFlow = false
-                        dismiss()
-                    }) {
-                        Image(systemName: "xmark")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+                    if #available(iOS 26.0, *) {
+                        Button(action: {
+                            menuVM.showModifierFlow = false
+                            dismiss()
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.glass)
+                        .clipShape(Capsule())
+                    } else {
+                        Button(action: {
+                            menuVM.showModifierFlow = false
+                            dismiss()
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.glass)
-                    .clipShape(Capsule())
                     
                     Spacer()
                     Text(menuVM.selectedProduct?.name ?? "")
@@ -63,18 +79,34 @@ struct ModifierFlowView: View {
                     ScrollView {
                         VStack(spacing: 8) {
                             if step.includeNoneOption && !step.isRequired {
-                                Button(action: { menuVM.skipModifierStep() }) {
-                                    HStack {
-                                        Text("Sin \(step.stepName)")
-                                            .font(.body.weight(.medium))
-                                            .foregroundStyle(.white)
-                                        Spacer()
+                                if #available(iOS 26.0, *) {
+                                    Button(action: { menuVM.skipModifierStep() }) {
+                                        HStack {
+                                            Text("Sin \(step.stepName)")
+                                                .font(.body.weight(.medium))
+                                                .foregroundStyle(.white)
+                                            Spacer()
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 14)
                                     }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 14)
+                                    .buttonStyle(.glass)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                } else {
+                                    Button(action: { menuVM.skipModifierStep() }) {
+                                        HStack {
+                                            Text("Sin \(step.stepName)")
+                                                .font(.body.weight(.medium))
+                                                .foregroundStyle(.white)
+                                            Spacer()
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 14)
+                                        .background(.ultraThinMaterial)
+                                        .cornerRadius(12)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.glass)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             
                             if let options = step.options?.filter({ $0.active }).sorted(by: { $0.sortOrder < $1.sortOrder }) {
@@ -123,29 +155,56 @@ struct ModifierFlowView: View {
                     let canAdvance = !step.isRequired || hasSelection
                     let isLastStep = menuVM.currentStepIndex + 1 >= (menuVM.categoryFlow?.steps.count ?? 0)
                     
-                    Button(action: {
-                        menuVM.advanceModifierStep(
-                            seat: cartVM.activeSeat,
-                            course: cartVM.activeCourse
-                        )
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: hasSelection ? "checkmark.circle.fill" : "arrow.right.circle.fill")
-                                .font(.callout)
-                                .contentTransition(.symbolEffect(.replace))
-                                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
-                            
-                            Text(isLastStep ? (hasSelection ? "Agregar" : "Agregar sin \(step.stepName.lowercased())") : (hasSelection ? "Continuar" : "Continuar sin \(step.stepName.lowercased())"))
-                                .font(.callout.weight(.semibold))
-                                .contentTransition(.numericText())
-                                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
+                    Group {
+                        if #available(iOS 26.0, *) {
+                            Button(action: {
+                                menuVM.advanceModifierStep(
+                                    seat: cartVM.activeSeat,
+                                    course: cartVM.activeCourse
+                                )
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: hasSelection ? "checkmark.circle.fill" : "arrow.right.circle.fill")
+                                        .font(.callout)
+                                        .contentTransition(.symbolEffect(.replace))
+                                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
+                                    Text(isLastStep ? (hasSelection ? "Agregar" : "Agregar sin \(step.stepName.lowercased())") : (hasSelection ? "Continuar" : "Continuar sin \(step.stepName.lowercased())"))
+                                        .font(.callout.weight(.semibold))
+                                        .contentTransition(.numericText())
+                                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
+                                }
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.glassProminent)
+                            .tint(canAdvance ? Color.blue : Color.blue.opacity(0.3))
+                        } else {
+                            Button(action: {
+                                menuVM.advanceModifierStep(
+                                    seat: cartVM.activeSeat,
+                                    course: cartVM.activeCourse
+                                )
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: hasSelection ? "checkmark.circle.fill" : "arrow.right.circle.fill")
+                                        .font(.callout)
+                                        .contentTransition(.symbolEffect(.replace))
+                                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
+                                    Text(isLastStep ? (hasSelection ? "Agregar" : "Agregar sin \(step.stepName.lowercased())") : (hasSelection ? "Continuar" : "Continuar sin \(step.stepName.lowercased())"))
+                                        .font(.callout.weight(.semibold))
+                                        .contentTransition(.numericText())
+                                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
+                                }
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(canAdvance ? Color.blue : Color.blue.opacity(0.3))
+                                .cornerRadius(12)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                     }
-                    .buttonStyle(.glassProminent)
-                    .tint(canAdvance ? Color.blue : Color.blue.opacity(0.3))
                     .disabled(step.isRequired && (menuVM.stepSelections[step.id]?.isEmpty ?? true))
                     .padding(.horizontal, 20)
                     .padding(.bottom, 16)

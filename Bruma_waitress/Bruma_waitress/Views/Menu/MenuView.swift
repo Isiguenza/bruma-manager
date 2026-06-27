@@ -7,24 +7,44 @@ struct MenuView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Search bar
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.gray)
-                TextField("Buscar producto...", text: $menuVM.searchQuery)
-                    .foregroundColor(.white)
-                    .autocorrectionDisabled()
-
-                
-                if !menuVM.searchQuery.isEmpty {
-                    Button(action: { menuVM.searchQuery = "" }) {
-                        Image(systemName: "xmark.circle.fill")
+            Group {
+                if #available(iOS 26.0, *) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
                             .foregroundColor(.gray)
+                        TextField("Buscar producto...", text: $menuVM.searchQuery)
+                            .foregroundColor(.white)
+                            .autocorrectionDisabled()
+                        if !menuVM.searchQuery.isEmpty {
+                            Button(action: { menuVM.searchQuery = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
+                            }
+                        }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .glassEffect(.regular.interactive())
+                } else {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.gray)
+                        TextField("Buscar producto...", text: $menuVM.searchQuery)
+                            .foregroundColor(.white)
+                            .autocorrectionDisabled()
+                        if !menuVM.searchQuery.isEmpty {
+                            Button(action: { menuVM.searchQuery = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(12)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .glassEffect(.regular.interactive())
             .padding(.horizontal, 16)
             .padding(.top, 8)
             
@@ -133,13 +153,25 @@ struct CategoryPill: View {
     let action: () -> Void
     
     var body: some View {
-        Button(action: action) {
-            Text(name)
-                .font(.subheadline.weight(isSelected ? .semibold : .regular))
-                .foregroundColor(isSelected ? .white : .gray)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .glassEffect(isSelected ? .regular.tint(.blue).interactive() : .regular.interactive())
+        if #available(iOS 26.0, *) {
+            Button(action: action) {
+                Text(name)
+                    .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? .white : .gray)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .glassEffect(isSelected ? .regular.tint(.blue).interactive() : .regular.interactive())
+            }
+        } else {
+            Button(action: action) {
+                Text(name)
+                    .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? .white : .gray)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(isSelected ? Color.blue.opacity(0.25) : Color.white.opacity(0.08))
+                    .clipShape(Capsule())
+            }
         }
     }
 }

@@ -11,6 +11,7 @@ struct ContentView: View {
     enum AppTab {
         case tables
         case orders
+        case loyalty
     }
     
     struct TableContext: Identifiable {
@@ -50,6 +51,12 @@ struct ContentView: View {
                             Label("Ordenes", systemImage: "clock")
                         }
                         .tag(AppTab.orders)
+
+                        LoyaltyView()
+                        .tabItem {
+                            Label("Lealtad", systemImage: "star.circle")
+                        }
+                        .tag(AppTab.loyalty)
                     }
                 }
                 .fullScreenCover(item: $activeTableContext) { ctx in
