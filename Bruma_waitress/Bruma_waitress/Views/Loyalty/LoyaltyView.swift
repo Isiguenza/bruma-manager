@@ -31,6 +31,7 @@ struct LoyaltyView: View {
                 .presentationDragIndicator(.visible)
         }
         .onChange(of: selectedTab) { _, _ in
+            vm.searchInput = ""
             vm.resetScan()
             emailFocused = false
         }
@@ -71,27 +72,28 @@ struct LoyaltyView: View {
         VStack(spacing: 16) {
             Color.clear.frame(height: 60)
 
-            // Email input
+            // Search input (email or phone)
             HStack(spacing: 10) {
-                Image(systemName: "envelope")
+                Image(systemName: vm.searchInput.contains("@") ? "envelope" : "phone")
                     .font(.subheadline)
                     .foregroundColor(.gray)
+                    .animation(.easeInOut(duration: 0.2), value: vm.searchInput.contains("@"))
 
-                TextField("Buscar por correo", text: $vm.emailInput)
+                TextField("Correo o teléfono", text: $vm.searchInput)
                     .foregroundColor(.white)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .keyboardType(.emailAddress)
                     .focused($emailFocused)
-                    .onSubmit { Task { await vm.searchByEmail() } }
+                    .onChange(of: vm.searchInput) { _, _ in vm.scheduleSearch() }
 
                 if vm.isSearching {
                     ProgressView().tint(.gray).scaleEffect(0.8)
-                } else if !vm.emailInput.isEmpty {
-                    Button(action: { Task { await vm.searchByEmail() } }) {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.title3)
-                            .foregroundColor(Color(red: 1.0, green: 0.58, blue: 0.0))
+                } else if !vm.searchInput.isEmpty {
+                    Button(action: { vm.searchInput = ""; vm.resetScan() }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
                     }
                 }
             }
@@ -278,36 +280,54 @@ struct QRScannerView: UIViewRepresentable {
         let view = UIView()
         view.backgroundColor = .black
 
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            setupSession(in: view, coordinator: context.coordinator)
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                guard granted else { return }
+                DispatchQueue.main.async {
+                    self.setupSession(in: view, coordinator: context.coordinator)
+                }
+            }
+        default:
+            break
+        }
+
+        return view
+    }
+
+    private func setupSession(in view: UIView, coordinator: Coordinator) {
         let session = AVCaptureSession()
-        context.coordinator.session = session
+        coordinator.session = session
 
         guard
             let device = AVCaptureDevice.default(for: .video),
             let input = try? AVCaptureDeviceInput(device: device),
             session.canAddInput(input)
-        else { return view }
+        else { return }
 
         session.addInput(input)
 
         let output = AVCaptureMetadataOutput()
-        guard session.canAddOutput(output) else { return view }
+        guard session.canAddOutput(output) else { return }
         session.addOutput(output)
-        output.setMetadataObjectsDelegate(context.coordinator, queue: .main)
+        output.setMetadataObjectsDelegate(coordinator, queue: .main)
         output.metadataObjectTypes = [.qr, .code128, .ean13, .ean8, .pdf417, .aztec]
 
         let preview = AVCaptureVideoPreviewLayer(session: session)
         preview.videoGravity = .resizeAspectFill
-        preview.frame = UIScreen.main.bounds
+        preview.frame = view.bounds
         view.layer.addSublayer(preview)
-        context.coordinator.previewLayer = preview
+        coordinator.previewLayer = preview
 
         DispatchQueue.global(qos: .userInitiated).async { session.startRunning() }
-
-        return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        context.coordinator.previewLayer?.frame = uiView.bounds
+        DispatchQueue.main.async {
+            context.coordinator.previewLayer?.frame = uiView.bounds
+        }
     }
 
     class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {

@@ -178,13 +178,13 @@ router.post("/loyalty-cards/:id/redeem-points", async (req, res) => {
   }
 });
 
-// GET /api/loyalty/search?barcode=...&email=...
+// GET /api/loyalty/search?barcode=...&email=...&phone=...
 router.get("/loyalty/search", async (req, res) => {
   try {
-    const { barcode, email } = req.query;
+    const { barcode, email, phone } = req.query;
 
-    if (!barcode && !email) {
-      return res.status(400).json({ error: "barcode o email es requerido" });
+    if (!barcode && !email && !phone) {
+      return res.status(400).json({ error: "barcode, email o phone es requerido" });
     }
 
     let card;
@@ -192,10 +192,16 @@ router.get("/loyalty/search", async (req, res) => {
       card = await db.query.loyaltyCards.findFirst({
         where: eq(schema.loyaltyCards.barcodeValue, barcode as string),
       });
-    } else {
+    } else if (email) {
       const emailNorm = (email as string).toLowerCase().trim();
       card = await db.query.loyaltyCards.findFirst({
         where: sql`lower(${schema.loyaltyCards.customerEmail}) = ${emailNorm}`,
+      });
+    } else {
+      // Strip non-digits for flexible phone matching
+      const phoneDigits = (phone as string).replace(/\D/g, "");
+      card = await db.query.loyaltyCards.findFirst({
+        where: sql`regexp_replace(${schema.loyaltyCards.customerPhone}, '[^0-9]', '', 'g') LIKE ${"%" + phoneDigits + "%"}`,
       });
     }
 

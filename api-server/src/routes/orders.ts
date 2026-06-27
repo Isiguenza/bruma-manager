@@ -322,12 +322,19 @@ router.post("/orders/:id/items", async (req, res) => {
     const currentSubtotal = parseFloat(order.subtotal) || 0;
     const newSubtotal = currentSubtotal + newItemsTotal;
 
+    // If order was "ready" (all previous items delivered), reset to "preparing" so KDS sees new items
+    const statusUpdate: any = {
+      subtotal: newSubtotal.toString(),
+      total: newSubtotal.toString(),
+    };
+    if (order.status === "ready") {
+      statusUpdate.status = "preparing";
+      console.log(`🔄 Order ${id} reset from "ready" to "preparing" due to new items`);
+    }
+
     await db
       .update(schema.orders)
-      .set({
-        subtotal: newSubtotal.toString(),
-        total: newSubtotal.toString(),
-      })
+      .set(statusUpdate)
       .where(eq(schema.orders.id, id));
 
     const updatedOrder = await db.query.orders.findFirst({

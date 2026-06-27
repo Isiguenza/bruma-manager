@@ -225,11 +225,12 @@ class APIService {
     
     // MARK: - Loyalty
 
-    func searchLoyaltyCard(barcode: String? = nil, email: String? = nil) async throws -> LoyaltyCard {
+    func searchLoyaltyCard(barcode: String? = nil, email: String? = nil, phone: String? = nil) async throws -> LoyaltyCard {
         var components = URLComponents(string: "\(baseURL)/api/loyalty/search")!
         var items: [URLQueryItem] = []
         if let b = barcode { items.append(URLQueryItem(name: "barcode", value: b)) }
         if let e = email   { items.append(URLQueryItem(name: "email", value: e)) }
+        if let p = phone   { items.append(URLQueryItem(name: "phone", value: p)) }
         components.queryItems = items
         let (data, response) = try await URLSession.shared.data(from: components.url!)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
