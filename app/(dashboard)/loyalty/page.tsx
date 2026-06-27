@@ -247,20 +247,8 @@ export default function LoyaltyPage() {
     window.open(`/api/wallet/pass/${cardId}`, "_blank");
   }
 
-  async function addToGoogleWallet(cardId: string) {
-    try {
-      const res = await fetch(`${getApiUrl()}/api/wallet/google-pass/${cardId}`);
-      if (!res.ok) {
-        toast.error("Error generando tarjeta Google Wallet");
-        return;
-      }
-      const data = await res.json();
-      if (data.saveUrl) {
-        window.open(data.saveUrl, "_blank");
-      }
-    } catch {
-      toast.error("Error generando tarjeta Google Wallet");
-    }
+  function addToGoogleWallet(cardId: string) {
+    window.open(`${getApiUrl()}/api/wallet/google-pass/${cardId}`, "_blank");
   }
 
   const filtered = cards.filter((c) => {

@@ -45,7 +45,10 @@ struct MainPOSView: View {
             // MARK: - Dialog Overlays
             
             if vm.showVariantDialog || vm.showNotesDialog {
-                dialogOverlay { ProductAddDialog(vm: vm) }
+                dialogOverlay {
+                    ProductAddDialog(vm: vm)
+                        .id(vm.selectedProductForVariant?.id ?? vm.pendingCartItem?.id.uuidString ?? "")
+                }
             }
             
             if vm.showGuestCountDialog {

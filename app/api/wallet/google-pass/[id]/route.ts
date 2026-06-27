@@ -264,7 +264,7 @@ export async function GET(
 
     console.log("[Google Wallet] Save URL generated:", saveUrl.substring(0, 100) + "...");
 
-    return NextResponse.json({ saveUrl });
+    return NextResponse.redirect(saveUrl);
   } catch (error) {
     console.error("Error generating Google Wallet pass:", error);
     return NextResponse.json(

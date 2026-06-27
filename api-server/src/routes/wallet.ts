@@ -207,10 +207,9 @@ router.get("/wallet/google-pass/:cardId", async (req, res) => {
     // Ensure the object exists in Google Wallet API
     await createOrUpdateGoogleWalletObject(card);
 
-    // Generate the save URL
     const saveUrl = generateGoogleWalletSaveUrl(cardId);
 
-    res.json({ saveUrl });
+    res.redirect(saveUrl);
   } catch (error) {
     console.error("[API Wallet] Error generating Google Wallet pass:", error);
     res.status(500).json({ error: "Error generando tarjeta Google Wallet" });
