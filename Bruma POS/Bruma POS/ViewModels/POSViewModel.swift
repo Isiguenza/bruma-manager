@@ -3240,8 +3240,17 @@ class POSViewModel: ObservableObject {
         print("🔥 executeReleaseTable() started")
         Task {
             do {
-                // 1. Eliminar la orden de la BD si existe
-                if let orderId = currentOrderId {
+                // 1. Eliminar TODAS las órdenes activas de la mesa para que no queden huérfanas
+                if let table = selectedTable {
+                    if let allActiveOrders = try? await APIService.shared.fetchOrdersByTable(tableId: table.id) {
+                        print("🗑️ Eliminando \(allActiveOrders.count) órdenes activas de la mesa \(table.number)")
+                        for order in allActiveOrders {
+                            try? await APIService.shared.deleteOrder(orderId: order.id)
+                            print("✅ Orden \(order.id) eliminada")
+                        }
+                    }
+                } else if let orderId = currentOrderId {
+                    // Fallback: si no hay mesa (para llevar), borrar solo la orden actual
                     print("🗑️ Deleting order \(orderId)")
                     try await APIService.shared.deleteOrder(orderId: orderId)
                     print("✅ Orden \(orderId) eliminada de la BD")
