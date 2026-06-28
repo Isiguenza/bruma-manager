@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -108,6 +108,14 @@ interface ProductForm {
   menuWebVisible: boolean;
 }
 
+interface CropModalState {
+  blobUrl: string;
+  zoom: number;
+  offsetX: number;
+  offsetY: number;
+  editingIndex: number | null;
+}
+
 const emptyForm: ProductForm = {
   name: "",
   description: "",
@@ -142,7 +150,11 @@ export default function ProductsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingMenuMedia, setUploadingMenuMedia] = useState(false);
-  
+  const [cropModal, setCropModal] = useState<CropModalState | null>(null);
+  const cropImgRef = useRef<HTMLImageElement | null>(null);
+  const cropContainerRef = useRef<HTMLDivElement | null>(null);
+  const cropDragRef = useRef<{ startX: number; startY: number; startOffX: number; startOffY: number } | null>(null);
+
   // Bulk actions
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [bulkActionInProgress, setBulkActionInProgress] = useState(false);
@@ -237,39 +249,156 @@ export default function ProductsPage() {
   async function handleMenuMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+    e.target.value = "";
 
-    const isVideo = files[0].type.startsWith("video/");
-
-    if (isVideo) {
-      if (form.menuVideo) { toast.error("Solo se permite 1 video por platillo"); return; }
-    } else {
-      const remaining = 4 - form.menuImages.length;
-      if (remaining <= 0) { toast.error("Máximo 4 imágenes por platillo"); return; }
+    for (const file of files) {
+      if (file.type.startsWith("video/")) {
+        if (form.menuVideo) { toast.error("Solo se permite 1 video por platillo"); return; }
+        setUploadingMenuMedia(true);
+        try {
+          const fd = new FormData();
+          fd.append("file", file);
+          const res = await fetch("/api/menu/upload", { method: "POST", body: fd });
+          if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Error"); }
+          const { url } = await res.json();
+          setForm((prev) => ({ ...prev, menuVideo: url }));
+          toast.success("Video subido");
+        } catch (err: any) {
+          toast.error(err.message || "Error subiendo video");
+        } finally {
+          setUploadingMenuMedia(false);
+        }
+      } else {
+        if (form.menuImages.length >= 4) { toast.error("Máximo 4 imágenes por platillo"); return; }
+        const blobUrl = URL.createObjectURL(file);
+        setCropModal({ blobUrl, zoom: 1, offsetX: 0, offsetY: 0, editingIndex: null });
+        break;
+      }
     }
+  }
 
+  async function handleVideoReplace(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
     setUploadingMenuMedia(true);
     try {
-      for (const file of files) {
-        const fd = new FormData();
-        fd.append("file", file);
-        const res = await fetch("/api/menu/upload", { method: "POST", body: fd });
-        if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Error"); }
-        const { url, type } = await res.json();
-        if (type === "video") {
-          setForm((prev) => ({ ...prev, menuVideo: url }));
-        } else {
-          setForm((prev) => ({
-            ...prev,
-            menuImages: [...prev.menuImages, url].slice(0, 4),
-          }));
-        }
-      }
-      toast.success("Archivo subido");
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/menu/upload", { method: "POST", body: fd });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Error"); }
+      const { url } = await res.json();
+      setForm((prev) => ({ ...prev, menuVideo: url }));
+      toast.success("Video actualizado");
     } catch (err: any) {
-      toast.error(err.message || "Error subiendo archivo");
+      toast.error(err.message || "Error subiendo video");
     } finally {
       setUploadingMenuMedia(false);
-      e.target.value = "";
+    }
+  }
+
+  async function openImageEditor(url: string, index: number) {
+    try {
+      const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
+      if (!res.ok) throw new Error("No se pudo cargar");
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      setCropModal({ blobUrl, zoom: 1, offsetX: 0, offsetY: 0, editingIndex: index });
+    } catch {
+      toast.error("No se pudo cargar la imagen para editar");
+    }
+  }
+
+  function closeCropper() {
+    if (cropModal) URL.revokeObjectURL(cropModal.blobUrl);
+    setCropModal(null);
+  }
+
+  function clampCropOffset(
+    ox: number, oy: number, zoom: number,
+    img: HTMLImageElement, container: HTMLDivElement
+  ): [number, number] {
+    if (!img.naturalWidth) return [ox, oy];
+    const C = container.getBoundingClientRect().width;
+    const base = Math.max(C / img.naturalWidth, C / img.naturalHeight);
+    const total = base * zoom;
+    const mx = Math.max(0, (img.naturalWidth * total - C) / 2);
+    const my = Math.max(0, (img.naturalHeight * total - C) / 2);
+    return [Math.max(-mx, Math.min(mx, ox)), Math.max(-my, Math.min(my, oy))];
+  }
+
+  function onCropMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
+    cropDragRef.current = {
+      startX: e.clientX, startY: e.clientY,
+      startOffX: cropModal?.offsetX ?? 0,
+      startOffY: cropModal?.offsetY ?? 0,
+    };
+  }
+
+  function onCropMouseMove(e: React.MouseEvent) {
+    if (!cropDragRef.current || !cropModal || !cropImgRef.current || !cropContainerRef.current) return;
+    const dx = e.clientX - cropDragRef.current.startX;
+    const dy = e.clientY - cropDragRef.current.startY;
+    const [cx, cy] = clampCropOffset(
+      cropDragRef.current.startOffX + dx,
+      cropDragRef.current.startOffY + dy,
+      cropModal.zoom, cropImgRef.current, cropContainerRef.current
+    );
+    setCropModal((prev) => prev ? { ...prev, offsetX: cx, offsetY: cy } : null);
+  }
+
+  function onCropMouseUp() { cropDragRef.current = null; }
+
+  function updateCropZoom(zoom: number) {
+    if (!cropModal || !cropImgRef.current || !cropContainerRef.current) return;
+    const [cx, cy] = clampCropOffset(cropModal.offsetX, cropModal.offsetY, zoom, cropImgRef.current, cropContainerRef.current);
+    setCropModal((prev) => prev ? { ...prev, zoom, offsetX: cx, offsetY: cy } : null);
+  }
+
+  async function handleCropConfirm() {
+    if (!cropModal || !cropImgRef.current || !cropContainerRef.current) return;
+    const img = cropImgRef.current;
+    const container = cropContainerRef.current;
+    if (!img.complete || img.naturalWidth === 0) {
+      await new Promise<void>((r) => { img.onload = () => r(); });
+    }
+    const C = container.getBoundingClientRect().width;
+    const base = Math.max(C / img.naturalWidth, C / img.naturalHeight);
+    const total = base * cropModal.zoom;
+    const srcX = img.naturalWidth / 2 - (C / 2 + cropModal.offsetX) / total;
+    const srcY = img.naturalHeight / 2 - (C / 2 + cropModal.offsetY) / total;
+    const srcSize = C / total;
+    const sx = Math.max(0, Math.min(srcX, img.naturalWidth - srcSize));
+    const sy = Math.max(0, Math.min(srcY, img.naturalHeight - srcSize));
+    const ss = Math.min(srcSize, img.naturalWidth - sx, img.naturalHeight - sy);
+    const canvas = document.createElement("canvas");
+    canvas.width = 900; canvas.height = 900;
+    canvas.getContext("2d")!.drawImage(img, sx, sy, ss, ss, 0, 0, 900, 900);
+    const blob = await new Promise<Blob>((resolve) =>
+      canvas.toBlob((b) => resolve(b!), "image/webp", 0.9)
+    );
+    setUploadingMenuMedia(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", blob, "crop.webp");
+      const res = await fetch("/api/menu/upload", { method: "POST", body: fd });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Error"); }
+      const { url } = await res.json();
+      if (cropModal.editingIndex !== null) {
+        setForm((prev) => ({
+          ...prev,
+          menuImages: prev.menuImages.map((u, i) => i === cropModal.editingIndex ? url : u),
+        }));
+      } else {
+        setForm((prev) => ({ ...prev, menuImages: [...prev.menuImages, url].slice(0, 4) }));
+      }
+      toast.success("Imagen guardada");
+      closeCropper();
+    } catch (err: any) {
+      toast.error(err.message || "Error subiendo imagen");
+    } finally {
+      setUploadingMenuMedia(false);
     }
   }
 
@@ -1252,15 +1381,31 @@ export default function ProductsPage() {
                   Video (1 máx)
                 </Label>
                 {form.menuVideo ? (
-                  <div className="relative rounded-lg overflow-hidden border bg-muted/20 group">
-                    <video src={form.menuVideo} className="w-full h-36 object-cover" muted playsInline />
-                    <button
-                      type="button"
-                      onClick={() => setForm((prev) => ({ ...prev, menuVideo: "" }))}
-                      className="absolute top-2 right-2 bg-destructive text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="size-3" />
-                    </button>
+                  <div className="relative rounded-lg overflow-hidden border bg-muted/20 group w-[200px]">
+                    <video
+                      src={form.menuVideo}
+                      className="w-full aspect-square object-cover"
+                      muted playsInline autoPlay loop
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                      <label className="cursor-pointer bg-white/20 backdrop-blur-sm rounded-full w-8 h-8 flex items-center justify-center hover:bg-white/30 transition-colors">
+                        <PencilSimple className="size-3.5 text-white" />
+                        <input
+                          type="file"
+                          accept="video/mp4,video/quicktime,video/webm"
+                          className="sr-only"
+                          onChange={handleVideoReplace}
+                          disabled={uploadingMenuMedia}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setForm((prev) => ({ ...prev, menuVideo: "" }))}
+                        className="bg-white/20 backdrop-blur-sm rounded-full w-8 h-8 flex items-center justify-center hover:bg-red-500/70 transition-colors"
+                      >
+                        <X className="size-3.5 text-white" />
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="border-2 border-dashed rounded-lg p-3 text-center">
@@ -1285,13 +1430,22 @@ export default function ProductsPage() {
                   {form.menuImages.map((url, i) => (
                     <div key={i} className="relative aspect-square rounded-lg overflow-hidden border group">
                       <img src={url} alt="" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => setForm((prev) => ({ ...prev, menuImages: prev.menuImages.filter((_, j) => j !== i) }))}
-                        className="absolute top-1 right-1 bg-destructive text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <X className="size-3" />
-                      </button>
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => openImageEditor(url, i)}
+                          className="bg-white/20 backdrop-blur-sm rounded-full w-7 h-7 flex items-center justify-center hover:bg-white/30 transition-colors"
+                        >
+                          <PencilSimple className="size-3.5 text-white" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setForm((prev) => ({ ...prev, menuImages: prev.menuImages.filter((_, j) => j !== i) }))}
+                          className="bg-white/20 backdrop-blur-sm rounded-full w-7 h-7 flex items-center justify-center hover:bg-red-500/70 transition-colors"
+                        >
+                          <X className="size-3.5 text-white" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {form.menuImages.length < 4 && (
@@ -1495,6 +1649,78 @@ export default function ProductsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Image Cropper Modal */}
+      {cropModal && (
+        <Dialog open onOpenChange={closeCropper}>
+          <DialogContent className="sm:max-w-[480px]">
+            <DialogHeader>
+              <DialogTitle>Ajustar imagen</DialogTitle>
+            </DialogHeader>
+
+            {/* Cropper canvas */}
+            <div
+              ref={cropContainerRef}
+              className="relative overflow-hidden rounded-lg bg-muted select-none touch-none"
+              style={{ width: "100%", aspectRatio: "1", cursor: "grab" }}
+              onMouseDown={onCropMouseDown}
+              onMouseMove={onCropMouseMove}
+              onMouseUp={onCropMouseUp}
+              onMouseLeave={onCropMouseUp}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                ref={cropImgRef}
+                src={cropModal.blobUrl}
+                alt="Crop preview"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  transformOrigin: "center center",
+                  transform: `translate(${cropModal.offsetX}px, ${cropModal.offsetY}px) scale(${cropModal.zoom})`,
+                  userSelect: "none",
+                  pointerEvents: "none",
+                  draggable: false,
+                } as React.CSSProperties}
+              />
+              {/* Rule-of-thirds overlay */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(rgba(255,255,255,.12) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.12) 1px, transparent 1px)",
+                  backgroundSize: "33.33% 33.33%",
+                }}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">Zoom — arrastra para centrar</p>
+              <input
+                type="range"
+                min={1}
+                max={4}
+                step={0.01}
+                value={cropModal.zoom}
+                onChange={(e) => updateCropZoom(parseFloat(e.target.value))}
+                className="w-full accent-primary"
+              />
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={closeCropper}>
+                Cancelar
+              </Button>
+              <Button onClick={handleCropConfirm} disabled={uploadingMenuMedia}>
+                {uploadingMenuMedia ? "Subiendo..." : "Confirmar"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
