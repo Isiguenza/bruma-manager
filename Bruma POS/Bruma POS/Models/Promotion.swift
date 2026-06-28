@@ -191,14 +191,16 @@ struct LoyaltyCard: Codable, Identifiable {
 
 struct Reservation: Codable, Identifiable {
     let id: String
-    let tableId: String
+    let tableId: String?
     let customerName: String
     let customerPhone: String?
+    let customerEmail: String?
     let guestCount: Int
     let reservationDate: String
     let reservationTime: String
     let duration: Int
     let status: String // "pending", "confirmed", "arrived", "cancelled", "no_show"
+    let occasion: String?
     let notes: String?
     let createdAt: String?
     let updatedAt: String?

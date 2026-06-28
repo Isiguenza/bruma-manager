@@ -131,7 +131,7 @@ struct TableSelectionView: View {
         .sheet(isPresented: $vm.showReservations, onDismiss: {
             vm.pendingReservationsCount = 0
         }) {
-            ReservationsView(initialStatusFilter: "pending")
+            UpcomingReservationsView()
         }
         .fullScreenCover(isPresented: $vm.showSettings) {
             SettingsView(vm: vm)
