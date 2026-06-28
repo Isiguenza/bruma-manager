@@ -29,52 +29,86 @@ async function sendConfirmationEmail(params: {
   const { customerName, customerEmail, reservationDate, reservationTime, guestCount, occasion } = params;
   const dateDisplay = formatDateES(reservationDate);
   const firstName = customerName.split(" ")[0];
+  const heroUrl = process.env.MAILGUN_HERO_URL ?? "";
+
+  const rows = [
+    ["Fecha",    dateDisplay],
+    ["Hora",     `${reservationTime} hrs`],
+    ["Personas", `${guestCount} ${guestCount === 1 ? "persona" : "personas"}`],
+    ...(occasion ? [["Ocasión", occasion]] : []),
+  ];
 
   const html = `<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f5f5f0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f0;padding:40px 16px;">
-    <tr><td align="center">
-      <table width="100%" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.06);">
-        <!-- Header -->
-        <tr><td style="background:#004b49;padding:36px 40px;text-align:center;">
-          <div style="font-size:28px;font-weight:700;letter-spacing:4px;color:#ffffff;">BRUMA</div>
-          <div style="font-size:12px;letter-spacing:2px;color:rgba(255,255,255,0.6);margin-top:4px;">MARISQUERÍA · COYOACÁN</div>
-        </td></tr>
-        <!-- Body -->
-        <tr><td style="padding:40px;">
-          <p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#004b49;">¡Reservación confirmada!</p>
-          <p style="margin:0 0 28px;font-size:15px;color:#666;">Hola ${firstName}, te esperamos en BRUMA.</p>
-          <!-- Summary card -->
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8faf9;border:1px solid #e0edec;border-radius:12px;overflow:hidden;margin-bottom:28px;">
-            <tr><td style="padding:20px 24px;">
-              ${[
-                ["Fecha", dateDisplay],
-                ["Hora", `${reservationTime} hrs`],
-                ["Personas", `${guestCount} ${guestCount === 1 ? "persona" : "personas"}`],
-                ...(occasion ? [["Ocasión", occasion]] : []),
-              ].map(([k, v]) => `
-              <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #eef3f2;margin-bottom:12px;padding-bottom:12px;">
-                <tr>
-                  <td style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:1px;">${k}</td>
-                  <td align="right" style="font-size:14px;font-weight:600;color:#004b49;">${v}</td>
-                </tr>
-              </table>`).join("")}
-            </td></tr>
-          </table>
-          <!-- Address -->
-          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#333;">Cómo llegar</p>
-          <p style="margin:0 0 28px;font-size:13px;color:#666;line-height:1.6;">Av. Panamericana, Casa B14, Col. Pedregal de Carrasco, 04700, Coyoacán, CDMX</p>
-          <p style="margin:0;font-size:13px;color:#999;">¿Necesitas hacer cambios? Escríbenos al <a href="tel:5635555587" style="color:#004b49;text-decoration:none;">56 3555 5587</a></p>
-        </td></tr>
-        <!-- Footer -->
-        <tr><td style="background:#f8faf9;padding:20px 40px;text-align:center;border-top:1px solid #eef3f2;">
-          <p style="margin:0;font-size:11px;color:#bbb;letter-spacing:1px;">BRUMA · COYOACÁN, CDMX</p>
-        </td></tr>
-      </table>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+</head>
+<body style="margin:0;padding:0;background:#ffffff;-webkit-font-smoothing:antialiased;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f9f9f7;">
+  <tr><td align="center" style="padding:48px 16px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+
+    <!-- Logo -->
+    <tr><td align="center" style="padding-bottom:32px;">
+      <img src="https://cocinabruma.com.mx/BRUMA.png" width="140" alt="BRUMA" style="display:block;width:140px;height:auto;">
     </td></tr>
+
+    <!-- Hero photo (optional — set MAILGUN_HERO_URL in .env) -->
+    ${heroUrl ? `
+    <tr><td style="padding-bottom:32px;">
+      <img src="${heroUrl}" width="480" alt="" style="display:block;width:100%;height:240px;object-fit:cover;border-radius:12px;">
+    </td></tr>` : ""}
+
+    <!-- Card -->
+    <tr><td style="background:#ffffff;border-radius:16px;border:1px solid #ebebeb;overflow:hidden;">
+
+      <!-- Top accent -->
+      <tr><td style="background:#004b49;height:3px;font-size:0;line-height:0;">&nbsp;</td></tr>
+
+      <!-- Body -->
+      <tr><td style="padding:36px 40px;">
+
+        <p style="margin:0 0 4px;font-family:Georgia,serif;font-size:24px;font-weight:400;color:#111;letter-spacing:-0.3px;">
+          Reservación confirmada
+        </p>
+        <p style="margin:0 0 32px;font-size:15px;color:#888;font-family:Helvetica Neue,Helvetica,Arial,sans-serif;">
+          Hola ${firstName}, te esperamos en BRUMA.
+        </p>
+
+        <!-- Details -->
+        <table width="100%" cellpadding="0" cellspacing="0">
+          ${rows.map(([k, v], i) => `
+          <tr>
+            <td style="padding:12px 0;border-top:1px solid #f0f0f0;font-size:12px;color:#aaa;font-family:Helvetica Neue,Helvetica,Arial,sans-serif;text-transform:uppercase;letter-spacing:0.8px;">${k}</td>
+            <td align="right" style="padding:12px 0;border-top:1px solid #f0f0f0;font-size:15px;color:#004b49;font-weight:600;font-family:Helvetica Neue,Helvetica,Arial,sans-serif;">${v}</td>
+          </tr>`).join("")}
+        </table>
+
+      </td></tr>
+
+      <!-- Address strip -->
+      <tr><td style="background:#f9f9f7;border-top:1px solid #f0f0f0;padding:20px 40px;">
+        <p style="margin:0;font-size:12px;color:#aaa;font-family:Helvetica Neue,Helvetica,Arial,sans-serif;line-height:1.7;">
+          Av. Panamericana, Casa B14 · Pedregal de Carrasco, Coyoacán<br>
+          <a href="tel:5635555587" style="color:#004b49;text-decoration:none;font-weight:500;">56 3555 5587</a>
+        </p>
+      </td></tr>
+
+    </td></tr>
+
+    <!-- Footer -->
+    <tr><td align="center" style="padding-top:28px;">
+      <p style="margin:0;font-size:11px;color:#ccc;font-family:Helvetica Neue,Helvetica,Arial,sans-serif;letter-spacing:2px;text-transform:uppercase;">
+        Bruma &nbsp;·&nbsp; Coyoacán
+      </p>
+    </td></tr>
+
   </table>
+  </td></tr>
+</table>
 </body>
 </html>`;
 
