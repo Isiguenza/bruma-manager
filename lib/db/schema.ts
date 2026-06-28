@@ -626,15 +626,16 @@ export const loyaltyCardsRelations = relations(loyaltyCards, ({ many }) => ({
 export const reservations = pgTable("reservations", {
   id: uuid("id").defaultRandom().primaryKey(),
   tableId: uuid("table_id")
-    .notNull()
-    .references(() => tables.id, { onDelete: "cascade" }),
+    .references(() => tables.id, { onDelete: "set null" }),
   customerName: varchar("customer_name", { length: 255 }).notNull(),
   customerPhone: varchar("customer_phone", { length: 50 }),
+  customerEmail: varchar("customer_email", { length: 255 }),
   guestCount: integer("guest_count").notNull().default(1),
   reservationDate: date("reservation_date").notNull(),
   reservationTime: time("reservation_time").notNull(),
   duration: integer("duration").notNull().default(120), // Duration in minutes
   status: reservationStatusEnum("status").notNull().default("pending"),
+  occasion: varchar("occasion", { length: 100 }),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

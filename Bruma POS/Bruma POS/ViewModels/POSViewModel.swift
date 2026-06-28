@@ -39,6 +39,8 @@ class POSViewModel: ObservableObject {
     @Published var tablesWithReadyItems: Set<String> = []
     @Published var tableFilter: TableFilter = .all
     @Published var tableSearchQuery = ""
+    @Published var pendingReservationsCount: Int = 0
+    @Published var showReservations: Bool = false
     
     enum TableFilter: String, CaseIterable {
         case all = "Todas"
@@ -920,17 +922,28 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Data Fetch
     
+    func fetchPendingReservationsCount() async {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        if let all = try? await APIService.shared.fetchReservations(date: today, status: "pending") {
+            pendingReservationsCount = all.count
+        }
+    }
+
     func fetchData() async {
         loading = true
-        
+
         // Fetch each independently so one failure doesn't block the rest
         // On success: save to offline cache. On failure: load from offline cache.
-        
+
         if let t = try? await APIService.shared.fetchTables() {
             tables = t.filter { $0.active }
         } else {
             print("[POS] Error fetching tables")
         }
+
+        await fetchPendingReservationsCount()
         
         if let c = try? await APIService.shared.fetchCategories() {
             categories = c.filter { $0.active }.sorted { $0.sortOrder < $1.sortOrder }

@@ -531,9 +531,12 @@ class APIService {
     
     // MARK: - Reservations
     
-    func fetchReservations(date: String? = nil) async throws -> [Reservation] {
+    func fetchReservations(date: String? = nil, status: String? = nil) async throws -> [Reservation] {
         var urlStr = "\(baseURL)/api/reservations"
-        if let date = date { urlStr += "?date=\(date)" }
+        var params: [String] = []
+        if let date = date { params.append("date=\(date)") }
+        if let status = status { params.append("status=\(status)") }
+        if !params.isEmpty { urlStr += "?" + params.joined(separator: "&") }
         let url = URL(string: urlStr)!
         return try await request(url)
     }

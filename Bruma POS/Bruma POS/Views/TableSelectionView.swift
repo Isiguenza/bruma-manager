@@ -127,6 +127,10 @@ struct TableSelectionView: View {
         }
         .onReceive(timer) { _ in
             currentTime = Date()
+            Task { await vm.fetchPendingReservationsCount() }
+        }
+        .sheet(isPresented: $vm.showReservations) {
+            ReservationsView()
         }
         .fullScreenCover(isPresented: $vm.showSettings) {
             SettingsView(vm: vm)
@@ -231,6 +235,30 @@ struct TableSelectionView: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(.white)
                 
+                Button(action: {
+                    vm.showReservations = true
+                }) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 18))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(8)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(8)
+
+                        if vm.pendingReservationsCount > 0 {
+                            Text("\(vm.pendingReservationsCount)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.purple)
+                                .clipShape(Capsule())
+                                .offset(x: 6, y: -6)
+                        }
+                    }
+                }
+
                 Button(action: {
                     vm.showSettings = true
                 }) {
