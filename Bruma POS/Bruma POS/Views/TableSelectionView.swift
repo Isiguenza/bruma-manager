@@ -127,7 +127,6 @@ struct TableSelectionView: View {
         }
         .onReceive(timer) { _ in
             currentTime = Date()
-            Task { await vm.fetchPendingReservationsCount() }
         }
         .sheet(isPresented: $vm.showReservations) {
             ReservationsView()

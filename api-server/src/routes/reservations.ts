@@ -1,34 +1,30 @@
 import { Router } from "express";
 import { db, schema } from "../db";
 import { eq, and, gte, lte } from "drizzle-orm";
+import { emitReservationNew } from "../sockets/events";
 
 const router = Router();
 
-// GET /api/reservations?date=YYYY-MM-DD
+// GET /api/reservations?date=YYYY-MM-DD&status=pending
 router.get("/reservations", async (req, res) => {
   try {
-    const { date } = req.query;
+    const { date, status } = req.query;
 
-    let reservations;
+    const conditions = [];
     if (date) {
-      reservations = await db.query.reservations.findMany({
-        where: and(
-          gte(schema.reservations.reservationDate, date as string),
-          lte(schema.reservations.reservationDate, date as string)
-        ),
-        with: {
-          table: true,
-        },
-        orderBy: (reservations, { asc }) => [asc(reservations.reservationDate)],
-      });
-    } else {
-      reservations = await db.query.reservations.findMany({
-        with: {
-          table: true,
-        },
-        orderBy: (reservations, { desc }) => [desc(reservations.reservationDate)],
-      });
+      conditions.push(gte(schema.reservations.reservationDate, date as string));
+      conditions.push(lte(schema.reservations.reservationDate, date as string));
     }
+    if (status) {
+      conditions.push(eq(schema.reservations.status, status as string));
+    }
+
+    const reservations = await db.query.reservations.findMany({
+      where: conditions.length > 0 ? and(...conditions) : undefined,
+      with: { table: true },
+      orderBy: (r, { asc, desc }) =>
+        date ? [asc(r.reservationDate)] : [desc(r.reservationDate)],
+    });
 
     res.json(reservations);
   } catch (error) {
@@ -40,27 +36,49 @@ router.get("/reservations", async (req, res) => {
 // POST /api/reservations
 router.post("/reservations", async (req, res) => {
   try {
-    const { tableId, customerName, customerPhone, guestCount, partySize, reservationDate, reservationTime, notes, duration } = req.body;
+    const {
+      tableId,
+      customerName,
+      customerLastName,
+      customerPhone,
+      customerEmail,
+      guestCount,
+      partySize,
+      reservationDate,
+      reservationTime,
+      occasion,
+      notes,
+      duration,
+    } = req.body;
 
     const actualGuestCount = guestCount ?? partySize;
-    if (!tableId || !customerName || !actualGuestCount || !reservationDate || !reservationTime) {
+    const fullName = customerLastName
+      ? `${customerName} ${customerLastName}`.trim()
+      : customerName;
+
+    if (!fullName || !actualGuestCount || !reservationDate || !reservationTime) {
       return res.status(400).json({ error: "Faltan campos requeridos" });
     }
 
     const [newReservation] = await db
       .insert(schema.reservations)
       .values({
-        tableId,
-        customerName,
-        customerPhone,
-        guestCount: actualGuestCount,
-        reservationDate: reservationDate,
+        tableId: tableId ?? null,
+        customerName: fullName,
+        customerPhone: customerPhone ?? null,
+        customerEmail: customerEmail ?? null,
+        guestCount: Number(actualGuestCount),
+        reservationDate,
         reservationTime,
-        notes,
+        occasion: occasion ?? null,
+        notes: notes ?? null,
         duration: duration ?? 120,
         status: "pending",
       })
       .returning();
+
+    // Notify POS via WebSocket
+    emitReservationNew(newReservation);
 
     res.status(201).json(newReservation);
   } catch (error) {

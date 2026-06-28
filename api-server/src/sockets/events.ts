@@ -94,6 +94,12 @@ export function emitDeliveryNewOrder(order: any) {
   console.log(`📡 Emitted delivery:new_order`);
 }
 
+export function emitReservationNew(reservation: any) {
+  if (!io) return;
+  io.to("room:pos").emit("reservation:new", reservation);
+  console.log(`📅 Emitted reservation:new - ${reservation.id}`);
+}
+
 export function emitOrderRush(order: any) {
   if (!io) return;
   io.to("room:dispatch").emit("order:rush", order);

@@ -19,6 +19,7 @@ class SocketService: ObservableObject {
     var onCashRegisterOpened: (() -> Void)?
     var onCashRegisterClosed: (() -> Void)?
     var onCustomerDisplayUpdate: (([String: Any]) -> Void)?
+    var onReservationNew: (() -> Void)?
     
     private init() {}
     
@@ -126,6 +127,11 @@ class SocketService: ObservableObject {
             guard let dict = data.first as? [String: Any] else { return }
             print("📺 customer_display:update received")
             self?.onCustomerDisplayUpdate?(dict)
+        }
+
+        socket?.on("reservation:new") { [weak self] _, _ in
+            print("📅 reservation:new received")
+            self?.onReservationNew?()
         }
     }
     

@@ -662,6 +662,12 @@ class POSViewModel: ObservableObject {
                 self?.showToast("Caja cerrada", isError: true)
             }
         }
+
+        socketService.onReservationNew = { [weak self] in
+            Task { @MainActor in
+                self?.pendingReservationsCount += 1
+            }
+        }
     }
     
     private func refreshTable(tableId: String) async {
@@ -943,7 +949,10 @@ class POSViewModel: ObservableObject {
             print("[POS] Error fetching tables")
         }
 
-        await fetchPendingReservationsCount()
+        // Load initial pending count once on startup; updates come via socket after that
+        if pendingReservationsCount == 0 {
+            await fetchPendingReservationsCount()
+        }
         
         if let c = try? await APIService.shared.fetchCategories() {
             categories = c.filter { $0.active }.sorted { $0.sortOrder < $1.sortOrder }
