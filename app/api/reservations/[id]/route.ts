@@ -94,17 +94,19 @@ export async function DELETE(
     // Delete reservation
     await db.delete(reservations).where(eq(reservations.id, id));
 
-    // Check if table has any other active reservations
-    const otherReservations = await db.query.reservations.findMany({
-      where: eq(reservations.tableId, reservation.tableId),
-    });
+    // Check if table has any other active reservations (skip if no table assigned)
+    const otherReservations = reservation.tableId
+      ? await db.query.reservations.findMany({
+          where: eq(reservations.tableId, reservation.tableId),
+        })
+      : [];
 
     const hasActiveReservations = otherReservations.some(
       (r) => r.status === "pending" || r.status === "confirmed"
     );
 
-    // If no active reservations, set table status to available
-    if (!hasActiveReservations) {
+    // If no active reservations, set table status to available (skip if no table assigned)
+    if (!hasActiveReservations && reservation.tableId) {
       await db
         .update(tables)
         .set({ status: "available" })

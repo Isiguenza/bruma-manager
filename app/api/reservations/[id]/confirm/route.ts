@@ -38,11 +38,13 @@ export async function POST(
       .where(eq(reservations.id, id))
       .returning();
 
-    // Update table status to available (customer has arrived, can now take orders)
-    await db
-      .update(tables)
-      .set({ status: "available" })
-      .where(eq(tables.id, reservation.tableId));
+    // Update table status to available (skip if no table assigned — web reservation)
+    if (reservation.tableId) {
+      await db
+        .update(tables)
+        .set({ status: "available" })
+        .where(eq(tables.id, reservation.tableId));
+    }
 
     return NextResponse.json(updated);
   } catch (error) {
