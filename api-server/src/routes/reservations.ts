@@ -276,4 +276,48 @@ router.patch("/reservations/:id", async (req, res) => {
   }
 });
 
+// POST /api/reservations/:id/confirm  →  mark as "arrived"
+router.post("/reservations/:id/confirm", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [updated] = await db
+      .update(schema.reservations)
+      .set({ status: "arrived" })
+      .where(eq(schema.reservations.id, id))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: "Reservación no encontrada" });
+    }
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Error confirming reservation:", error);
+    res.status(500).json({ error: "Error al confirmar reservación" });
+  }
+});
+
+// DELETE /api/reservations/:id  →  mark as "cancelled"
+router.delete("/reservations/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [updated] = await db
+      .update(schema.reservations)
+      .set({ status: "cancelled" })
+      .where(eq(schema.reservations.id, id))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: "Reservación no encontrada" });
+    }
+
+    res.json({ success: true, id });
+  } catch (error) {
+    console.error("Error deleting reservation:", error);
+    res.status(500).json({ error: "Error al cancelar reservación" });
+  }
+});
+
 export default router;
