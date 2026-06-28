@@ -32,7 +32,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, description, price, platformPrice, categoryId, imageUrl, hasVariants, variants, active } = body;
+    const { name, description, price, platformPrice, categoryId, imageUrl, hasVariants, variants, active, menuImages, menuVideo, menuWebVisible } = body;
 
     const [product] = await db
       .update(products)
@@ -46,6 +46,9 @@ export async function PUT(
         hasVariants: hasVariants ?? false,
         variants: variants || null,
         active,
+        menuImages: menuImages !== undefined ? menuImages : undefined,
+        menuVideo: menuVideo !== undefined ? menuVideo : undefined,
+        menuWebVisible: menuWebVisible !== undefined ? menuWebVisible : undefined,
         updatedAt: new Date(),
       })
       .where(eq(products.id, id))

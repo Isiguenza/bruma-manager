@@ -47,17 +47,28 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { 
-  Plus, 
-  PencilSimple, 
-  Trash, 
-  MagnifyingGlass, 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Plus,
+  PencilSimple,
+  Trash,
+  MagnifyingGlass,
   X,
   Package,
   CheckCircle,
   XCircle,
   Star,
   CurrencyDollar,
+  Globe,
+  VideoCamera,
+  CaretDown,
   Tag,
   Image as ImageIcon,
   FlowArrow,
@@ -92,6 +103,9 @@ interface ProductForm {
   hasVariants: boolean;
   variants: ProductVariant[];
   active: boolean;
+  menuImages: string[];
+  menuVideo: string;
+  menuWebVisible: boolean;
 }
 
 const emptyForm: ProductForm = {
@@ -105,6 +119,9 @@ const emptyForm: ProductForm = {
   hasVariants: false,
   variants: [],
   active: true,
+  menuImages: [],
+  menuVideo: "",
+  menuWebVisible: true,
 };
 
 export default function ProductsPage() {
@@ -124,6 +141,7 @@ export default function ProductsPage() {
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingMenuMedia, setUploadingMenuMedia] = useState(false);
   
   // Bulk actions
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
@@ -170,6 +188,7 @@ export default function ProductsPage() {
 
   function openEditDialog(product: Product) {
     const variants = product.variants ? JSON.parse(product.variants) : [];
+    const menuImages = (product as any).menuImages ? JSON.parse((product as any).menuImages) : [];
     setForm({
       name: product.name,
       description: product.description || "",
@@ -181,6 +200,9 @@ export default function ProductsPage() {
       hasVariants: product.hasVariants || false,
       variants: variants.length > 0 ? variants : [],
       active: product.active,
+      menuImages,
+      menuVideo: (product as any).menuVideo || "",
+      menuWebVisible: (product as any).menuWebVisible !== false,
     });
     setEditingId(product.id);
     setDialogOpen(true);
@@ -209,6 +231,45 @@ export default function ProductsPage() {
       toast.error("Error subiendo imagen");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleMenuMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const isVideo = files[0].type.startsWith("video/");
+
+    if (isVideo) {
+      if (form.menuVideo) { toast.error("Solo se permite 1 video por platillo"); return; }
+    } else {
+      const remaining = 4 - form.menuImages.length;
+      if (remaining <= 0) { toast.error("Máximo 4 imágenes por platillo"); return; }
+    }
+
+    setUploadingMenuMedia(true);
+    try {
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/menu/upload", { method: "POST", body: fd });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Error"); }
+        const { url, type } = await res.json();
+        if (type === "video") {
+          setForm((prev) => ({ ...prev, menuVideo: url }));
+        } else {
+          setForm((prev) => ({
+            ...prev,
+            menuImages: [...prev.menuImages, url].slice(0, 4),
+          }));
+        }
+      }
+      toast.success("Archivo subido");
+    } catch (err: any) {
+      toast.error(err.message || "Error subiendo archivo");
+    } finally {
+      setUploadingMenuMedia(false);
+      e.target.value = "";
     }
   }
 
@@ -245,6 +306,9 @@ export default function ProductsPage() {
           categoryId: form.categoryId || null,
           groupId: form.groupId || null,
           variants: form.hasVariants ? JSON.stringify(form.variants) : null,
+          menuImages: form.menuImages.length > 0 ? JSON.stringify(form.menuImages) : null,
+          menuVideo: form.menuVideo || null,
+          menuWebVisible: form.menuWebVisible,
         }),
       });
       if (!res.ok) throw new Error();
@@ -642,36 +706,36 @@ export default function ProductsPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <span className="text-sm font-medium">
-                  {selectedProducts.size} producto{selectedProducts.size !== 1 ? 's' : ''} seleccionado{selectedProducts.size !== 1 ? 's' : ''}
+                  {selectedProducts.size} producto{selectedProducts.size !== 1 ? "s" : ""} seleccionado{selectedProducts.size !== 1 ? "s" : ""}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedProducts(new Set())}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setSelectedProducts(new Set())}>
                   <X className="size-4 mr-2" />
                   Cancelar
                 </Button>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleBulkDeactivate}
-                  disabled={bulkActionInProgress}
-                >
-                  Marcar como inactivo
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleBulkDelete}
-                  disabled={bulkActionInProgress}
-                >
-                  <Trash className="size-4 mr-2" />
-                  Eliminar seleccionados
-                </Button>
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={bulkActionInProgress}>
+                    Acciones
+                    <CaretDown className="size-4 ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Acciones en masa</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleBulkDeactivate}>
+                    <XCircle className="size-4 mr-2 text-orange-500" />
+                    Marcar como inactivo
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={handleBulkDelete}
+                  >
+                    <Trash className="size-4 mr-2" />
+                    Eliminar seleccionados
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </CardContent>
         </Card>
@@ -685,7 +749,7 @@ export default function ProductsPage() {
                 <TableHead className="w-12">
                   <Checkbox
                     checked={filtered.length > 0 && selectedProducts.size === filtered.length}
-                    onCheckedChange={toggleAllProducts}
+                    onCheckedChange={() => toggleAllProducts()}
                   />
                 </TableHead>
                 <TableHead>Nombre</TableHead>
@@ -737,7 +801,7 @@ export default function ProductsPage() {
                     // Productos de esta categoría
                     ...productsByCategory[categoryName].map((product) => (
                       <TableRow key={product.id}>
-                        <TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             checked={selectedProducts.has(product.id)}
                             onCheckedChange={() => toggleProductSelection(product.id)}
@@ -1131,48 +1195,122 @@ export default function ProductsPage() {
               )}
             </div>
 
-            {/* Imagen */}
+            {/* Imagen del POS (thumbnail interno) */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 pb-2 border-b">
                 <div className="rounded-lg bg-purple-500/10 p-2">
                   <ImageIcon className="size-4 text-purple-600" weight="duotone" />
                 </div>
-                <h3 className="font-semibold">Imagen del Producto</h3>
+                <h3 className="font-semibold">Imagen del Producto (POS)</h3>
               </div>
-
               <div className="space-y-3">
                 {form.imageUrl ? (
-                  <div className="relative w-full h-48 border-2 border-dashed rounded-lg overflow-hidden group">
-                    <img
-                      src={form.imageUrl}
-                      alt="Preview"
-                      className="w-full h-full object-cover"
-                    />
+                  <div className="relative w-full h-40 border-2 border-dashed rounded-lg overflow-hidden group">
+                    <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => setForm({ ...form, imageUrl: "" })}
-                      >
-                        <Trash className="size-4 mr-2" />
-                        Eliminar Imagen
+                      <Button variant="destructive" size="sm" onClick={() => setForm({ ...form, imageUrl: "" })}>
+                        <Trash className="size-4 mr-2" />Eliminar
                       </Button>
                     </div>
                   </div>
                 ) : (
-                  <div className="border-2 border-dashed rounded-lg p-6 text-center">
-                    <ImageIcon className="size-12 mx-auto mb-3 text-muted-foreground opacity-50" weight="duotone" />
+                  <div className="border-2 border-dashed rounded-lg p-4 text-center">
+                    <Input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} className="max-w-xs mx-auto" />
+                    {uploading && <p className="text-sm text-muted-foreground mt-2">Subiendo...</p>}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Menú Web */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
+                <div className="rounded-lg bg-teal-500/10 p-2">
+                  <Globe className="size-4 text-teal-600" weight="duotone" />
+                </div>
+                <h3 className="font-semibold">Menú Web</h3>
+              </div>
+
+              {/* Visible en web toggle */}
+              <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                <div>
+                  <Label className="text-sm font-medium">Visible en menú web</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Mostrar este platillo en la página pública del menú
+                  </p>
+                </div>
+                <Switch
+                  checked={form.menuWebVisible}
+                  onCheckedChange={(v) => setForm((prev) => ({ ...prev, menuWebVisible: v }))}
+                />
+              </div>
+
+              {/* Video */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-1.5">
+                  <VideoCamera className="size-4 text-muted-foreground" />
+                  Video (1 máx)
+                </Label>
+                {form.menuVideo ? (
+                  <div className="relative rounded-lg overflow-hidden border bg-muted/20 group">
+                    <video src={form.menuVideo} className="w-full h-36 object-cover" muted playsInline />
+                    <button
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, menuVideo: "" }))}
+                      className="absolute top-2 right-2 bg-destructive text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="border-2 border-dashed rounded-lg p-3 text-center">
                     <Input
                       type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      disabled={uploading}
-                      className="max-w-xs mx-auto"
+                      accept="video/mp4,video/quicktime,video/webm"
+                      onChange={handleMenuMediaUpload}
+                      disabled={uploadingMenuMedia}
+                      className="max-w-xs mx-auto text-sm"
                     />
-                    {uploading && (
-                      <p className="text-sm text-muted-foreground mt-2">Subiendo imagen...</p>
-                    )}
                   </div>
+                )}
+              </div>
+
+              {/* Images */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-1.5">
+                  <ImageIcon className="size-4 text-muted-foreground" />
+                  Fotos ({form.menuImages.length}/4)
+                </Label>
+                <div className="grid grid-cols-4 gap-2">
+                  {form.menuImages.map((url, i) => (
+                    <div key={i} className="relative aspect-square rounded-lg overflow-hidden border group">
+                      <img src={url} alt="" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setForm((prev) => ({ ...prev, menuImages: prev.menuImages.filter((_, j) => j !== i) }))}
+                        className="absolute top-1 right-1 bg-destructive text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {form.menuImages.length < 4 && (
+                    <label className="aspect-square rounded-lg border-2 border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-muted/30 transition-colors">
+                      <Plus className="size-5 text-muted-foreground mb-1" />
+                      <span className="text-xs text-muted-foreground">Agregar</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="sr-only"
+                        onChange={handleMenuMediaUpload}
+                        disabled={uploadingMenuMedia}
+                      />
+                    </label>
+                  )}
+                </div>
+                {uploadingMenuMedia && (
+                  <p className="text-xs text-muted-foreground">Subiendo y comprimiendo...</p>
                 )}
               </div>
             </div>
@@ -1182,7 +1320,7 @@ export default function ProductsPage() {
               <div>
                 <Label className="text-sm font-medium">Estado del Producto</Label>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {form.active ? "Visible en el menú" : "Oculto del menú"}
+                  {form.active ? "Activo en el POS" : "Inactivo en el POS"}
                 </p>
               </div>
               <Switch

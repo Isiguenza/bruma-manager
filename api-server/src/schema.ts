@@ -156,6 +156,9 @@ export const products = pgTable("products", {
   hasVariants: boolean("has_variants").notNull().default(false),
   variants: text("variants"), // JSON: [{ name: "Pieza", price: "50.00" }, { name: "Orden", price: "150.00" }]
   active: boolean("active").notNull().default(true),
+  menuImages: text("menu_images"),
+  menuVideo: text("menu_video"),
+  menuWebVisible: boolean("menu_web_visible").notNull().default(true),
   deletedAt: timestamp("deleted_at"), // Soft delete - mantiene el producto en órdenes históricas
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
