@@ -256,7 +256,7 @@ struct ReservationFormModal: View {
             reservationDate = formatter.string(from: Date())
             return
         }
-        tableId = r.tableId
+        tableId = r.tableId ?? ""
         customerName = r.customerName
         customerPhone = r.customerPhone ?? ""
         guestCount = r.guestCount
