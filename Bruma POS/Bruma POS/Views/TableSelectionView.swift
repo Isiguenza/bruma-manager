@@ -128,8 +128,10 @@ struct TableSelectionView: View {
         .onReceive(timer) { _ in
             currentTime = Date()
         }
-        .sheet(isPresented: $vm.showReservations) {
-            ReservationsView()
+        .sheet(isPresented: $vm.showReservations, onDismiss: {
+            vm.pendingReservationsCount = 0
+        }) {
+            ReservationsView(initialStatusFilter: "pending")
         }
         .fullScreenCover(isPresented: $vm.showSettings) {
             SettingsView(vm: vm)

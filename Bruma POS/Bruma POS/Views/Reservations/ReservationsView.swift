@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct ReservationsView: View {
-    @StateObject private var vm = ReservationsViewModel()
+    @StateObject private var vm: ReservationsViewModel
+
+    init(initialStatusFilter: String = "all") {
+        _vm = StateObject(wrappedValue: ReservationsViewModel(initialStatusFilter: initialStatusFilter))
+    }
 
     var body: some View {
         ZStack {

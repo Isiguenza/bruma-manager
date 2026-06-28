@@ -14,14 +14,18 @@ class ReservationsViewModel: ObservableObject {
     }()
     @Published var statusFilter = "all"
     @Published var search = ""
-    
+
     // Modals
     @Published var showNewReservation = false
     @Published var editingReservation: Reservation? = nil
-    
+
     // Toast
     @Published var toastMessage: String?
     @Published var toastIsError = false
+
+    init(initialStatusFilter: String = "all") {
+        statusFilter = initialStatusFilter
+    }
 
     var filteredReservations: [Reservation] {
         reservations.filter { r in
