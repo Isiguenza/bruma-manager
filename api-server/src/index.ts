@@ -24,7 +24,7 @@ const io = new SocketServer(httpServer, {
 initSocket(io);
 
 // CORS: when credentials=true, origin cannot be "*"
-const defaultOrigins = ["https://admin.cocinabruma.com.mx", "https://cocinabruma.com.mx", "http://localhost:3000"];
+const defaultOrigins = ["https://admin.cocinabruma.com.mx", "https://cocinabruma.com.mx", "https://www.cocinabruma.com.mx", "http://localhost:3000"];
 const envOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : [];
 const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
 
