@@ -70,6 +70,7 @@ import extrasRouter from "./routes/extras";
 import discountsRouter from "./routes/discounts";
 import reservationsRouter from "./routes/reservations";
 import walletRouter from "./routes/wallet";
+import whatsappRouter from "./routes/whatsapp";
 
 app.use("/api", authRouter);
 app.use("/api", cashRegisterRouter);
@@ -85,6 +86,7 @@ app.use("/api", extrasRouter);
 app.use("/api", discountsRouter);
 app.use("/api", reservationsRouter);
 app.use("/api", walletRouter);
+app.use("/api", whatsappRouter);
 
 // Open cash drawer — proxy to print server
 app.post("/api/open-drawer", async (req, res) => {
