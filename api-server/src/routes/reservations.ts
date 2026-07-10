@@ -157,6 +157,66 @@ async function sendConfirmationEmail(params: {
   }
 }
 
+async function sendWhatsAppConfirmation(params: {
+  phone: string;
+  name: string;
+  date: string;
+  time: string;
+  guestCount: number;
+}) {
+  const phoneId  = process.env.META_WA_PHONE_ID;
+  const token    = process.env.META_WA_TOKEN;
+  const template = process.env.META_WA_TEMPLATE ?? "reservacion_confirmada";
+  if (!phoneId || !token) return;
+
+  const { phone, name, date, time, guestCount } = params;
+  const normalized   = phone.replace(/\D/g, "");
+  const withCountry  = normalized.startsWith("52") ? normalized : `52${normalized}`;
+  const dateDisplay  = formatDateES(date);
+  const firstName    = name.split(" ")[0];
+
+  try {
+    const resp = await fetch(
+      `https://graph.facebook.com/v19.0/${phoneId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: withCountry,
+          type: "template",
+          template: {
+            name: template,
+            language: { code: "es_MX" },
+            components: [
+              {
+                type: "body",
+                parameters: [
+                  { type: "text", text: firstName },
+                  { type: "text", text: dateDisplay },
+                  { type: "text", text: time },
+                  { type: "text", text: String(guestCount) },
+                ],
+              },
+            ],
+          },
+        }),
+      }
+    );
+    if (!resp.ok) {
+      const err = await resp.text();
+      console.error("❌ WhatsApp error:", resp.status, err);
+    } else {
+      console.log(`📱 WhatsApp confirmation sent to ${withCountry}`);
+    }
+  } catch (err) {
+    console.error("❌ WhatsApp fetch error:", err);
+  }
+}
+
 const router = Router();
 
 // GET /api/reservations?date=YYYY-MM-DD&status=pending
@@ -243,6 +303,17 @@ router.post("/reservations", async (req, res) => {
         reservationTime,
         guestCount: Number(actualGuestCount),
         occasion: occasion ?? null,
+      }).catch(() => {});
+    }
+
+    // Send WhatsApp confirmation (non-blocking)
+    if (customerPhone) {
+      sendWhatsAppConfirmation({
+        phone: customerPhone,
+        name: fullName,
+        date: reservationDate,
+        time: reservationTime,
+        guestCount: Number(actualGuestCount),
       }).catch(() => {});
     }
 
