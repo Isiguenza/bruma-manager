@@ -51,6 +51,8 @@ import {
   Package,
   ArrowCounterClockwise,
   DotsSixVertical,
+  SortAscending,
+  HandGrabbing,
 } from "@phosphor-icons/react";
 import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
@@ -127,6 +129,7 @@ export default function CategoriesPage() {
   });
   const [orderedCategories, setOrderedCategories] = useState<Category[]>([]);
   const [savingOrder, setSavingOrder] = useState(false);
+  const [sortMode, setSortMode] = useState<"custom" | "alphabetical">("custom");
 
   useEffect(() => {
     fetchCategories();
@@ -195,6 +198,7 @@ export default function CategoriesPage() {
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (over && active.id !== over.id) {
+      setSortMode("custom");
       setOrderedCategories((items) => {
         const oldIndex = items.findIndex((i) => i.id === active.id);
         const newIndex = items.findIndex((i) => i.id === over.id);
@@ -203,10 +207,10 @@ export default function CategoriesPage() {
     }
   }
 
-  async function handleSaveOrder() {
+  async function persistOrder(ordered: Category[]) {
     setSavingOrder(true);
     try {
-      const orders = orderedCategories.map((cat, idx) => ({
+      const orders = ordered.map((cat, idx) => ({
         id: cat.id,
         sortOrder: idx,
       }));
@@ -225,8 +229,25 @@ export default function CategoriesPage() {
     }
   }
 
+  async function handleSaveOrder() {
+    await persistOrder(orderedCategories);
+  }
+
   function handleResetOrder() {
     setOrderedCategories(categories);
+  }
+
+  async function handleSortModeChange(mode: "custom" | "alphabetical") {
+    setSortMode(mode);
+    if (mode === "alphabetical") {
+      const sorted = [...categories].sort((a, b) =>
+        a.name.localeCompare(b.name, "es", { sensitivity: "base" })
+      );
+      setOrderedCategories(sorted);
+      await persistOrder(sorted);
+    } else {
+      setOrderedCategories(categories);
+    }
   }
 
   function handleEdit(category: Category) {
@@ -461,7 +482,7 @@ export default function CategoriesPage() {
           <div>
             <h2 className="text-lg font-semibold">Orden de categorías</h2>
             <p className="text-sm text-muted-foreground">
-              Arrastra para reordenar. El orden se refleja en el POS.
+              Elige cómo se acomodan. El orden se refleja en Bruma POS (iOS).
             </p>
           </div>
           <div className="flex gap-2">
@@ -477,11 +498,41 @@ export default function CategoriesPage() {
             <Button
               size="sm"
               onClick={handleSaveOrder}
-              disabled={savingOrder}
+              disabled={savingOrder || sortMode === "alphabetical"}
             >
               {savingOrder ? "Guardando..." : "Guardar orden"}
             </Button>
           </div>
+        </div>
+
+        {/* Sort mode toggle: custom (drag) vs alphabetical */}
+        <div className="inline-flex rounded-lg border bg-muted p-1">
+          <button
+            type="button"
+            onClick={() => handleSortModeChange("custom")}
+            disabled={savingOrder}
+            className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              sortMode === "custom"
+                ? "bg-background shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <HandGrabbing className="size-4" />
+            Personalizado
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSortModeChange("alphabetical")}
+            disabled={savingOrder}
+            className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              sortMode === "alphabetical"
+                ? "bg-background shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <SortAscending className="size-4" />
+            Alfabético (A-Z)
+          </button>
         </div>
 
         <DndContext

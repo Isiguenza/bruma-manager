@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__XcodeBuildMCP__session_show_defaults",
+      "mcp__XcodeBuildMCP__discover_projs",
+      "mcp__XcodeBuildMCP__list_schemes"
+    ]
+  }
+}
