@@ -249,12 +249,8 @@ class MenuViewModel: ObservableObject {
     func confirmNotes(addToCart: (CartItem) -> Void) {
         guard var item = pendingCartItem else { return }
         let labels = quickNotes.filter { selectedQuickNoteIds.contains($0.id) }.map { $0.label }
-        var combined = labels.joined(separator: ", ")
         let freeText = tempNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !freeText.isEmpty {
-            combined = combined.isEmpty ? freeText : "\(combined)\n\(freeText)"
-        }
-        item.notes = combined
+        item.notes = (labels + (freeText.isEmpty ? [] : [freeText])).joined(separator: ", ")
         addToCart(item)
         pendingCartItem = nil
         tempNotes = ""

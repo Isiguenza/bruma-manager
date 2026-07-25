@@ -149,10 +149,13 @@ class PrintService {
     
     func reprintOrder(_ order: Order) async {
         let itemsBySeat: [String: [[String: Any]]] = ["A1": (order.items ?? []).map { item in
+            let mods = item.modifiersForTicket
+            let modsUnitTotal = mods.reduce(0.0) { $0 + (Double($1["price"] as? String ?? "0") ?? 0) }
+            let baseTotal = item.numericSubtotal - (modsUnitTotal * Double(item.quantity))
             var dict: [String: Any] = [
                 "name": item.productName,
                 "qty": item.quantity,
-                "total": item.numericSubtotal
+                "total": baseTotal
             ]
             // Try to extract variant info from productName
             let components = item.productName.split(separator: " - ", maxSplits: 1)
@@ -160,7 +163,6 @@ class PrintService {
                 dict["name"] = String(components[0])
                 dict["variant"] = String(components[1])
             }
-            let mods = item.modifiersForTicket
             if !mods.isEmpty { dict["modifiers"] = mods }
             return dict
         }]

@@ -359,7 +359,7 @@ struct ProductAddDialog: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if !applicableQuickNotes.isEmpty {
-                FlowLayout(spacing: 8) {
+                FlowLayout(spacing: 10) {
                     ForEach(applicableQuickNotes) { note in
                         let isSelected = vm.selectedQuickNoteIds.contains(note.id)
                         Button {
@@ -370,10 +370,10 @@ struct ProductAddDialog: View {
                             }
                         } label: {
                             Text(note.label)
-                                .font(.subheadline.weight(.medium))
+                                .font(.headline)
                                 .foregroundColor(.white)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 14)
                         }
                         .buttonStyle(.plain)
                         .modifier(QuickPickPill(isSelected: isSelected))

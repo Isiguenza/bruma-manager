@@ -1710,12 +1710,8 @@ class POSViewModel: ObservableObject {
     func handleConfirmNotes() {
         guard var item = pendingCartItem else { return }
         let labels = quickNotes.filter { selectedQuickNoteIds.contains($0.id) }.map { $0.label }
-        var combined = labels.joined(separator: ", ")
         let freeText = tempNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !freeText.isEmpty {
-            combined = combined.isEmpty ? freeText : "\(combined)\n\(freeText)"
-        }
-        item.notes = combined
+        item.notes = (labels + (freeText.isEmpty ? [] : [freeText])).joined(separator: ", ")
         addToCart(item)
         showNotesDialog = false
         pendingCartItem = nil
@@ -2772,15 +2768,17 @@ class POSViewModel: ObservableObject {
             itemsBySeat[seat] = items.values.map { item in
                 let isGuestItem = item.isGuest ?? false
                 let originalTotal = isGuestItem ? 0 : Int((item.originalPrice ?? item.price) * Double(item.qty))
+                let mods = parseModifiersForTicket(item.customModifiers)
+                let modsUnitTotal = mods.reduce(0.0) { $0 + (Double($1["price"] as? String ?? "0") ?? 0) }
+                let baseTotal = isGuestItem ? 0 : originalTotal - Int(modsUnitTotal * Double(item.qty))
                 var dict: [String: Any] = [
                     "name": item.name,
                     "qty": item.qty,
-                    "total": originalTotal
+                    "total": baseTotal
                 ]
                 if let pn = item.promotionName { dict["promotionName"] = pn }
                 if let pd = item.promotionDiscount, pd > 0 { dict["promotionDiscount"] = pd }
                 if isGuestItem { dict["isGuest"] = true }
-                let mods = parseModifiersForTicket(item.customModifiers)
                 if !mods.isEmpty { dict["modifiers"] = mods }
                 return dict
             }
@@ -3096,14 +3094,16 @@ class POSViewModel: ObservableObject {
             guard itemIndex < cart.count else { continue }
             let item = cart[itemIndex]
             let originalTotal = Int(Double(item.quantity) * (item.originalPrice ?? item.unitPrice))
+            let mods = parseModifiersForTicket(item.customModifiers)
+            let modsUnitTotal = mods.reduce(0.0) { $0 + (Double($1["price"] as? String ?? "0") ?? 0) }
+            let baseTotal = originalTotal - Int(modsUnitTotal * Double(item.quantity))
             var dict: [String: Any] = [
                 "name": item.productName,
                 "qty": item.quantity,
                 "price": item.originalPrice ?? item.unitPrice,
-                "total": originalTotal
+                "total": baseTotal
             ]
             if let pn = item.promotionName { dict["promotionName"] = pn }
-            let mods = parseModifiersForTicket(item.customModifiers)
             if !mods.isEmpty { dict["modifiers"] = mods }
             ticketItems.append(dict)
         }
@@ -3139,14 +3139,16 @@ class POSViewModel: ObservableObject {
             guard ci < cart.count else { continue }
             let item = cart[ci]
             let originalTotal = Int(Double(item.quantity) * (item.originalPrice ?? item.unitPrice))
+            let mods = parseModifiersForTicket(item.customModifiers)
+            let modsUnitTotal = mods.reduce(0.0) { $0 + (Double($1["price"] as? String ?? "0") ?? 0) }
+            let baseTotal = originalTotal - Int(modsUnitTotal * Double(item.quantity))
             var dict: [String: Any] = [
                 "name": item.productName,
                 "qty": item.quantity,
                 "price": item.originalPrice ?? item.unitPrice,
-                "total": originalTotal
+                "total": baseTotal
             ]
             if let pn = item.promotionName { dict["promotionName"] = pn }
-            let mods = parseModifiersForTicket(item.customModifiers)
             if !mods.isEmpty { dict["modifiers"] = mods }
             ticketItems.append(dict)
         }

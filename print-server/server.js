@@ -1220,7 +1220,7 @@ app.post('/print-comanda', async (req, res) => {
         if (item.flowSteps && item.flowSteps.length > 0) {
           for (const step of item.flowSteps) {
             content += commands.bold;
-            content += `   • ${step.name}\n`;
+            content += `   + ${step.name}\n`;
             content += commands.boldOff;
           }
         }
@@ -1294,24 +1294,24 @@ app.post('/print-comanda', async (req, res) => {
             // Modifiers (frosting, topping, extra, flowSteps)
             if (item.frosting) {
               content += commands.bold;
-              content += `   • Frosting: ${item.frosting}\n`;
+              content += `   + Frosting: ${item.frosting}\n`;
               content += commands.boldOff;
             }
             if (item.topping) {
               content += commands.bold;
-              content += `   • Topping: ${item.topping}\n`;
+              content += `   + Topping: ${item.topping}\n`;
               content += commands.boldOff;
             }
             if (item.extra) {
               content += commands.bold;
-              content += `   • Extra: ${item.extra}\n`;
+              content += `   + Extra: ${item.extra}\n`;
               content += commands.boldOff;
             }
             // Flow steps (category, products, custom modifiers)
             if (item.flowSteps && item.flowSteps.length > 0) {
               for (const step of item.flowSteps) {
                 content += commands.bold;
-                content += `   • ${step.name}\n`;
+                content += `   + ${step.name}\n`;
                 content += commands.boldOff;
               }
             }

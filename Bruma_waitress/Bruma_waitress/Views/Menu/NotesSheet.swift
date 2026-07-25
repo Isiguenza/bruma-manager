@@ -25,7 +25,7 @@ struct NotesSheet: View {
 
                 if !applicableQuickNotes.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 10) {
                             ForEach(applicableQuickNotes) { note in
                                 let isSelected = menuVM.selectedQuickNoteIds.contains(note.id)
                                 Button {
@@ -36,10 +36,10 @@ struct NotesSheet: View {
                                     }
                                 } label: {
                                     Text(note.label)
-                                        .font(.subheadline.weight(.medium))
+                                        .font(.headline)
                                         .foregroundColor(.white)
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 14)
                                         .background(
                                             Capsule().fill(isSelected ? Color.blue : Color.white.opacity(0.1))
                                         )
