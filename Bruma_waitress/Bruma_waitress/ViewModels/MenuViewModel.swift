@@ -5,6 +5,7 @@ import Combine
 class MenuViewModel: ObservableObject {
     @Published var products: [Product] = []
     @Published var categories: [Category] = []
+    @Published var quickNotes: [QuickNote] = []
     @Published var selectedCategoryId: String? = nil
     @Published var searchQuery: String = ""
     @Published var loading: Bool = false
@@ -26,6 +27,8 @@ class MenuViewModel: ObservableObject {
     @Published var showNotesSheet: Bool = false
     @Published var pendingCartItem: CartItem?
     @Published var tempNotes: String = ""
+    @Published var selectedQuickNoteIds: Set<String> = []
+    @Published var showFreeTextNotes: Bool = false
     
     var filteredProducts: [Product] {
         var result = products
@@ -63,7 +66,17 @@ class MenuViewModel: ObservableObject {
         } catch {
             print("Error loading menu:", error)
         }
+        do {
+            quickNotes = try await APIService.shared.fetchQuickNotes()
+        } catch {
+            print("Error loading quick notes:", error)
+        }
         loading = false
+    }
+
+    func applicableQuickNotes(forProductId productId: String?) -> [QuickNote] {
+        quickNotes.filter { $0.active && $0.applies(toProductId: productId) }
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
     
     func selectCategory(_ categoryId: String?) {
@@ -235,19 +248,29 @@ class MenuViewModel: ObservableObject {
     
     func confirmNotes(addToCart: (CartItem) -> Void) {
         guard var item = pendingCartItem else { return }
-        item.notes = tempNotes
+        let labels = quickNotes.filter { selectedQuickNoteIds.contains($0.id) }.map { $0.label }
+        var combined = labels.joined(separator: ", ")
+        let freeText = tempNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !freeText.isEmpty {
+            combined = combined.isEmpty ? freeText : "\(combined)\n\(freeText)"
+        }
+        item.notes = combined
         addToCart(item)
         pendingCartItem = nil
         tempNotes = ""
+        selectedQuickNoteIds = []
+        showFreeTextNotes = false
         showNotesSheet = false
     }
-    
+
     func cancelNotes(addToCart: (CartItem) -> Void) {
         // Add without notes
         guard let item = pendingCartItem else { return }
         addToCart(item)
         pendingCartItem = nil
         tempNotes = ""
+        selectedQuickNoteIds = []
+        showFreeTextNotes = false
         showNotesSheet = false
     }
 }

@@ -334,7 +334,17 @@ app.post('/print', async (req, res) => {
       const price = item.isGuest ? "$0" : `$${item.total}`;
       const itemSpaces = Math.max(1, 48 - qtyName.length - price.length);
       content += qtyName + " ".repeat(itemSpaces) + price + "\n";
-      
+
+      // Modificadores con precio (extras, flujo, modificador personalizado)
+      if (item.modifiers && item.modifiers.length > 0) {
+        for (const mod of item.modifiers) {
+          const modLine = `  + ${mod.name}`;
+          const modPrice = `+$${mod.price}`;
+          const modSpaces = Math.max(1, 48 - modLine.length - modPrice.length);
+          content += modLine + " ".repeat(modSpaces) + modPrice + "\n";
+        }
+      }
+
       // Agregar indicador de invitado si existe
       if (item.isGuest) {
         content += `  \u21b3 Invitado\n`;
@@ -758,6 +768,15 @@ app.post('/print-seat-bill', async (req, res) => {
       const price = `$${item.total}`;
       const itemSpaces = Math.max(1, 48 - qtyName.length - price.length);
       content += qtyName + " ".repeat(itemSpaces) + price + "\n";
+
+      if (item.modifiers && item.modifiers.length > 0) {
+        for (const mod of item.modifiers) {
+          const modLine = `  + ${mod.name}`;
+          const modPrice = `+$${mod.price}`;
+          const modSpaces = Math.max(1, 48 - modLine.length - modPrice.length);
+          content += modLine + " ".repeat(modSpaces) + modPrice + "\n";
+        }
+      }
     }
 
     content += commands.feedLine;
@@ -889,6 +908,12 @@ app.post('/print-split', async (req, res) => {
       
       content += `${qty}x ${itemName}\n`;
       content += `   $${price.toFixed(2)} c/u    $${itemTotal.toFixed(2)}\n`;
+
+      if (item.modifiers && item.modifiers.length > 0) {
+        for (const mod of item.modifiers) {
+          content += `   + ${mod.name} (+$${mod.price})\n`;
+        }
+      }
     }
 
     content += "================================\n";

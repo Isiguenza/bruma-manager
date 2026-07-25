@@ -117,6 +117,28 @@ struct OrderItem: Codable, Identifiable {
     
     var numericUnitPrice: Double { Double(unitPrice) ?? 0 }
     var numericSubtotal: Double { Double(subtotal) ?? 0 }
+
+    /// Parses `customModifiers` into `{name, price}` entries for display on customer-facing
+    /// tickets (reprint), mirroring `POSViewModel.parseModifiersForTicket`.
+    var modifiersForTicket: [[String: Any]] {
+        guard let cm = customModifiers,
+              let data = cm.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        var mods: [[String: Any]] = []
+        for (_, value) in json {
+            if let stepData = value as? [String: Any],
+               let options = stepData["options"] as? [[String: Any]] {
+                for opt in options {
+                    guard let name = opt["name"] as? String else { continue }
+                    let price = (opt["price"] as? String).flatMap { Double($0) } ?? (opt["price"] as? Double) ?? 0
+                    if price > 0 {
+                        mods.append(["name": name, "price": String(format: "%.2f", price)])
+                    }
+                }
+            }
+        }
+        return mods
+    }
 }
 
 struct CartItem: Identifiable {

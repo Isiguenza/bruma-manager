@@ -260,6 +260,17 @@ export const modifierOptions = pgTable("modifier_options", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Predefined quick notes ("abbreviations") selectable when adding a comment to a cart item.
+// Global by default; productIds scopes it to specific products when set.
+export const quickNotes = pgTable("quick_notes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  label: varchar("label", { length: 100 }).notNull(),
+  productIds: text("product_ids"), // JSON array of product IDs; null/empty = applies to all products
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Orders
 export const orders = pgTable("orders", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -852,3 +863,7 @@ export const userProfilesRelations = relations(userProfiles, ({ many }) => ({
   orders: many(orders),
   cashRegisters: many(cashRegisters),
 }));
+
+// Aliases for backward compatibility with api-server route code
+export const employees = userProfiles;
+export const inventory = inventoryProducts;

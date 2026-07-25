@@ -974,7 +974,7 @@ router.patch("/orders/:id/items/:itemId/void", async (req, res) => {
 router.patch("/order-items/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { productId, productName, quantity, unitPrice, notes } = req.body;
+    const { productId, productName, quantity, unitPrice, notes, customModifiers } = req.body;
     console.log("[PATCH /api/order-items/:id] id=", id, "body=", JSON.stringify(req.body));
 
     const isProductChange = productId && productName && unitPrice !== undefined;
@@ -1018,6 +1018,10 @@ router.patch("/order-items/:id", async (req, res) => {
 
     if (notes !== undefined) {
       updateFields.notes = notes;
+    }
+
+    if (customModifiers !== undefined) {
+      updateFields.customModifiers = customModifiers;
     }
 
     console.log("[PATCH /api/order-items/:id] updateFields=", JSON.stringify(updateFields));

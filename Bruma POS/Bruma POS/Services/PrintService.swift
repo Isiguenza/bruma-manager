@@ -160,6 +160,8 @@ class PrintService {
                 dict["name"] = String(components[0])
                 dict["variant"] = String(components[1])
             }
+            let mods = item.modifiersForTicket
+            if !mods.isEmpty { dict["modifiers"] = mods }
             return dict
         }]
         

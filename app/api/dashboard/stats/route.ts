@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { orders, orderItems, ingredients } from "@/lib/db/schema";
-import { eq, sql, gte, and, lte } from "drizzle-orm";
+import { eq, ne, sql, gte, and, lte } from "drizzle-orm";
+import { CUSTOM_MODIFIER_PRODUCT_ID } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +90,8 @@ export async function GET() {
       .where(
         and(
           gte(orders.createdAt, todayStart),
-          eq(orders.paymentStatus, "paid")
+          eq(orders.paymentStatus, "paid"),
+          ne(orderItems.productId, CUSTOM_MODIFIER_PRODUCT_ID)
         )
       )
       .groupBy(orderItems.productName)

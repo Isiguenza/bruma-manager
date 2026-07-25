@@ -196,6 +196,17 @@ class APIService {
         let url = URL(string: "\(baseURL)/api/order-items/\(itemId)/guest")!
         return try await request(url, method: "PATCH", body: ["isGuest": isGuest])
     }
+
+    @discardableResult
+    func updateOrderItemCustomModifier(itemId: String, quantity: Int, unitPrice: Double, customModifiers: String?) async throws -> OrderItem {
+        let url = URL(string: "\(baseURL)/api/order-items/\(itemId)")!
+        var body: [String: Any] = [
+            "quantity": quantity,
+            "unitPrice": unitPrice
+        ]
+        if let customModifiers = customModifiers { body["customModifiers"] = customModifiers }
+        return try await request(url, method: "PATCH", body: body)
+    }
     
     // MARK: - Products & Categories
     
@@ -206,6 +217,11 @@ class APIService {
     
     func fetchCategories() async throws -> [Category] {
         let url = URL(string: "\(baseURL)/api/categories")!
+        return try await request(url)
+    }
+
+    func fetchQuickNotes() async throws -> [QuickNote] {
+        let url = URL(string: "\(baseURL)/api/quick-notes")!
         return try await request(url)
     }
     

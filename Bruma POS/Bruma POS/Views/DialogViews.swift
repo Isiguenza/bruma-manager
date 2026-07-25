@@ -358,22 +358,64 @@ struct ProductAddDialog: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            ZStack(alignment: .topLeading) {
-                if vm.tempNotes.isEmpty {
-                    Text("Ej: Sin cebolla, extra salsa...")
-                        .foregroundColor(.gray.opacity(0.5))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
+            if !applicableQuickNotes.isEmpty {
+                FlowLayout(spacing: 8) {
+                    ForEach(applicableQuickNotes) { note in
+                        let isSelected = vm.selectedQuickNoteIds.contains(note.id)
+                        Button {
+                            if isSelected {
+                                vm.selectedQuickNoteIds.remove(note.id)
+                            } else {
+                                vm.selectedQuickNoteIds.insert(note.id)
+                            }
+                        } label: {
+                            Text(note.label)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.plain)
+                        .modifier(QuickPickPill(isSelected: isSelected))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    vm.showFreeTextNotes.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: vm.showFreeTextNotes ? "minus.circle" : "plus.circle")
+                    Text("Comentario adicional")
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.blue)
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if vm.showFreeTextNotes {
+                ZStack(alignment: .topLeading) {
+                    if vm.tempNotes.isEmpty {
+                        Text("Ej: Sin cebolla, extra salsa...")
+                            .foregroundColor(.gray.opacity(0.5))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .font(.body)
+                    }
+                    TextEditor(text: $vm.tempNotes)
+                        .scrollContentBackground(.hidden)
+                        .foregroundColor(.white)
+                        .padding(12)
+                        .frame(height: 120)
                         .font(.body)
                 }
-                TextEditor(text: $vm.tempNotes)
-                    .scrollContentBackground(.hidden)
-                    .foregroundColor(.white)
-                    .padding(12)
-                    .frame(height: 120)
-                    .font(.body)
+                .modifier(NotesTextFieldBackground())
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .modifier(NotesTextFieldBackground())
 
             HStack(spacing: 12) {
                 Button {
@@ -391,7 +433,9 @@ struct ProductAddDialog: View {
                 Button {
                     vm.handleConfirmNotes()
                 } label: {
-                    Text(vm.tempNotes.trimmingCharacters(in: .whitespaces).isEmpty ? "Agregar" : "Confirmar")
+                    let hasContent = !vm.selectedQuickNoteIds.isEmpty
+                        || !vm.tempNotes.trimmingCharacters(in: .whitespaces).isEmpty
+                    Text(hasContent ? "Confirmar" : "Agregar")
                         .font(.headline)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -401,6 +445,14 @@ struct ProductAddDialog: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    private var currentProductId: String? {
+        vm.selectedProduct?.id ?? vm.pendingCartItem?.productId
+    }
+
+    private var applicableQuickNotes: [QuickNote] {
+        vm.quickNotes.filter { $0.applies(toProductId: currentProductId) }
     }
     
     private func selectionSummary(for selection: Any) -> String {
@@ -908,7 +960,13 @@ private enum AdminMode: Equatable {
     case guestItems
     case deleteItems
     case replaceItem
+    case customModifier
     case pinConfirm
+}
+
+private enum CustomModifierTarget: Equatable {
+    case wholeAccount
+    case specificProduct
 }
 
 struct AdminMenuDialog: View {
@@ -925,6 +983,12 @@ struct AdminMenuDialog: View {
     @State private var replaceQuantity: Int = 1
     @State private var replaceSearch: String = ""
     @State private var pendingReplaceProduct: Product? = nil
+
+    // Custom modifier state
+    @State private var customModifierLabel: String = ""
+    @State private var customModifierAmount: String = ""
+    @State private var customModifierTarget: CustomModifierTarget = .wholeAccount
+    @State private var customModifierItemIndex: Int?
 
     // PIN confirm state
     @State private var pendingMode: AdminMode = .menu
@@ -954,6 +1018,9 @@ struct AdminMenuDialog: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             case .replaceItem:
                 replaceItemSection
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            case .customModifier:
+                customModifierSection
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             case .pinConfirm:
                 pinSection
@@ -997,6 +1064,10 @@ struct AdminMenuDialog: View {
         replaceQuantity = 1
         replaceSearch = ""
         pendingReplaceProduct = nil
+        customModifierLabel = ""
+        customModifierAmount = ""
+        customModifierTarget = .wholeAccount
+        customModifierItemIndex = nil
         pendingMode = .menu
         adminPin = ""
         adminPinError = false
@@ -1025,6 +1096,17 @@ struct AdminMenuDialog: View {
             if let idx = replaceItemIndex, let product = pendingReplaceProduct {
                 vm.changeItemIndex = idx
                 vm.confirmChangeItem(newProduct: product, quantityToChange: replaceQuantity)
+            }
+            resetState()
+        case .customModifier:
+            let amount = Double(customModifierAmount) ?? 0
+            let label = customModifierLabel.trimmingCharacters(in: .whitespaces)
+            if !label.isEmpty && amount > 0 {
+                if customModifierTarget == .specificProduct, let idx = customModifierItemIndex {
+                    vm.applyCustomModifierToItem(at: idx, label: label, amount: amount)
+                } else {
+                    vm.addStandaloneCharge(label: label, amount: amount)
+                }
             }
             resetState()
         default:
@@ -1062,6 +1144,13 @@ struct AdminMenuDialog: View {
                 label: "Reemplazar Item",
                 iconColor: .white,
                 action: { goToMode(.replaceItem) }
+            )
+
+            AdminPillButton(
+                icon: "plus.circle.fill",
+                label: "Modificador Personalizado",
+                iconColor: .white,
+                action: { goToMode(.customModifier) }
             )
 
             Button {
@@ -1485,6 +1574,115 @@ struct AdminMenuDialog: View {
         }
     }
 
+    // MARK: - Custom Modifier Section
+
+    @ViewBuilder
+    private var customModifierSection: some View {
+        VStack(spacing: 16) {
+            Text("Para cobrar algo fuera del menú (ej. un extra especial) o un cargo aparte.")
+                .font(.subheadline)
+                .foregroundColor(.gray)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Nombre")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                TextField("Ej: Doble queso extra", text: $customModifierLabel)
+                    .foregroundColor(.white)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(white: 0.08))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.15)))
+                    )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Monto extra")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                HStack {
+                    Text("$")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                    TextField("0.00", text: $customModifierAmount)
+                        .foregroundColor(.white)
+                        .keyboardType(.decimalPad)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(white: 0.08))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.15)))
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Aplicar a")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                HStack(spacing: 8) {
+                    Button {
+                        customModifierTarget = .wholeAccount
+                        customModifierItemIndex = nil
+                    } label: {
+                        Text("Cuenta general")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule().fill(customModifierTarget == .wholeAccount ? Color.blue : Color.white.opacity(0.08))
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        customModifierTarget = .specificProduct
+                    } label: {
+                        Text("Producto específico")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule().fill(customModifierTarget == .specificProduct ? Color.blue : Color.white.opacity(0.08))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if customModifierTarget == .specificProduct {
+                cartList(
+                    selectionBinding: { index in
+                        Binding(
+                            get: { customModifierItemIndex == index },
+                            set: { isSelected in
+                                customModifierItemIndex = isSelected ? index : nil
+                            }
+                        )
+                    },
+                    showQuantityStepper: false
+                )
+            }
+
+            let amountValid = (Double(customModifierAmount) ?? 0) > 0
+            let targetValid = customModifierTarget == .wholeAccount || customModifierItemIndex != nil
+            let isDisabled = customModifierLabel.trimmingCharacters(in: .whitespaces).isEmpty
+                || !amountValid || !targetValid
+
+            actionBar(
+                backAction: { goToMode(.menu) },
+                confirmAction: { requestPinFor(.customModifier) },
+                confirmLabel: "Agregar Modificador",
+                confirmColor: .blue,
+                isDisabled: isDisabled
+            )
+        }
+    }
+
     // MARK: - Shared Components
 
     @ViewBuilder
@@ -1607,6 +1805,7 @@ struct AdminMenuDialog: View {
                 case .guestItems: return "Confirmar invitación"
                 case .deleteItems: return "Confirmar eliminación"
                 case .replaceItem: return "Confirmar reemplazo"
+                case .customModifier: return "Confirmar modificador"
                 default: return "PIN de Admin"
                 }
             }()

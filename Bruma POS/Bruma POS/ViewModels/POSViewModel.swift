@@ -87,6 +87,7 @@ class POSViewModel: ObservableObject {
     @Published var frostings: [Frosting] = []
     @Published var toppings: [DryTopping] = []
     @Published var extras: [Extra] = []
+    @Published var quickNotes: [QuickNote] = []
     @Published var selectedCategory: String?
     @Published var searchQuery = ""
     
@@ -108,6 +109,8 @@ class POSViewModel: ObservableObject {
     @Published var showNotesDialog = false
     @Published var pendingCartItem: CartItem?
     @Published var tempNotes = ""
+    @Published var selectedQuickNoteIds: Set<String> = []
+    @Published var showFreeTextNotes = false
     
     // MARK: - Cart
     @Published var cart: [CartItem] = []
@@ -987,7 +990,13 @@ class POSViewModel: ObservableObject {
         } else {
             print("[POS] Error fetching extras")
         }
-        
+
+        if let qn = try? await APIService.shared.fetchQuickNotes() {
+            quickNotes = qn.filter { $0.active }.sorted { $0.sortOrder < $1.sortOrder }
+        } else {
+            print("[POS] Error fetching quick notes")
+        }
+
         if let pr = try? await APIService.shared.fetchActivePromotions() {
             activePromotions = pr
         } else {
@@ -1700,23 +1709,33 @@ class POSViewModel: ObservableObject {
     
     func handleConfirmNotes() {
         guard var item = pendingCartItem else { return }
-        item.notes = tempNotes
+        let labels = quickNotes.filter { selectedQuickNoteIds.contains($0.id) }.map { $0.label }
+        var combined = labels.joined(separator: ", ")
+        let freeText = tempNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !freeText.isEmpty {
+            combined = combined.isEmpty ? freeText : "\(combined)\n\(freeText)"
+        }
+        item.notes = combined
         addToCart(item)
         showNotesDialog = false
         pendingCartItem = nil
         tempNotes = ""
+        selectedQuickNoteIds = []
+        showFreeTextNotes = false
         // If this came from a custom flow, reset it
         if categoryFlow != nil {
             resetFlow()
         }
     }
-    
+
     func handleCancelNotes() {
         showNotesDialog = false
         // Only clear pending item if not in a custom flow (so user can go back)
         if categoryFlow == nil {
             pendingCartItem = nil
             tempNotes = ""
+            selectedQuickNoteIds = []
+            showFreeTextNotes = false
         }
     }
     
@@ -2242,13 +2261,37 @@ class POSViewModel: ObservableObject {
         if let v = item.extraName { dict["extraName"] = v }
         if let v = item.customModifiers { dict["customModifiers"] = v }
         if item.isGuest { dict["isGuest"] = true }
+        if item.deliveredToTable { dict["deliveredToTable"] = true }
         return dict
     }
     
+    /// Parses an item's `customModifiers` JSON into `{name, price}` entries for display on
+    /// customer-facing tickets (only priced modifiers — frosting/topping have no price and
+    /// aren't stored in this JSON to begin with).
+    private func parseModifiersForTicket(_ customModifiers: String?) -> [[String: Any]] {
+        guard let cm = customModifiers,
+              let data = cm.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        var mods: [[String: Any]] = []
+        for (_, value) in json {
+            if let stepData = value as? [String: Any],
+               let options = stepData["options"] as? [[String: Any]] {
+                for opt in options {
+                    guard let name = opt["name"] as? String else { continue }
+                    let price = (opt["price"] as? String).flatMap { Double($0) } ?? (opt["price"] as? Double) ?? 0
+                    if price > 0 {
+                        mods.append(["name": name, "price": String(format: "%.2f", price)])
+                    }
+                }
+            }
+        }
+        return mods
+    }
+
     private func printComanda(items: [CartItem], orderId: String) async {
         print("🖨️ printComanda called — orderId=\(orderId) items=\(items.count) printServerURL=\(APIService.shared.printServerURL)")
-        // Group items for comanda
-        let comandaItems: [[String: Any]] = items.map { item in
+        // Group items for comanda (ad-hoc "cuenta general" charges aren't kitchen items)
+        let comandaItems: [[String: Any]] = items.filter { $0.productId != POSConstants.customModifierProductId }.map { item in
             var dict: [String: Any] = [
                 "name": item.productName,
                 "qty": item.quantity,
@@ -2685,7 +2728,7 @@ class POSViewModel: ObservableObject {
         for item in itemsToPrint {
             let seat = item.seat.isEmpty ? "C" : item.seat
             if seatGroups[seat] == nil { seatGroups[seat] = [:] }
-            let key = "\(item.productId)-\(item.unitPrice)-\(item.promotionId ?? "none")"
+            let key = "\(item.productId)-\(item.unitPrice)-\(item.promotionId ?? "none")-\(item.customModifiers ?? "")"
             if var existing = seatGroups[seat]?[key] {
                 existing.qty += item.quantity
                 existing.total = Double(existing.qty) * (existing.originalPrice ?? existing.price)
@@ -2702,7 +2745,8 @@ class POSViewModel: ObservableObject {
                     promotionName: item.promotionName,
                     promotionDiscount: item.promotionDiscount,
                     originalPrice: item.originalPrice,
-                    isGuest: item.isGuest
+                    isGuest: item.isGuest,
+                    customModifiers: item.customModifiers
                 )
             }
         }
@@ -2736,10 +2780,12 @@ class POSViewModel: ObservableObject {
                 if let pn = item.promotionName { dict["promotionName"] = pn }
                 if let pd = item.promotionDiscount, pd > 0 { dict["promotionDiscount"] = pd }
                 if isGuestItem { dict["isGuest"] = true }
+                let mods = parseModifiersForTicket(item.customModifiers)
+                if !mods.isEmpty { dict["modifiers"] = mods }
                 return dict
             }
         }
-        
+
         let isSplit = !splitPayments.isEmpty
         let paymentMethodToShow = isSplit ? "Dividido" : paymentMethod
         let splitPaymentsData: [[String: Any]]? = isSplit ? splitPayments.map { p in
@@ -3057,9 +3103,11 @@ class POSViewModel: ObservableObject {
                 "total": originalTotal
             ]
             if let pn = item.promotionName { dict["promotionName"] = pn }
+            let mods = parseModifiersForTicket(item.customModifiers)
+            if !mods.isEmpty { dict["modifiers"] = mods }
             ticketItems.append(dict)
         }
-        
+
         let subtotal = items.reduce(0.0) { sum, ci in
             guard ci < cart.count else { return sum }
             let item = cart[ci]
@@ -3098,9 +3146,11 @@ class POSViewModel: ObservableObject {
                 "total": originalTotal
             ]
             if let pn = item.promotionName { dict["promotionName"] = pn }
+            let mods = parseModifiersForTicket(item.customModifiers)
+            if !mods.isEmpty { dict["modifiers"] = mods }
             ticketItems.append(dict)
         }
-        
+
         let subtotal = assignedIndices.reduce(0.0) { sum, ci in
             guard ci < cart.count else { return sum }
             let item = cart[ci]
@@ -3525,6 +3575,81 @@ class POSViewModel: ObservableObject {
         }
         showToast("Producto desinvitado")
     }
+
+    // MARK: - Custom Modifier (ad-hoc, out-of-menu charge)
+
+    /// Applies an ad-hoc priced modifier to a specific cart item, merging it into that
+    /// item's `customModifiers` JSON (same shape used by the flow builder) and bumping
+    /// its `unitPrice`. Syncs to the backend if the item was already sent to kitchen.
+    func applyCustomModifierToItem(at index: Int, label: String, amount: Double) {
+        guard index < cart.count else { return }
+
+        var customModsDict: [String: Any] = [:]
+        if let existing = cart[index].customModifiers,
+           let data = existing.data(using: .utf8),
+           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            customModsDict = parsed
+        }
+
+        let stepId = "adhoc-\(UUID().uuidString)"
+        customModsDict[stepId] = [
+            "stepName": "Modificador Personalizado",
+            "stepType": "adhoc",
+            "options": [["id": stepId, "name": label, "price": String(amount)]]
+        ]
+
+        if let data = try? JSONSerialization.data(withJSONObject: customModsDict),
+           let str = String(data: data, encoding: .utf8) {
+            cart[index].customModifiers = str
+        }
+        cart[index].unitPrice += amount
+
+        if let itemId = cart[index].itemId {
+            let quantity = cart[index].quantity
+            let unitPrice = cart[index].unitPrice
+            let customModifiers = cart[index].customModifiers
+            Task {
+                do {
+                    _ = try await APIService.shared.updateOrderItemCustomModifier(
+                        itemId: itemId,
+                        quantity: quantity,
+                        unitPrice: unitPrice,
+                        customModifiers: customModifiers
+                    )
+                } catch {
+                    print("❌ Error syncing custom modifier:", error)
+                }
+            }
+        }
+
+        applyPromotions()
+        emitCustomerDisplayState()
+        showToast("Modificador agregado a \(cart[index].productName)")
+    }
+
+    /// Adds an ad-hoc priced charge as its own line item on the account (not tied to a
+    /// specific product). Uses the fixed "custom modifier" placeholder product as FK anchor;
+    /// `productName` carries the cashier-typed label as a free snapshot. Marked as already
+    /// delivered so it never shows up as pending in KDS/Dispatch.
+    func addStandaloneCharge(label: String, amount: Double) {
+        let item = CartItem(
+            productId: POSConstants.customModifierProductId,
+            productName: label,
+            unitPrice: amount,
+            quantity: 1,
+            notes: "",
+            seat: activeSeat,
+            course: activeCourse,
+            sentToKitchen: false,
+            isBeverage: false,
+            deliveredToTable: true,
+            isGuest: false
+        )
+        cart.append(item)
+        applyPromotions()
+        emitCustomerDisplayState()
+        showToast("Cargo \"\(label)\" agregado a la cuenta")
+    }
 }
 
 // MARK: - Supporting Types
@@ -3572,4 +3697,5 @@ struct TicketItem {
     var promotionDiscount: Double?
     var originalPrice: Double?
     var isGuest: Bool?
+    var customModifiers: String?
 }

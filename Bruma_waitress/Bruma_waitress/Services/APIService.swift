@@ -119,6 +119,15 @@ class APIService {
         return try JSONDecoder().decode([Category].self, from: data)
     }
     
+    func fetchQuickNotes() async throws -> [QuickNote] {
+        let url = URL(string: "\(baseURL)/api/quick-notes")!
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw APIError.serverError
+        }
+        return try JSONDecoder().decode([QuickNote].self, from: data)
+    }
+
     func fetchCategoryFlow(categoryId: String) async throws -> CategoryFlow {
         let url = URL(string: "\(baseURL)/api/categories/\(categoryId)/flow")!
         let (data, response) = try await URLSession.shared.data(from: url)

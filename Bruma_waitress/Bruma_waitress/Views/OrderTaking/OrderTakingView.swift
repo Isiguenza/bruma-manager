@@ -67,7 +67,7 @@ struct OrderTakingView: View {
         .sheet(isPresented: $menuVM.showNotesSheet) {
             NotesSheet(
                 productName: menuVM.pendingCartItem?.productName ?? "",
-                notes: $menuVM.tempNotes,
+                menuVM: menuVM,
                 onConfirm: {
                     menuVM.confirmNotes { item in cartVM.addItem(item) }
                 },
@@ -75,7 +75,7 @@ struct OrderTakingView: View {
                     menuVM.cancelNotes { item in cartVM.addItem(item) }
                 }
             )
-            .presentationDetents([.height(280)])
+            .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
         .alert("Salir sin enviar?", isPresented: $showConfirmExit) {

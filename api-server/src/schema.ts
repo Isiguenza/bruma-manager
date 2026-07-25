@@ -156,9 +156,9 @@ export const products = pgTable("products", {
   hasVariants: boolean("has_variants").notNull().default(false),
   variants: text("variants"), // JSON: [{ name: "Pieza", price: "50.00" }, { name: "Orden", price: "150.00" }]
   active: boolean("active").notNull().default(true),
-  menuImages: text("menu_images"),
-  menuVideo: text("menu_video"),
-  menuWebVisible: boolean("menu_web_visible").notNull().default(true),
+  menuImages: text("menu_images"), // JSON: ["url1", "url2", ...] — up to 4 images for web menu
+  menuVideo: text("menu_video"),   // Single video URL for web menu
+  menuWebVisible: boolean("menu_web_visible").notNull().default(true), // Show on public web menu
   deletedAt: timestamp("deleted_at"), // Soft delete - mantiene el producto en órdenes históricas
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -255,6 +255,17 @@ export const modifierOptions = pgTable("modifier_options", {
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   price: decimal("price", { precision: 10, scale: 2 }).notNull().default("0"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Predefined quick notes ("abbreviations") selectable when adding a comment to a cart item.
+// Global by default; productIds scopes it to specific products when set.
+export const quickNotes = pgTable("quick_notes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  label: varchar("label", { length: 100 }).notNull(),
+  productIds: text("product_ids"), // JSON array of product IDs; null/empty = applies to all products
   sortOrder: integer("sort_order").notNull().default(0),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -438,8 +449,10 @@ export const auditLog = pgTable("audit_log", {
 export const loyaltyCards = pgTable("loyalty_cards", {
   id: uuid("id").defaultRandom().primaryKey(),
   customerName: varchar("customer_name", { length: 255 }).notNull(),
+  customerLastName: varchar("customer_last_name", { length: 255 }).notNull(),
   customerPhone: varchar("customer_phone", { length: 20 }),
-  customerEmail: varchar("customer_email", { length: 255 }),
+  customerEmail: varchar("customer_email", { length: 255 }).notNull(),
+  birthDate: date("birth_date"),
   barcodeValue: varchar("barcode_value", { length: 100 }).notNull().unique(),
   pinHash: varchar("pin_hash", { length: 255 }),
   stamps: integer("stamps").notNull().default(0),
@@ -482,8 +495,8 @@ export const walletDeviceRegistrations = pgTable("wallet_device_registrations", 
 export const walletPromotions = pgTable("wallet_promotions", {
   id: uuid("id").defaultRandom().primaryKey(),
   message: text("message").notNull(),
-  targetType: varchar("target_type", { length: 20 }).notNull().default("all"), // "all" | "specific"
-  targetCardIds: text("target_card_ids"), // JSON array of card IDs when targetType="specific"
+  targetType: varchar("target_type", { length: 20 }).notNull().default("all"),
+  targetCardIds: text("target_card_ids"),
   sentCount: integer("sent_count").notNull().default(0),
   createdBy: uuid("created_by").references(() => userProfiles.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -623,14 +636,15 @@ export const loyaltyCardsRelations = relations(loyaltyCards, ({ many }) => ({
 // Reservations
 export const reservations = pgTable("reservations", {
   id: uuid("id").defaultRandom().primaryKey(),
-  tableId: uuid("table_id").references(() => tables.id, { onDelete: "set null" }),
+  tableId: uuid("table_id")
+    .references(() => tables.id, { onDelete: "set null" }),
   customerName: varchar("customer_name", { length: 255 }).notNull(),
   customerPhone: varchar("customer_phone", { length: 50 }),
   customerEmail: varchar("customer_email", { length: 255 }),
   guestCount: integer("guest_count").notNull().default(1),
   reservationDate: date("reservation_date").notNull(),
   reservationTime: time("reservation_time").notNull(),
-  duration: integer("duration").notNull().default(120),
+  duration: integer("duration").notNull().default(120), // Duration in minutes
   status: reservationStatusEnum("status").notNull().default("pending"),
   occasion: varchar("occasion", { length: 100 }),
   notes: text("notes"),
@@ -850,7 +864,6 @@ export const userProfilesRelations = relations(userProfiles, ({ many }) => ({
   cashRegisters: many(cashRegisters),
 }));
 
-// Aliases for backward compatibility with api-server code
+// Aliases for backward compatibility with api-server route code
 export const employees = userProfiles;
 export const inventory = inventoryProducts;
-

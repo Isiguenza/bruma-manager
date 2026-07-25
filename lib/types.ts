@@ -60,6 +60,15 @@ export interface Category {
   isBeverage?: boolean;
 }
 
+export interface QuickNote {
+  id: string;
+  label: string;
+  productIds: string | null; // JSON string de string[]; null/vacío = aplica a todos los productos
+  sortOrder: number;
+  active: boolean;
+  createdAt: Date;
+}
+
 export interface Ingredient {
   id: string;
   name: string;

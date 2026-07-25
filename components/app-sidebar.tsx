@@ -24,6 +24,7 @@ import {
   CaretDown,
   List,
   Notepad,
+  ChatText,
 } from "@phosphor-icons/react";
 import { BrumaLogo } from "@/components/bruma-logo";
 import {
@@ -78,6 +79,11 @@ const menuNavItems = [
     title: "Mesas",
     url: "/tables",
     icon: Storefront,
+  },
+  {
+    title: "Notas Rápidas",
+    url: "/inventory/quick-notes",
+    icon: ChatText,
   },
 ];
 
