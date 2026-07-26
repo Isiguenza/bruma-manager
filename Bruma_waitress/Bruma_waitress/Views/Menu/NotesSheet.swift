@@ -7,7 +7,10 @@ struct NotesSheet: View {
     let onSkip: () -> Void
 
     private var applicableQuickNotes: [QuickNote] {
-        menuVM.applicableQuickNotes(forProductId: menuVM.pendingCartItem?.productId)
+        menuVM.applicableQuickNotes(
+            forProductId: menuVM.pendingCartItem?.productId,
+            variantName: menuVM.pendingCartItem?.variantName
+        )
     }
 
     var body: some View {

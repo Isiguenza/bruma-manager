@@ -13,10 +13,14 @@ struct QuickNote: Codable, Identifiable {
         return (try? JSONDecoder().decode([String].self, from: data)) ?? []
     }
 
-    func applies(toProductId productId: String?) -> Bool {
+    /// - `scoped` entries are either a bare `productId` (applies to the whole product /
+    ///   all its variants) or `"\(productId)::\(variantName)"` (applies only to that variant).
+    func applies(toProductId productId: String?, variantName: String? = nil) -> Bool {
         let scoped = parsedProductIds
         if scoped.isEmpty { return true }
         guard let productId = productId else { return false }
-        return scoped.contains(productId)
+        if scoped.contains(productId) { return true }
+        if let variantName = variantName, scoped.contains("\(productId)::\(variantName)") { return true }
+        return false
     }
 }

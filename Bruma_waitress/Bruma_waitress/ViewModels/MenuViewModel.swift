@@ -74,8 +74,8 @@ class MenuViewModel: ObservableObject {
         loading = false
     }
 
-    func applicableQuickNotes(forProductId productId: String?) -> [QuickNote] {
-        quickNotes.filter { $0.active && $0.applies(toProductId: productId) }
+    func applicableQuickNotes(forProductId productId: String?, variantName: String? = nil) -> [QuickNote] {
+        quickNotes.filter { $0.active && $0.applies(toProductId: productId, variantName: variantName) }
             .sorted { $0.sortOrder < $1.sortOrder }
     }
     
@@ -165,7 +165,8 @@ class MenuViewModel: ObservableObject {
             seat: seat,
             course: course,
             sentToKitchen: false,
-            isBeverage: product.category?.isBeverage ?? false
+            isBeverage: product.category?.isBeverage ?? false,
+            variantName: variant.name
         )
         pendingCartItem = item
         tempNotes = ""

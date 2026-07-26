@@ -452,7 +452,7 @@ struct ProductAddDialog: View {
     }
 
     private var applicableQuickNotes: [QuickNote] {
-        vm.quickNotes.filter { $0.applies(toProductId: currentProductId) }
+        vm.quickNotes.filter { $0.applies(toProductId: currentProductId, variantName: vm.pendingCartItem?.variantName) }
     }
     
     private func selectionSummary(for selection: Any) -> String {

@@ -86,7 +86,8 @@ struct CartItem: Identifiable {
     var orderId: String?
     var itemId: String?
     var isBeverage: Bool = false
-    
+    var variantName: String?
+
     var total: Double {
         unitPrice * Double(quantity)
     }

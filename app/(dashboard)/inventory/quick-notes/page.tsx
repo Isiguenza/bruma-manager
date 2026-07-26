@@ -40,6 +40,7 @@ import {
   DotsSixVertical,
 } from "@phosphor-icons/react";
 import { Switch } from "@/components/ui/switch";
+import { QuickNoteProductPicker } from "@/components/quick-note-product-picker";
 import type { QuickNote, Product } from "@/lib/types";
 
 function SortableQuickNoteItem({
@@ -306,51 +307,11 @@ export default function QuickNotesPage() {
 
               <div className="space-y-2">
                 <Label>Productos donde aplica</Label>
-                <p className="text-xs text-muted-foreground">
-                  Deja todo sin marcar para que aparezca en cualquier producto.
-                </p>
-                <div className="border rounded-lg p-3 max-h-60 overflow-y-auto space-y-2">
-                  {products.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No hay productos disponibles</p>
-                  ) : (
-                    products.map((product) => (
-                      <div key={product.id} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id={`qn-product-${product.id}`}
-                          checked={formData.productIds.includes(product.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setFormData({
-                                ...formData,
-                                productIds: [...formData.productIds, product.id],
-                              });
-                            } else {
-                              setFormData({
-                                ...formData,
-                                productIds: formData.productIds.filter(
-                                  (id) => id !== product.id
-                                ),
-                              });
-                            }
-                          }}
-                          className="h-4 w-4 rounded border-gray-300"
-                        />
-                        <label
-                          htmlFor={`qn-product-${product.id}`}
-                          className="text-sm cursor-pointer flex-1"
-                        >
-                          {product.name}
-                        </label>
-                      </div>
-                    ))
-                  )}
-                </div>
-                {formData.productIds.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {formData.productIds.length} producto(s) seleccionado(s)
-                  </p>
-                )}
+                <QuickNoteProductPicker
+                  products={products}
+                  selectedIds={formData.productIds}
+                  onChange={(ids) => setFormData({ ...formData, productIds: ids })}
+                />
               </div>
 
               <div className="flex items-center justify-between rounded-lg border p-3">
