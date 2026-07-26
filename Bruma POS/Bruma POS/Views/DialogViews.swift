@@ -222,7 +222,12 @@ struct ProductAddDialog: View {
     }
 
     private var productName: String {
-        vm.selectedProductForVariant?.name ?? vm.pendingCartItem?.productName ?? ""
+        // pendingCartItem is always fresh for the item about to be added (set right before
+        // showNotesDialog in every path); selectedProductForVariant is only needed as a
+        // fallback while still picking a variant, before pendingCartItem exists. Prioritizing
+        // pendingCartItem avoids showing a stale product name left over from a previous
+        // variant pick that never got reset.
+        vm.pendingCartItem?.productName ?? vm.selectedProductForVariant?.name ?? ""
     }
 
     var body: some View {
@@ -448,7 +453,9 @@ struct ProductAddDialog: View {
     }
 
     private var currentProductId: String? {
-        vm.selectedProduct?.id ?? vm.pendingCartItem?.productId
+        // Same reasoning as productName above: pendingCartItem is the source of truth for
+        // the item about to be added, selectedProduct is only a pre-pendingCartItem fallback.
+        vm.pendingCartItem?.productId ?? vm.selectedProduct?.id
     }
 
     private var applicableQuickNotes: [QuickNote] {

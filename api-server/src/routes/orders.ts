@@ -830,11 +830,74 @@ router.post("/orders/:id/complete", async (req, res) => {
   }
 });
 
+// POST /api/orders/transfer  (body: { orderId, newTableId }) — used by Bruma POS/iOS
+router.post("/orders/transfer", async (req, res) => {
+  try {
+    const { orderId, newTableId } = req.body;
+
+    if (!orderId || !newTableId) {
+      return res.status(400).json({ error: "orderId y newTableId son requeridos" });
+    }
+
+    const order = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, orderId),
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
+
+    const oldTableId = order.tableId;
+
+    await db
+      .update(schema.orders)
+      .set({ tableId: newTableId, updatedAt: new Date() })
+      .where(eq(schema.orders.id, orderId));
+
+    if (oldTableId) {
+      await db
+        .update(schema.tables)
+        .set({ status: "available" })
+        .where(eq(schema.tables.id, oldTableId));
+
+      const oldTable = await db.query.tables.findFirst({
+        where: eq(schema.tables.id, oldTableId),
+      });
+      if (oldTable) {
+        emitTableUpdated(oldTable);
+      }
+    }
+
+    await db
+      .update(schema.tables)
+      .set({ status: "occupied" })
+      .where(eq(schema.tables.id, newTableId));
+
+    const newTable = await db.query.tables.findFirst({
+      where: eq(schema.tables.id, newTableId),
+    });
+    if (newTable) {
+      emitTableUpdated(newTable);
+    }
+
+    const updatedOrder = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, orderId),
+      with: { items: true },
+    });
+
+    emitOrderUpdated(updatedOrder);
+    res.json(updatedOrder);
+  } catch (error) {
+    console.error("Error transferring order:", error);
+    res.status(500).json({ error: "Error al transferir orden" });
+  }
+});
+
 // POST /api/orders/:id/transfer
 router.post("/orders/:id/transfer", async (req, res) => {
   try {
     const { id } = req.params;
-    const { newTableId, newTableNumber } = req.body;
+    const { newTableId } = req.body;
 
     if (!newTableId) {
       return res.status(400).json({ error: "newTableId es requerido" });
@@ -853,10 +916,7 @@ router.post("/orders/:id/transfer", async (req, res) => {
     // Update order
     await db
       .update(schema.orders)
-      .set({
-        tableId: newTableId,
-        tableNumber: newTableNumber || null,
-      })
+      .set({ tableId: newTableId, updatedAt: new Date() })
       .where(eq(schema.orders.id, id));
 
     // Free old table
