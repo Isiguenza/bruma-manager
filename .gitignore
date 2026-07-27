@@ -41,3 +41,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# pnpm auto-scaffolds this locally on newer pnpm versions when build scripts
+# aren't approved yet; the Docker build pins pnpm@9.12.0, which doesn't
+# understand this file and hard-fails if it merely exists without a
+# `packages:` field. Keep it out of git entirely.
+pnpm-workspace.yaml
