@@ -4,42 +4,36 @@ import Combine
 // Clean, minimal design inspired by Bruma_waitress
 struct TableSelectionView: View {
     @ObservedObject var vm: POSViewModel
-    @Namespace private var filterNamespace
     @State private var currentTime = Date()
+    @State private var showDeliveryOrdersSheet = false
     let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     
     var body: some View {
         ZStack {
             Color(red: 0.04, green: 0.04, blue: 0.05).ignoresSafeArea()
-            
+
             VStack(spacing: 0) {
                 // Header — same as /bar
                 header
-                
-                // Search bar
-                tableSearchBar
-                
-                // Filter bar
-                filterBar
-                
-                // Scroll content
-                ScrollView {
-                    VStack(spacing: 0) {
-                        // DELIVERY ROW — horizontal, always visible
-                        deliveryRow
-                            .padding(.top, 16)
-                        
-                        // Divider
-                        if !vm.filteredTables.isEmpty {
-                            Rectangle()
-                                .fill(Color.white.opacity(0.1))
-                                .frame(height: 1)
-                                .padding(.vertical, 20)
-                                .padding(.horizontal, 16)
-                        }
 
-                        if vm.tableViewMode == .cards {
-                            // MESAS SECTION (cards)
+                // Slim utility row (filter dropdown + nueva orden + delivery badge)
+                utilityBar
+
+                if vm.tableViewMode == .cards {
+                    // Scroll content
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            deliveryRow
+                                .padding(.top, 16)
+
+                            if !vm.filteredTables.isEmpty {
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.1))
+                                    .frame(height: 1)
+                                    .padding(.vertical, 20)
+                                    .padding(.horizontal, 16)
+                            }
+
                             if !vm.filteredTables.isEmpty {
                                 VStack(alignment: .leading, spacing: 12) {
                                     HStack {
@@ -65,74 +59,36 @@ struct TableSelectionView: View {
                                                 hasReadyItems: vm.tablesWithReadyItems.contains(table.id),
                                                 currentTime: currentTime,
                                                 action: { vm.handleSelectTable(table) },
-                                                onRush: {
-                                                    Task {
-                                                        guard let orderId = table.activeOrder?.id else { return }
-                                                        do {
-                                                            let order = try await APIService.shared.fetchOrder(orderId: orderId)
-                                                            if order.priority == 1 {
-                                                                try await APIService.shared.unrushOrder(orderId: orderId)
-                                                            } else {
-                                                                try await APIService.shared.rushOrder(orderId: orderId)
-                                                            }
-                                                        } catch {
-                                                            print("❌ Error toggling rush: \(error)")
-                                                        }
-                                                    }
-                                                },
-                                                onHold: {
-                                                    Task {
-                                                        guard let orderId = table.activeOrder?.id else { return }
-                                                        do {
-                                                            let order = try await APIService.shared.fetchOrder(orderId: orderId)
-                                                            if order.onHold == true {
-                                                                try await APIService.shared.unholdOrder(orderId: orderId)
-                                                            } else {
-                                                                try await APIService.shared.holdOrder(orderId: orderId)
-                                                            }
-                                                        } catch {
-                                                            print("❌ Error toggling hold: \(error)")
-                                                        }
-                                                    }
-                                                }
+                                                onRush: rushHandler(orderId: table.activeOrder?.id),
+                                                onHold: holdHandler(orderId: table.activeOrder?.id)
                                             )
                                         }
                                     }
                                     .padding(.horizontal, 16)
                                 }
                             }
-                        } else {
-                            // MESAS SECTION (mapa)
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack {
-                                    Text("MAPA DE MESAS")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundColor(.gray)
-                                    Spacer()
-                                    Text("\(vm.placedTables.count) mesas")
-                                        .font(.caption2)
-                                        .foregroundColor(.gray)
-                                }
-                                .padding(.horizontal, 16)
-
-                                TableMapView(vm: vm)
-                                    .padding(.horizontal, 16)
-                            }
                         }
+                        .padding(.bottom, 50)
                     }
-                    .padding(.bottom, 50)
-                }
-                .refreshable {
-                    await vm.fetchData()
+                    .refreshable {
+                        await vm.fetchData()
+                    }
+                } else {
+                    // MAPA DE MESAS — fills the remaining screen; no outer ScrollView
+                    // so the map gets as much of the iPad's height as possible.
+                    TableMapView(vm: vm)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            
+
             // New Order Dialog overlay
             if vm.showCustomerNameDialog {
                 Color.black.opacity(0.6)
                     .ignoresSafeArea()
                     .onTapGesture { vm.showCustomerNameDialog = false }
-                
+
                 CustomerNameDialog(vm: vm)
                     .frame(maxWidth: 440)
                     .contentShape(Rectangle())
@@ -152,9 +108,48 @@ struct TableSelectionView: View {
         }) {
             UpcomingReservationsView()
         }
+        .sheet(isPresented: $showDeliveryOrdersSheet) {
+            DeliveryOrdersSheet(vm: vm)
+        }
         .fullScreenCover(isPresented: $vm.showSettings) {
             SettingsView(vm: vm)
                 .presentationBackground(.clear)
+        }
+    }
+
+    private func rushHandler(orderId: String?) -> () -> Void {
+        {
+            guard let orderId else { return }
+            Task {
+                do {
+                    let order = try await APIService.shared.fetchOrder(orderId: orderId)
+                    if order.priority == 1 {
+                        try await APIService.shared.unrushOrder(orderId: orderId)
+                    } else {
+                        try await APIService.shared.rushOrder(orderId: orderId)
+                    }
+                } catch {
+                    print("❌ Error toggling rush: \(error)")
+                }
+            }
+        }
+    }
+
+    private func holdHandler(orderId: String?) -> () -> Void {
+        {
+            guard let orderId else { return }
+            Task {
+                do {
+                    let order = try await APIService.shared.fetchOrder(orderId: orderId)
+                    if order.onHold == true {
+                        try await APIService.shared.unholdOrder(orderId: orderId)
+                    } else {
+                        try await APIService.shared.holdOrder(orderId: orderId)
+                    }
+                } catch {
+                    print("❌ Error toggling hold: \(error)")
+                }
+            }
         }
     }
     
@@ -343,40 +338,78 @@ struct TableSelectionView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Search Bar
-    
-    private var tableSearchBar: some View {
-        GlassEffectContainer{
-            HStack(spacing: 10) {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
-                    TextField("Buscar mesa...", text: $vm.tableSearchQuery)
-                        .foregroundColor(.white)
-                    
-                    if !vm.tableSearchQuery.isEmpty {
-                        Button {
-                            vm.tableSearchQuery = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
+    // MARK: - Utility Bar (filter dropdown + nueva orden + delivery badge)
+
+    private var utilityBar: some View {
+        HStack(spacing: 10) {
+            filterMenu
+
+            Spacer()
+
+            let totalOrders = vm.deliveryOrders.count + vm.platformDeliveryOrders.count
+            if totalOrders > 0 {
+                Button {
+                    showDeliveryOrdersSheet = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bag.fill")
+                        Text("Órdenes (\(totalOrders))")
+                            .font(.caption.weight(.semibold))
                     }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.orange.opacity(0.8))
+                    .clipShape(Capsule())
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                
-                if vm.config.takeoutEnabled || vm.config.deliveryEnabled {
-                    nuevaOrdenMenu
+                .buttonStyle(.plain)
+            }
+
+            if vm.config.takeoutEnabled || vm.config.deliveryEnabled {
+                nuevaOrdenMenu
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            ForEach(POSViewModel.TableFilter.allCases, id: \.self) { filter in
+                let count: Int = {
+                    switch filter {
+                    case .all: return vm.tables.count
+                    case .available: return vm.tables.filter { $0.isAvailable }.count
+                    case .occupied: return vm.tables.filter { $0.isOccupied }.count
+                    case .reserved: return vm.tables.filter { $0.isReserved }.count
+                    }
+                }()
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        vm.tableFilter = filter
+                    }
+                } label: {
+                    Label("\(filter.rawValue) (\(count))", systemImage: vm.tableFilter == filter ? "checkmark" : "")
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 4)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                Text(vm.tableFilter.rawValue)
+                    .font(.caption.weight(.semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background {
+                Capsule().fill(Color.white.opacity(0.08))
+            }
         }
     }
-    
+
     @ViewBuilder
     private var nuevaOrdenMenu: some View {
         let menuContent = Menu {
@@ -411,54 +444,6 @@ struct TableSelectionView: View {
             .clipShape(Capsule())
     }
     
-    // MARK: - Filter Bar
-    
-    private var filterBar: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(POSViewModel.TableFilter.allCases.enumerated()), id: \.element) { _, filter in
-                let isActive = vm.tableFilter == filter
-                let count: Int = {
-                    switch filter {
-                    case .all: return vm.tables.count
-                    case .available: return vm.tables.filter { $0.isAvailable }.count
-                    case .occupied: return vm.tables.filter { $0.isOccupied }.count
-                    case .reserved: return vm.tables.filter { $0.isReserved }.count
-                    }
-                }()
-                
-                Button(action: {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                        vm.tableFilter = filter
-                    }
-                }) {
-                    Text("\(filter.rawValue) (\(count))")
-                        .font(.caption.weight(.medium))
-                        .foregroundColor(isActive ? .white : Color(white: 0.6))
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .background {
-                    if isActive {
-                        Capsule()
-                            .fill(Color.blue.opacity(0.7))
-                            .glassEffect(.regular.interactive(), in: Capsule())
-                            .matchedGeometryEffect(id: "activeFilter", in: filterNamespace)
-                    }
-                }
-            }
-        }
-        .padding(4)
-        .background {
-            Capsule()
-                .fill(.thinMaterial)
-                .opacity(0.5)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-    }
-    
     // MARK: - Delivery Row (horizontal scroll)
     
     private var deliveryRow: some View {
@@ -479,84 +464,120 @@ struct TableSelectionView: View {
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(vm.deliveryOrders) { order in
-                        DeliveryCompactCard(
-                            order: order,
-                            source: "Para Llevar",
-                            action: { vm.handleSelectDeliveryOrder(order) },
-                            onRush: {
-                                Task {
-                                    do {
-                                        let fetched = try await APIService.shared.fetchOrder(orderId: order.id)
-                                        if fetched.priority == 1 {
-                                            try await APIService.shared.unrushOrder(orderId: order.id)
-                                        } else {
-                                            try await APIService.shared.rushOrder(orderId: order.id)
-                                        }
-                                    } catch {
-                                        print("❌ Error toggling rush: \(error)")
-                                    }
-                                }
-                            },
-                            onHold: {
-                                Task {
-                                    do {
-                                        let fetched = try await APIService.shared.fetchOrder(orderId: order.id)
-                                        if fetched.onHold == true {
-                                            try await APIService.shared.unholdOrder(orderId: order.id)
-                                        } else {
-                                            try await APIService.shared.holdOrder(orderId: order.id)
-                                        }
-                                    } catch {
-                                        print("❌ Error toggling hold: \(error)")
-                                    }
-                                }
-                            }
-                        )
-                    }
-                    
-                    ForEach(vm.platformDeliveryOrders) { order in
-                        DeliveryCompactCard(
-                            order: order,
-                            source: order.detectedPlatform ?? "Delivery",
-                            action: { vm.handleSelectDeliveryOrder(order) },
-                            onRush: {
-                                Task {
-                                    do {
-                                        let fetched = try await APIService.shared.fetchOrder(orderId: order.id)
-                                        if fetched.priority == 1 {
-                                            try await APIService.shared.unrushOrder(orderId: order.id)
-                                        } else {
-                                            try await APIService.shared.rushOrder(orderId: order.id)
-                                        }
-                                    } catch {
-                                        print("❌ Error toggling rush: \(error)")
-                                    }
-                                }
-                            },
-                            onHold: {
-                                Task {
-                                    do {
-                                        let fetched = try await APIService.shared.fetchOrder(orderId: order.id)
-                                        if fetched.onHold == true {
-                                            try await APIService.shared.unholdOrder(orderId: order.id)
-                                        } else {
-                                            try await APIService.shared.holdOrder(orderId: order.id)
-                                        }
-                                    } catch {
-                                        print("❌ Error toggling hold: \(error)")
-                                    }
-                                }
-                            }
-                        )
-                    }
+                    deliveryCards
                 }
                 .padding(.horizontal, 16)
             }
         }
     }
-    
+
+    @ViewBuilder
+    private var deliveryCards: some View {
+        ForEach(vm.deliveryOrders) { order in
+            DeliveryCompactCard(
+                order: order,
+                source: "Para Llevar",
+                action: { vm.handleSelectDeliveryOrder(order) },
+                onRush: rushHandler(orderId: order.id),
+                onHold: holdHandler(orderId: order.id)
+            )
+        }
+
+        ForEach(vm.platformDeliveryOrders) { order in
+            DeliveryCompactCard(
+                order: order,
+                source: order.detectedPlatform ?? "Delivery",
+                action: { vm.handleSelectDeliveryOrder(order) },
+                onRush: rushHandler(orderId: order.id),
+                onHold: holdHandler(orderId: order.id)
+            )
+        }
+    }
+
     // MARK: - Compact Delivery Cards
+}
+
+// MARK: - Delivery Orders Sheet (Mapa mode)
+
+struct DeliveryOrdersSheet: View {
+    @ObservedObject var vm: POSViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 10)], spacing: 10) {
+                    ForEach(vm.deliveryOrders) { order in
+                        DeliveryCompactCard(
+                            order: order,
+                            source: "Para Llevar",
+                            action: {
+                                dismiss()
+                                vm.handleSelectDeliveryOrder(order)
+                            },
+                            onRush: rushHandler(orderId: order.id),
+                            onHold: holdHandler(orderId: order.id)
+                        )
+                    }
+                    ForEach(vm.platformDeliveryOrders) { order in
+                        DeliveryCompactCard(
+                            order: order,
+                            source: order.detectedPlatform ?? "Delivery",
+                            action: {
+                                dismiss()
+                                vm.handleSelectDeliveryOrder(order)
+                            },
+                            onRush: rushHandler(orderId: order.id),
+                            onHold: holdHandler(orderId: order.id)
+                        )
+                    }
+                }
+                .padding(16)
+            }
+            .background(Color(red: 0.04, green: 0.04, blue: 0.05).ignoresSafeArea())
+            .navigationTitle("Órdenes activas")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Cerrar") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func rushHandler(orderId: String) -> () -> Void {
+        {
+            Task {
+                do {
+                    let fetched = try await APIService.shared.fetchOrder(orderId: orderId)
+                    if fetched.priority == 1 {
+                        try await APIService.shared.unrushOrder(orderId: orderId)
+                    } else {
+                        try await APIService.shared.rushOrder(orderId: orderId)
+                    }
+                } catch {
+                    print("❌ Error toggling rush: \(error)")
+                }
+            }
+        }
+    }
+
+    private func holdHandler(orderId: String) -> () -> Void {
+        {
+            Task {
+                do {
+                    let fetched = try await APIService.shared.fetchOrder(orderId: orderId)
+                    if fetched.onHold == true {
+                        try await APIService.shared.unholdOrder(orderId: orderId)
+                    } else {
+                        try await APIService.shared.holdOrder(orderId: orderId)
+                    }
+                } catch {
+                    print("❌ Error toggling hold: \(error)")
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Minimalist Order Card

@@ -39,7 +39,6 @@ class POSViewModel: ObservableObject {
     @Published var selectedTable: Table?
     @Published var tablesWithReadyItems: Set<String> = []
     @Published var tableFilter: TableFilter = .all
-    @Published var tableSearchQuery = ""
     @Published var pendingReservationsCount: Int = 0
     @Published var showReservations: Bool = false
 
@@ -74,15 +73,6 @@ class POSViewModel: ObservableObject {
         case .reserved: result = result.filter { $0.isReserved }
         }
         
-        // Filter by search
-        if !tableSearchQuery.isEmpty {
-            let query = tableSearchQuery.lowercased()
-            result = result.filter {
-                $0.number.lowercased().contains(query) ||
-                ($0.name?.lowercased().contains(query) ?? false)
-            }
-        }
-        
         // Sort by number numerically (not alphabetically so "10" comes after "9")
         return result.sorted {
             (Int($0.number) ?? 0) < (Int($1.number) ?? 0)
@@ -90,7 +80,18 @@ class POSViewModel: ObservableObject {
     }
 
     var placedTables: [Table] {
-        tables.filter { !config.disabledTableIds.contains($0.id) && $0.isPlaced }
+        var result = tables.filter { !config.disabledTableIds.contains($0.id) && $0.isPlaced }
+        // While editing the layout, always show every placed table regardless
+        // of the status filter — hiding one mid-drag would be confusing.
+        if !editingLayout {
+            switch tableFilter {
+            case .all: break
+            case .available: result = result.filter { $0.isAvailable }
+            case .occupied: result = result.filter { $0.isOccupied }
+            case .reserved: result = result.filter { $0.isReserved }
+            }
+        }
+        return result
     }
 
     var unplacedTables: [Table] {
@@ -1081,8 +1082,24 @@ class POSViewModel: ObservableObject {
             }
             currentScreen = .tableSelection
             lastActivity = Date()
-            Task { await fetchData() }
+            Task {
+                await fetchData()
+                // Sessions saved before the role was tracked (or restored from
+                // an older app version) won't have pos_employeeRole yet — back
+                // it off the employees list so "Editar mapa" isn't stuck hidden.
+                if employeeRole == nil {
+                    await backfillEmployeeRole()
+                }
+            }
         }
+    }
+
+    private func backfillEmployeeRole() async {
+        guard let empId = employeeId,
+              let employees = try? await APIService.shared.fetchEmployees(),
+              let match = employees.first(where: { $0.id == empId }) else { return }
+        employeeRole = match.role
+        UserDefaults.standard.set(match.role, forKey: "pos_employeeRole")
     }
 
     func saveSession() {

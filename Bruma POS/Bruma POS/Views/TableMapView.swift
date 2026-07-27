@@ -37,6 +37,11 @@ struct TableMapView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(Color.white.opacity(0.08), lineWidth: 1)
             )
+            .overlay {
+                if vm.placedTables.isEmpty {
+                    emptyStateView
+                }
+            }
         }
         .sheet(isPresented: $vm.showUnplacedTablesTray) {
             UnplacedTablesTray(vm: vm)
@@ -131,22 +136,61 @@ struct TableMapView: View {
 
     private var gridBackground: some View {
         Canvas { context, size in
+            // Only show the placement grid while actively editing the layout —
+            // it's just visual scaffolding for dragging, not useful otherwise.
+            guard vm.editingLayout else { return }
             let cell = TableMapGrid.cellSize
-            var path = Path()
-            var x: CGFloat = 0
-            while x <= size.width {
-                path.move(to: CGPoint(x: x, y: 0))
-                path.addLine(to: CGPoint(x: x, y: size.height))
-                x += cell
+            let inset: CGFloat = 5
+            for row in 0..<TableMapGrid.rows {
+                for col in 0..<TableMapGrid.columns {
+                    let rect = CGRect(
+                        x: CGFloat(col) * cell + inset / 2,
+                        y: CGFloat(row) * cell + inset / 2,
+                        width: cell - inset,
+                        height: cell - inset
+                    )
+                    let path = Path(roundedRect: rect, cornerRadius: 12)
+                    context.fill(path, with: .color(Color.white.opacity(0.04)))
+                    context.stroke(path, with: .color(Color.white.opacity(0.09)), lineWidth: 1)
+                }
             }
-            var y: CGFloat = 0
-            while y <= size.height {
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                y += cell
-            }
-            context.stroke(path, with: .color(Color.white.opacity(0.05)), lineWidth: 1)
         }
+        .allowsHitTesting(false)
+    }
+
+    private var emptyStateView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "map")
+                .font(.system(size: 36))
+                .foregroundColor(.white.opacity(0.25))
+            Text("No hay mesas acomodadas en el mapa")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.white.opacity(0.6))
+            if vm.canEditLayout {
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        vm.editingLayout = true
+                    }
+                    if vm.unplacedTables.count > 0 {
+                        vm.showUnplacedTablesTray = true
+                    }
+                } label: {
+                    Text("Acomodar mesas")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.blue.opacity(0.8))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text("Pide a un administrador que acomode las mesas")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.4))
+            }
+        }
+        .padding(24)
     }
 
     private func cellCenter(for table: Table) -> CGPoint {
@@ -162,11 +206,15 @@ struct TableMapView: View {
 }
 
 struct TableMapChip: View {
+    static let maxCells = 4
+
     let table: Table
     @ObservedObject var vm: POSViewModel
     @State private var dragOffset: CGSize = .zero
+    @State private var resizePreview: (w: Int, h: Int)?
 
     private var isRound: Bool { table.shape == "round" }
+    private var displayCells: (w: Int, h: Int) { resizePreview ?? table.footprintCells }
 
     var body: some View {
         Group {
@@ -175,11 +223,16 @@ struct TableMapChip: View {
                     .overlay(mergeSelectionOverlay)
                     .onTapGesture { vm.toggleMergeSelection(table) }
             } else if vm.editingLayout {
-                chipContent
-                    .offset(dragOffset)
-                    .gesture(dragGesture)
-                    .zIndex(dragOffset == .zero ? 0 : 1)
-                    .contextMenu { editContextMenu }
+                ZStack(alignment: .bottomTrailing) {
+                    chipContent
+                        .offset(dragOffset)
+                        .gesture(moveGesture)
+                        .contextMenu { editContextMenu }
+
+                    resizeHandle
+                        .offset(x: dragOffset.width + 10, y: dragOffset.height + 10)
+                }
+                .zIndex(dragOffset == .zero && resizePreview == nil ? 0 : 1)
             } else {
                 Button {
                     vm.handleSelectTable(table)
@@ -221,34 +274,6 @@ struct TableMapChip: View {
         } label: {
             Label(isRound ? "Forma cuadrada" : "Forma redonda", systemImage: isRound ? "square" : "circle")
         }
-
-        Button {
-            applyLayoutChange { $0.widthCells = min(3, table.effectiveWidthCells + 1) }
-        } label: {
-            Label("Ampliar ancho", systemImage: "arrow.left.and.right")
-        }
-        .disabled(table.effectiveWidthCells >= 3)
-
-        Button {
-            applyLayoutChange { $0.widthCells = max(1, table.effectiveWidthCells - 1) }
-        } label: {
-            Label("Reducir ancho", systemImage: "arrow.left.and.right")
-        }
-        .disabled(table.effectiveWidthCells <= 1)
-
-        Button {
-            applyLayoutChange { $0.heightCells = min(3, table.effectiveHeightCells + 1) }
-        } label: {
-            Label("Ampliar alto", systemImage: "arrow.up.and.down")
-        }
-        .disabled(table.effectiveHeightCells >= 3)
-
-        Button {
-            applyLayoutChange { $0.heightCells = max(1, table.effectiveHeightCells - 1) }
-        } label: {
-            Label("Reducir alto", systemImage: "arrow.up.and.down")
-        }
-        .disabled(table.effectiveHeightCells <= 1)
     }
 
     private func applyLayoutChange(_ mutate: (inout TableLayoutUpdate) -> Void) {
@@ -265,7 +290,7 @@ struct TableMapChip: View {
         Task { await vm.saveLayout([update]) }
     }
 
-    private var chipContent: some View {
+    private func chipContent(cells: (w: Int, h: Int)) -> some View {
         ZStack(alignment: .topTrailing) {
             shapeBackground
             VStack(spacing: 2) {
@@ -287,13 +312,17 @@ struct TableMapChip: View {
             }
         }
         .frame(
-            width: CGFloat(table.footprintCells.w) * TableMapGrid.cellSize - 6,
-            height: CGFloat(table.footprintCells.h) * TableMapGrid.cellSize - 6
+            width: CGFloat(cells.w) * TableMapGrid.cellSize - 6,
+            height: CGFloat(cells.h) * TableMapGrid.cellSize - 6
         )
         .rotationEffect(.degrees(Double(table.rotation ?? 0)))
     }
 
-    private var dragGesture: some Gesture {
+    private var chipContent: some View {
+        chipContent(cells: displayCells)
+    }
+
+    private var moveGesture: some Gesture {
         DragGesture()
             .onChanged { value in
                 dragOffset = value.translation
@@ -320,6 +349,46 @@ struct TableMapChip: View {
                 )
                 Task { await vm.saveLayout([update]) }
             }
+    }
+
+    // Corner drag handle — like a Photoshop/Figma resize corner. Dragging it
+    // changes how many grid squares this table occupies, anchored at its
+    // current top-left cell (positionX/Y never change from this gesture).
+    private var resizeHandle: some View {
+        Image(systemName: "arrow.down.right.and.arrow.up.left")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundColor(.white)
+            .padding(6)
+            .background(Circle().fill(Color.blue))
+            .contentShape(Circle())
+            .gesture(resizeGesture)
+    }
+
+    private var resizeGesture: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                resizePreview = clampedResize(for: value.translation)
+            }
+            .onEnded { value in
+                let newCells = clampedResize(for: value.translation)
+                resizePreview = nil
+                guard newCells.w != table.effectiveWidthCells || newCells.h != table.effectiveHeightCells else { return }
+                applyLayoutChange {
+                    $0.widthCells = newCells.w
+                    $0.heightCells = newCells.h
+                }
+            }
+    }
+
+    private func clampedResize(for translation: CGSize) -> (w: Int, h: Int) {
+        let cell = TableMapGrid.cellSize
+        let deltaW = Int((translation.width / cell).rounded())
+        let deltaH = Int((translation.height / cell).rounded())
+        let maxW = min(Self.maxCells, TableMapGrid.columns - (table.positionX ?? 0))
+        let maxH = min(Self.maxCells, TableMapGrid.rows - (table.positionY ?? 0))
+        let newW = max(1, min(maxW, table.effectiveWidthCells + deltaW))
+        let newH = max(1, min(maxH, table.effectiveHeightCells + deltaH))
+        return (newW, newH)
     }
 
     @ViewBuilder

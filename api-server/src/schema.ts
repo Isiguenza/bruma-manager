@@ -704,6 +704,21 @@ export const tableMergesRelations = relations(tableMerges, ({ one }) => ({
   }),
 }));
 
+// Purely decorative floor-plan elements (walls, bars, fixed furniture) — help
+// the Bruma POS map read like the real room, but aren't interactive tables.
+export const mapFixtures = pgTable("map_fixtures", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  type: varchar("type", { length: 30 }).notNull().default("wall"), // wall | bar | furniture | other
+  label: varchar("label", { length: 100 }),
+  positionX: integer("position_x").notNull(),
+  positionY: integer("position_y").notNull(),
+  widthCells: integer("width_cells").notNull().default(1),
+  heightCells: integer("height_cells").notNull().default(1),
+  rotation: integer("rotation").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const loyaltyTransactionsRelations = relations(loyaltyTransactions, ({ one }) => ({
   card: one(loyaltyCards, {
     fields: [loyaltyTransactions.cardId],
