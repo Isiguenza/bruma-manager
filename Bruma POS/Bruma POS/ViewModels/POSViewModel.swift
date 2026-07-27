@@ -1742,6 +1742,7 @@ class POSViewModel: ObservableObject {
         if let idx = cart.firstIndex(where: {
             !$0.sentToKitchen &&
             $0.productId == item.productId &&
+            $0.productName == item.productName &&
             $0.unitPrice == item.unitPrice &&
             $0.frostingId == item.frostingId &&
             $0.dryToppingId == item.dryToppingId &&
