@@ -13,11 +13,10 @@ struct TableSelectionView: View {
             Color(red: 0.04, green: 0.04, blue: 0.05).ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Header — same as /bar
+                // Single consolidated header row: title, view toggle, filter,
+                // nueva orden/delivery, and the profile cluster — everything
+                // else gets pushed down to give the content more height.
                 header
-
-                // Slim utility row (filter dropdown + nueva orden + delivery badge)
-                utilityBar
 
                 if vm.tableViewMode == .cards {
                     // Scroll content
@@ -58,7 +57,17 @@ struct TableSelectionView: View {
                                                 table: table,
                                                 hasReadyItems: vm.tablesWithReadyItems.contains(table.id),
                                                 currentTime: currentTime,
-                                                action: { vm.handleSelectTable(table) },
+                                                mergeMode: vm.mergeModeActive,
+                                                isSelectedForMerge: vm.selectedForMerge.contains(table.id),
+                                                action: {
+                                                    if vm.mergeModeActive {
+                                                        vm.toggleMergeSelection(table)
+                                                    } else {
+                                                        vm.handleSelectTable(table)
+                                                    }
+                                                },
+                                                onStartMerge: { vm.startMergeMode(preselecting: table) },
+                                                onUnmerge: { Task { await vm.unmergeTable(table) } },
                                                 onRush: rushHandler(orderId: table.activeOrder?.id),
                                                 onHold: holdHandler(orderId: table.activeOrder?.id)
                                             )
@@ -82,6 +91,7 @@ struct TableSelectionView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .animation(.snappy, value: vm.mergeModeActive)
 
             // New Order Dialog overlay
             if vm.showCustomerNameDialog {
@@ -94,6 +104,20 @@ struct TableSelectionView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {}
             }
+        }
+        .overlay(alignment: .bottom) {
+            if vm.mergeModeActive {
+                mergeModeBanner
+                    .padding(.bottom, 24)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: vm.mergeModeActive)
+        .alert("¿Unir estas mesas?", isPresented: $vm.showMergeConfirmation) {
+            Button("Unir mesas") { Task { await vm.confirmMerge() } }
+            Button("Cancelar", role: .cancel) { }
+        } message: {
+            Text("Se combinarán en una sola mesa temporalmente; se separan solas al cerrar la cuenta o cancelar la reservación.")
         }
         .sheet(isPresented: $vm.showInitialGuestDialog) {
             InitialGuestCountDialog(vm: vm)
@@ -227,83 +251,122 @@ struct TableSelectionView: View {
     // MARK: - Header (clean style)
     
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Seleccionar Mesa")
-                    .font(.title2.weight(.bold))
-               
-                    .foregroundColor(.white)
-                Text("Elige una mesa o crea una orden para llevar")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    
-            }
-            
-            Spacer()
-
-            HStack(spacing: 12) {
-                viewModeToggle
-
-                Image(systemName: "person.circle.fill")
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "fork.knife.circle.fill")
                     .font(.system(size: 20))
-                    .foregroundColor(.white.opacity(0.7))
-
-                Text(vm.employeeName ?? "Usuario")
-                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.white.opacity(0.85))
+                Text("Mesas")
+                    .font(.headline.weight(.bold))
                     .foregroundColor(.white)
+            }
 
-                Button(action: {
-                    vm.showReservations = true
-                }) {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 18))
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(8)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(8)
+            viewModeToggle
+            filterMenu
 
-                        if vm.pendingReservationsCount > 0 {
-                            Text("\(vm.pendingReservationsCount)")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Color.purple)
-                                .clipShape(Capsule())
-                                .offset(x: 6, y: -6)
-                        }
-                    }
+            Spacer(minLength: 12)
+
+            let totalOrders = vm.deliveryOrders.count + vm.platformDeliveryOrders.count
+            if totalOrders > 0 {
+                Button {
+                    showDeliveryOrdersSheet = true
+                } label: {
+                    Label("\(totalOrders)", systemImage: "bag.fill")
+                        .font(.caption.weight(.semibold))
                 }
+                .buttonStyle(HeaderPillButtonStyle(tint: .orange))
+            }
 
-                Button(action: {
-                    vm.showSettings = true
-                }) {
-                    Image(systemName: "gearshape.fill")
+            if vm.config.takeoutEnabled || vm.config.deliveryEnabled {
+                nuevaOrdenMenu
+            }
+
+            Rectangle()
+                .fill(Color.white.opacity(0.12))
+                .frame(width: 1, height: 24)
+
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.circle.fill")
                         .font(.system(size: 18))
                         .foregroundColor(.white.opacity(0.7))
-                        .padding(8)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(8)
+                    Text(vm.employeeName ?? "Usuario")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
                 }
-                
-                Button(action: {
+
+                headerIconButton(systemImage: "calendar", tint: .white, badge: vm.pendingReservationsCount) {
+                    vm.showReservations = true
+                }
+
+                headerIconButton(systemImage: "gearshape.fill", tint: .white) {
+                    vm.showSettings = true
+                }
+
+                headerIconButton(systemImage: "rectangle.portrait.and.arrow.right", tint: .red) {
                     vm.clearSession()
-                }) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 18))
-                        .foregroundColor(.red.opacity(0.8))
-                        .padding(8)
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(8)
                 }
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
+        .padding(.vertical, 10)
     }
-    
+
+    // MARK: - Merge mode banner (shown in both Cards and Mapa while combining tables)
+
+    private var mergeModeBanner: some View {
+        let count = vm.selectedForMerge.count
+        return HStack(spacing: 14) {
+            Image(systemName: "link.circle.fill")
+                .font(.system(size: 18))
+                .foregroundColor(.blue)
+            Text(
+                count == 0
+                    ? "Toca las mesas que quieras combinar"
+                    : "\(count) mesa\(count == 1 ? "" : "s") seleccionada\(count == 1 ? "" : "s")"
+            )
+            .font(.subheadline.weight(.medium))
+            .foregroundColor(.white)
+
+            Button("Cancelar") { vm.cancelMergeMode() }
+                .buttonStyle(HeaderPillButtonStyle(tint: .red))
+
+            Button("Unir") { vm.showMergeConfirmation = true }
+                .buttonStyle(HeaderPillButtonStyle(tint: .blue))
+                .disabled(count < 2)
+                .opacity(count < 2 ? 0.4 : 1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .glassEffect(.regular.interactive(), in: Capsule())
+    }
+
+    private func headerIconButton(systemImage: String, tint: Color, badge: Int = 0, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 16))
+                    .foregroundColor(tint == .red ? tint.opacity(0.8) : tint.opacity(0.7))
+                    .padding(8)
+                    .background((tint == .red ? Color.red : Color.white).opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.purple)
+                        .clipShape(Capsule())
+                        .offset(x: 6, y: -6)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Cards / Mapa toggle
 
     private var viewModeToggle: some View {
@@ -320,7 +383,7 @@ struct TableSelectionView: View {
     private func viewModeButton(mode: POSViewModel.TableViewMode, systemImage: String) -> some View {
         let isActive = vm.tableViewMode == mode
         return Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(.snappy) {
                 vm.tableViewMode = mode
             }
         } label: {
@@ -336,42 +399,6 @@ struct TableSelectionView: View {
                 }
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Utility Bar (filter dropdown + nueva orden + delivery badge)
-
-    private var utilityBar: some View {
-        HStack(spacing: 10) {
-            filterMenu
-
-            Spacer()
-
-            let totalOrders = vm.deliveryOrders.count + vm.platformDeliveryOrders.count
-            if totalOrders > 0 {
-                Button {
-                    showDeliveryOrdersSheet = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "bag.fill")
-                        Text("Órdenes (\(totalOrders))")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.orange.opacity(0.8))
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-
-            if vm.config.takeoutEnabled || vm.config.deliveryEnabled {
-                nuevaOrdenMenu
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
     }
 
     private var filterMenu: some View {
@@ -534,7 +561,6 @@ struct DeliveryOrdersSheet: View {
                 }
                 .padding(16)
             }
-            .background(Color(red: 0.04, green: 0.04, blue: 0.05).ignoresSafeArea())
             .navigationTitle("Órdenes activas")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -724,13 +750,17 @@ struct TableCardView: View {
     let table: Table
     let hasReadyItems: Bool
     let currentTime: Date
+    var mergeMode: Bool = false
+    var isSelectedForMerge: Bool = false
     let action: () -> Void
+    var onStartMerge: (() -> Void)?
+    var onUnmerge: (() -> Void)?
     var onRush: (() -> Void)?
     var onHold: (() -> Void)?
-    
+
     var body: some View {
         Button(action: action) {
-            ZStack {
+            ZStack(alignment: .topTrailing) {
                 VStack(spacing: 6) {
                     HStack(spacing: 6) {
                         Text(table.number)
@@ -842,7 +872,14 @@ struct TableCardView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(10)
-                
+
+                if mergeMode {
+                    Image(systemName: isSelectedForMerge ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 22))
+                        .foregroundColor(isSelectedForMerge ? .blue : .white.opacity(0.7))
+                        .background(Circle().fill(Color.black.opacity(0.5)).padding(-3))
+                        .padding(6)
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 115)
@@ -851,7 +888,7 @@ struct TableCardView: View {
                     .fill(table.backgroundColor)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(table.borderColor, lineWidth: hasReadyItems ? 2 : 1)
+                            .stroke(isSelectedForMerge ? Color.blue : table.borderColor, lineWidth: isSelectedForMerge ? 3 : (hasReadyItems ? 2 : 1))
                     )
             )
         }
@@ -867,6 +904,21 @@ struct TableCardView: View {
                     onHold?()
                 } label: {
                     Label(activeOrder.onHold == true ? "Reanudar Orden" : "Pausar Orden", systemImage: "pause.fill")
+                }
+            }
+            if !mergeMode {
+                if table.isMerged {
+                    Button(role: .destructive) {
+                        onUnmerge?()
+                    } label: {
+                        Label("Separar mesas", systemImage: "link.badge.plus")
+                    }
+                } else {
+                    Button {
+                        onStartMerge?()
+                    } label: {
+                        Label("Combinar mesas", systemImage: "link")
+                    }
                 }
             }
         }
@@ -916,6 +968,23 @@ struct TableCardView: View {
         } else {
             return "\(minutes)m"
         }
+    }
+}
+
+// MARK: - Header Pill Button Style
+
+struct HeaderPillButtonStyle: ButtonStyle {
+    var tint: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(tint.opacity(0.8))
+            .clipShape(Capsule())
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 

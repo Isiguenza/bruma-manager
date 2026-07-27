@@ -12,7 +12,7 @@ import {
 } from "../sockets/events";
 import { sendAppleWalletPush } from "../lib/apple-push";
 import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
-import { unmergeByOrderId } from "../lib/tableMerges";
+import { unmergeByOrderId, unmergeByTableId } from "../lib/tableMerges";
 
 const router = Router();
 
@@ -438,6 +438,9 @@ router.delete("/orders/:id", async (req, res) => {
     }
 
     await unmergeByOrderId(id);
+    // Also dissolve any merge on the freed table itself, in case the merge was
+    // created before this order existed (so it isn't linked by orderId).
+    if (deletedOrder.tableId) await unmergeByTableId(deletedOrder.tableId);
 
     emitOrderUpdated({ id, deleted: true });
     res.json({ success: true, message: "Orden eliminada" });
@@ -603,6 +606,7 @@ router.post("/orders/:id/pay", async (req, res) => {
       if (updatedTable) {
         emitTableUpdated(updatedTable);
       }
+      await unmergeByTableId(order.tableId);
     }
     await unmergeByOrderId(id);
 
@@ -788,6 +792,7 @@ router.post("/orders/:id/pay-split", async (req, res) => {
       if (updatedTable) {
         emitTableUpdated(updatedTable);
       }
+      await unmergeByTableId(order.tableId);
     }
     await unmergeByOrderId(id);
 

@@ -680,6 +680,10 @@ export const tableMerges = pgTable("table_merges", {
     .references(() => tables.id, { onDelete: "cascade" }),
   orderId: uuid("order_id").references(() => orders.id, { onDelete: "cascade" }),
   reservationId: uuid("reservation_id").references(() => reservations.id, { onDelete: "cascade" }),
+  // The merged table's grid position before it was slid next to the primary,
+  // so it can be restored when the merge is dissolved.
+  origPositionX: integer("orig_position_x"),
+  origPositionY: integer("orig_position_y"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

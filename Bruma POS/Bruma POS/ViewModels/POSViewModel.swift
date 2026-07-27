@@ -52,6 +52,10 @@ class POSViewModel: ObservableObject {
     @Published var selectedForMerge: Set<String> = []
     @Published var showMergeConfirmation: Bool = false
     @Published var showUnplacedTablesTray: Bool = false
+    @Published var mapFixtures: [MapFixture] = []
+    // Kept in sync by TableMapView from its live GeometryReader size, so grid
+    // math here always matches what's actually rendered on this device.
+    @Published var mapMetrics = MapGridMetrics(columns: 20, rows: 14, cellSize: 50)
 
     var canEditLayout: Bool { employeeRole == "admin" }
 
@@ -636,8 +640,7 @@ class POSViewModel: ObservableObject {
                                 heightCells: table.heightCells,
                                 shape: table.shape,
                                 rotation: table.rotation,
-                                mergedWith: table.mergedWith,
-                                mergeId: table.mergeId,
+                                mergeGroupId: table.mergeGroupId,
                                 isMergePrimary: table.isMergePrimary
                             )
                             self.tables[index] = table
@@ -729,16 +732,43 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Floor-plan map actions
 
-    func saveLayout(_ updates: [TableLayoutUpdate]) async {
-        do {
-            let updated = try await APIService.shared.saveTableLayout(updates)
-            for u in updated {
-                if let idx = tables.firstIndex(where: { $0.id == u.id }) {
-                    tables[idx] = u
+    /// Applies a layout change immediately (optimistic, no network round trip)
+    /// so dragging/resizing never visibly "snaps back" before the server
+    /// confirms, then persists it in the background.
+    func saveLayout(_ updates: [TableLayoutUpdate]) {
+        for u in updates {
+            guard let idx = tables.firstIndex(where: { $0.id == u.id }) else { continue }
+            tables[idx].positionX = u.positionX
+            tables[idx].positionY = u.positionY
+            tables[idx].widthCells = u.widthCells
+            tables[idx].heightCells = u.heightCells
+            tables[idx].rotation = u.rotation
+            tables[idx].shape = u.shape
+        }
+        Task {
+            do {
+                let updated = try await APIService.shared.saveTableLayout(updates)
+                for u in updated {
+                    if let idx = tables.firstIndex(where: { $0.id == u.id }) {
+                        tables[idx] = u
+                    }
                 }
+            } catch {
+                showToast("Error guardando el mapa", isError: true)
             }
-        } catch {
-            showToast("Error guardando el mapa", isError: true)
+        }
+    }
+
+    func updateTableCapacity(_ table: Table, capacity: Int) {
+        guard capacity > 0 else { return }
+        if let idx = tables.firstIndex(where: { $0.id == table.id }) {
+            tables[idx].capacity = capacity
+        }
+        Task {
+            if let updated = try? await APIService.shared.updateTable(tableId: table.id, body: ["capacity": capacity]),
+               let idx = tables.firstIndex(where: { $0.id == updated.id }) {
+                tables[idx] = updated
+            }
         }
     }
 
@@ -754,8 +784,8 @@ class POSViewModel: ObservableObject {
                 }
             }
         }
-        for y in 0..<TableMapGrid.rows {
-            for x in 0..<TableMapGrid.columns {
+        for y in 0..<mapMetrics.rows {
+            for x in 0..<mapMetrics.columns {
                 if !occupied.contains(x * 1000 + y) {
                     return (x, y)
                 }
@@ -775,14 +805,71 @@ class POSViewModel: ObservableObject {
             rotation: table.rotation ?? 0,
             shape: table.shape ?? "square"
         )
-        Task { await saveLayout([update]) }
+        saveLayout([update])
+    }
+
+    // MARK: - Floor-plan map fixtures (walls/bars/furniture)
+
+    func addFixture(type: String) {
+        let cell = firstFreeGridCell()
+        Task {
+            do {
+                let fixture = try await APIService.shared.createMapFixture(
+                    type: type, positionX: cell.x, positionY: cell.y, widthCells: 2, heightCells: 1
+                )
+                mapFixtures.append(fixture)
+            } catch {
+                showToast("Error agregando elemento", isError: true)
+            }
+        }
+    }
+
+    func saveFixtureLayout(_ update: MapFixtureLayoutUpdate) {
+        if let idx = mapFixtures.firstIndex(where: { $0.id == update.id }) {
+            mapFixtures[idx].positionX = update.positionX
+            mapFixtures[idx].positionY = update.positionY
+            mapFixtures[idx].widthCells = update.widthCells
+            mapFixtures[idx].heightCells = update.heightCells
+            mapFixtures[idx].rotation = update.rotation
+        }
+        Task {
+            do {
+                let updated = try await APIService.shared.updateMapFixture(id: update.id, body: [
+                    "positionX": update.positionX,
+                    "positionY": update.positionY,
+                    "widthCells": update.widthCells,
+                    "heightCells": update.heightCells,
+                    "rotation": update.rotation,
+                ])
+                if let idx = mapFixtures.firstIndex(where: { $0.id == updated.id }) {
+                    mapFixtures[idx] = updated
+                }
+            } catch {
+                showToast("Error guardando elemento", isError: true)
+            }
+        }
+    }
+
+    func deleteFixture(_ fixture: MapFixture) {
+        Task {
+            do {
+                try await APIService.shared.deleteMapFixture(id: fixture.id)
+                mapFixtures.removeAll { $0.id == fixture.id }
+            } catch {
+                showToast("Error eliminando elemento", isError: true)
+            }
+        }
     }
 
     // MARK: - Floor-plan map merge
 
-    func startMergeMode() {
+    func startMergeMode(preselecting table: Table? = nil) {
         mergeModeActive = true
-        selectedForMerge = []
+        if let table {
+            selectedForMerge = [table.id]
+        } else {
+            selectedForMerge = []
+        }
     }
 
     func cancelMergeMode() {
@@ -793,97 +880,102 @@ class POSViewModel: ObservableObject {
 
     func toggleMergeSelection(_ table: Table) {
         guard mergeModeActive else { return }
+        // Any number of tables (2+) can be combined into one group.
         if selectedForMerge.contains(table.id) {
             selectedForMerge.remove(table.id)
-        } else if selectedForMerge.count < 2 {
+        } else {
             selectedForMerge.insert(table.id)
-        }
-        if selectedForMerge.count == 2 {
-            showMergeConfirmation = true
         }
     }
 
+    /// Confirms the merge of every currently-selected table into one group.
+    /// The primary is the table that already has an active order, else the
+    /// lowest table number; the rest slide up next to it (left→right).
     func confirmMerge() async {
         defer {
             mergeModeActive = false
             selectedForMerge = []
             showMergeConfirmation = false
         }
-        let ids = Array(selectedForMerge)
-        guard ids.count == 2,
-              let tableA = tables.first(where: { $0.id == ids[0] }),
-              let tableB = tables.first(where: { $0.id == ids[1] }) else { return }
+        let selected = tables.filter { selectedForMerge.contains($0.id) }
+        guard selected.count >= 2 else { return }
 
-        // Primary = whichever table already has an active order, else the lower table number.
-        let primary: Table
-        let secondary: Table
-        if tableA.activeOrder != nil && tableB.activeOrder == nil {
-            primary = tableA; secondary = tableB
-        } else if tableB.activeOrder != nil && tableA.activeOrder == nil {
-            primary = tableB; secondary = tableA
-        } else if (Int(tableA.number) ?? 0) <= (Int(tableB.number) ?? 0) {
-            primary = tableA; secondary = tableB
-        } else {
-            primary = tableB; secondary = tableA
+        let primary = selected.first { $0.activeOrder != nil }
+            ?? selected.min { (Int($0.number) ?? 0) < (Int($1.number) ?? 0) }!
+        let members = selected
+            .filter { $0.id != primary.id }
+            .sorted { (Int($0.number) ?? 0) < (Int($1.number) ?? 0) }
+
+        // Lay the members out in a row starting right after the primary.
+        let baseY = primary.positionY ?? 0
+        var nextX = (primary.positionX ?? 0) + primary.footprintCells.w
+        var memberPayloads: [[String: Any]] = []
+        var slides: [TableLayoutUpdate] = []
+        for member in members {
+            let newX = min(mapMetrics.columns - member.effectiveWidthCells, nextX)
+            memberPayloads.append([
+                "id": member.id,
+                "origPositionX": member.positionX as Any,
+                "origPositionY": member.positionY as Any,
+                "newPositionX": newX,
+                "newPositionY": baseY,
+            ])
+            slides.append(TableLayoutUpdate(
+                id: member.id,
+                positionX: newX,
+                positionY: baseY,
+                widthCells: member.effectiveWidthCells,
+                heightCells: member.effectiveHeightCells,
+                rotation: member.rotation ?? 0,
+                shape: member.shape ?? "square"
+            ))
+            nextX = newX + member.footprintCells.w
         }
 
         do {
-            let merge = try await APIService.shared.mergeTables(
+            try await APIService.shared.mergeTables(
                 primaryTableId: primary.id,
-                mergedTableId: secondary.id,
-                orderId: primary.activeOrder?.id,
-                reservationId: nil
+                members: memberPayloads,
+                orderId: primary.activeOrder?.id
             )
-            if let idx = tables.firstIndex(where: { $0.id == primary.id }) {
-                tables[idx].mergedWith = secondary.id
-                tables[idx].mergeId = merge.id
-                tables[idx].isMergePrimary = true
-            }
-            if let idx = tables.firstIndex(where: { $0.id == secondary.id }) {
-                tables[idx].mergedWith = primary.id
-                tables[idx].mergeId = merge.id
-                tables[idx].isMergePrimary = false
-            }
-
-            // Slide the secondary table next to the primary for a smooth "joining" animation.
-            if let px = primary.positionX, let py = primary.positionY {
-                let (pw, _) = primary.footprintCells
-                let newX = min(TableMapGrid.columns - secondary.effectiveWidthCells, px + pw)
-                let update = TableLayoutUpdate(
-                    id: secondary.id,
-                    positionX: newX,
-                    positionY: py,
-                    widthCells: secondary.effectiveWidthCells,
-                    heightCells: secondary.effectiveHeightCells,
-                    rotation: secondary.rotation ?? 0,
-                    shape: secondary.shape ?? "square"
-                )
-                await saveLayout([update])
-            }
-
-            showToast("Mesas \(primary.number) y \(secondary.number) unidas")
+            // Optimistic local merge state.
+            applyMergeGroup(primaryId: primary.id, memberIds: members.map { $0.id })
+            if !slides.isEmpty { saveLayout(slides) }
+            let numbers = ([primary] + members).map { $0.number }.joined(separator: "-")
+            showToast("Mesas \(numbers) unidas")
         } catch {
             showToast("Error al unir mesas", isError: true)
         }
     }
 
     func unmergeTable(_ table: Table) async {
-        guard let partnerId = table.mergedWith else { return }
+        guard let groupId = table.mergeGroupId else { return }
+        // Snapshot the group before the server call so we can clear it locally.
+        let memberIds = tables.filter { $0.mergeGroupId == groupId }.map { $0.id }
         do {
             try await APIService.shared.unmergeTable(tableId: table.id)
-            if let idx = tables.firstIndex(where: { $0.id == table.id }) {
-                tables[idx].mergedWith = nil
-                tables[idx].mergeId = nil
-                tables[idx].isMergePrimary = nil
-            }
-            if let idx = tables.firstIndex(where: { $0.id == partnerId }) {
-                tables[idx].mergedWith = nil
-                tables[idx].mergeId = nil
-                tables[idx].isMergePrimary = nil
+            for id in memberIds {
+                if let idx = tables.firstIndex(where: { $0.id == id }) {
+                    tables[idx].mergeGroupId = nil
+                    tables[idx].isMergePrimary = nil
+                }
             }
             showToast("Mesas separadas")
         } catch {
             showToast("Error al separar mesas", isError: true)
+        }
+    }
+
+    private func applyMergeGroup(primaryId: String, memberIds: [String]) {
+        if let idx = tables.firstIndex(where: { $0.id == primaryId }) {
+            tables[idx].mergeGroupId = primaryId
+            tables[idx].isMergePrimary = true
+        }
+        for id in memberIds {
+            if let idx = tables.firstIndex(where: { $0.id == id }) {
+                tables[idx].mergeGroupId = primaryId
+                tables[idx].isMergePrimary = false
+            }
         }
     }
 
@@ -911,8 +1003,7 @@ class POSViewModel: ObservableObject {
                 heightCells: dict["heightCells"] as? Int ?? table.heightCells,
                 shape: dict["shape"] as? String ?? table.shape,
                 rotation: dict["rotation"] as? Int ?? table.rotation,
-                mergedWith: table.mergedWith,
-                mergeId: table.mergeId,
+                mergeGroupId: table.mergeGroupId,
                 isMergePrimary: table.isMergePrimary
             )
         }
@@ -920,34 +1011,21 @@ class POSViewModel: ObservableObject {
 
     @MainActor
     private func applyMergedFromSocket(_ dict: [String: Any]) {
-        guard let mergeId = dict["id"] as? String,
-              let primaryId = dict["primaryTableId"] as? String,
-              let mergedId = dict["mergedTableId"] as? String else { return }
-        if let idx = tables.firstIndex(where: { $0.id == primaryId }) {
-            tables[idx].mergedWith = mergedId
-            tables[idx].mergeId = mergeId
-            tables[idx].isMergePrimary = true
-        }
-        if let idx = tables.firstIndex(where: { $0.id == mergedId }) {
-            tables[idx].mergedWith = primaryId
-            tables[idx].mergeId = mergeId
-            tables[idx].isMergePrimary = false
-        }
+        guard let primaryId = dict["primaryTableId"] as? String,
+              let mergedIds = dict["mergedTableIds"] as? [String] else { return }
+        applyMergeGroup(primaryId: primaryId, memberIds: mergedIds)
     }
 
     @MainActor
     private func applyUnmergedFromSocket(_ dict: [String: Any]) {
+        // Server sends one table:unmerged per dissolved pair; clear both sides.
         guard let primaryId = dict["primaryTableId"] as? String,
               let mergedId = dict["mergedTableId"] as? String else { return }
-        if let idx = tables.firstIndex(where: { $0.id == primaryId }) {
-            tables[idx].mergedWith = nil
-            tables[idx].mergeId = nil
-            tables[idx].isMergePrimary = nil
-        }
-        if let idx = tables.firstIndex(where: { $0.id == mergedId }) {
-            tables[idx].mergedWith = nil
-            tables[idx].mergeId = nil
-            tables[idx].isMergePrimary = nil
+        for id in [primaryId, mergedId] {
+            if let idx = tables.firstIndex(where: { $0.id == id }) {
+                tables[idx].mergeGroupId = nil
+                tables[idx].isMergePrimary = nil
+            }
         }
     }
 
@@ -992,8 +1070,7 @@ class POSViewModel: ObservableObject {
             heightCells: table.heightCells,
             shape: table.shape,
             rotation: table.rotation,
-            mergedWith: table.mergedWith,
-            mergeId: table.mergeId,
+            mergeGroupId: table.mergeGroupId,
             isMergePrimary: table.isMergePrimary
         )
         tables[index] = table
@@ -1254,6 +1331,12 @@ class POSViewModel: ObservableObject {
             print("[POS] Error fetching tables")
         }
 
+        if let fixtures = try? await APIService.shared.fetchMapFixtures() {
+            mapFixtures = fixtures
+        } else {
+            print("[POS] Error fetching map fixtures")
+        }
+
         // Load initial pending count once on startup; updates come via socket after that
         if pendingReservationsCount == 0 {
             await fetchPendingReservationsCount()
@@ -1384,12 +1467,12 @@ class POSViewModel: ObservableObject {
     func handleSelectTable(_ tappedTable: Table) {
         lastActivity = Date()
 
-        // If the secondary half of an active merge was tapped, operate on the
-        // primary table instead so both halves funnel into the same order.
+        // If a merged member (non-primary) was tapped, operate on the group's
+        // primary table instead so the whole group funnels into one order.
         var table = tappedTable
-        if let partnerId = table.mergedWith, table.isMergePrimary != true,
-           let partner = tables.first(where: { $0.id == partnerId }) {
-            table = partner
+        if let groupId = table.mergeGroupId, table.isMergePrimary != true,
+           let primary = tables.first(where: { $0.id == groupId }) {
+            table = primary
         }
 
         print("🏠 handleTableSelect: table=\(table.id) (\(table.number)), status=\(table.status)")

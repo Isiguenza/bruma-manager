@@ -5,31 +5,34 @@ struct Table: Codable, Identifiable {
     let id: String
     let number: String
     let name: String?
-    let capacity: Int
+    var capacity: Int
     let status: String // "available", "occupied", "reserved"
     let active: Bool
     let activeOrder: ActiveOrder?
     let guestCount: Int?
     let nextReservation: NextReservation?
 
-    // Floor-plan map (grid column/row index; nil = not yet placed)
-    let positionX: Int?
-    let positionY: Int?
-    let widthCells: Int?
-    let heightCells: Int?
-    let shape: String? // "square" | "round"
-    let rotation: Int? // 0/90/180/270
+    // Floor-plan map (grid column/row index; nil = not yet placed) — `var` so
+    // the map view can apply optimistic local updates while a drag/resize is
+    // still in flight to the server, instead of waiting on a round trip.
+    var positionX: Int?
+    var positionY: Int?
+    var widthCells: Int?
+    var heightCells: Int?
+    var shape: String? // "square" | "round"
+    var rotation: Int? // 0/90/180/270
 
-    // Temporary table merge (populated from GET /tables, kept in sync via socket deltas)
-    var mergedWith: String?
-    var mergeId: String?
+    // Temporary table merge (populated from GET /tables, kept in sync via socket
+    // deltas). A "group" of N merged tables all share the same mergeGroupId (the
+    // group's primary table id); one of them has isMergePrimary == true.
+    var mergeGroupId: String?
     var isMergePrimary: Bool?
 
     var isAvailable: Bool { status == "available" }
     var isOccupied: Bool { status == "occupied" }
     var isReserved: Bool { status == "reserved" }
     var isPlaced: Bool { positionX != nil && positionY != nil }
-    var isMerged: Bool { mergedWith != nil }
+    var isMerged: Bool { mergeGroupId != nil }
     var effectiveWidthCells: Int { widthCells ?? 1 }
     var effectiveHeightCells: Int { heightCells ?? 1 }
     // Effective footprint after 90°/270° rotation swap
@@ -51,14 +54,6 @@ struct TableLayoutUpdate: Codable {
     var heightCells: Int
     var rotation: Int
     var shape: String
-}
-
-struct TableMerge: Codable, Identifiable {
-    let id: String
-    let primaryTableId: String
-    let mergedTableId: String
-    let orderId: String?
-    let reservationId: String?
 }
 
 struct NextReservation: Codable {

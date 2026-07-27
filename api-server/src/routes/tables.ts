@@ -6,22 +6,25 @@ import { findActiveMergeForTable, unmergeByTableId } from "../lib/tableMerges";
 
 const router = Router();
 
+// A merge "group" is identified by its primaryTableId; N tables merged = one
+// primary plus (N-1) rows all pointing at it.
+type MergeInfo = { groupId: string; isPrimary: boolean };
+
 async function buildMergeMap() {
   const merges = await db.select().from(schema.tableMerges);
-  const map = new Map<string, { mergeId: string; partnerId: string; isPrimary: boolean }>();
+  const map = new Map<string, MergeInfo>();
   for (const m of merges) {
-    map.set(m.primaryTableId, { mergeId: m.id, partnerId: m.mergedTableId, isPrimary: true });
-    map.set(m.mergedTableId, { mergeId: m.id, partnerId: m.primaryTableId, isPrimary: false });
+    map.set(m.primaryTableId, { groupId: m.primaryTableId, isPrimary: true });
+    map.set(m.mergedTableId, { groupId: m.primaryTableId, isPrimary: false });
   }
   return map;
 }
 
-function withMergeInfo(table: any, mergeMap: Map<string, { mergeId: string; partnerId: string; isPrimary: boolean }>) {
+function withMergeInfo(table: any, mergeMap: Map<string, MergeInfo>) {
   const info = mergeMap.get(table.id);
   return {
     ...table,
-    mergedWith: info?.partnerId ?? null,
-    mergeId: info?.mergeId ?? null,
+    mergeGroupId: info?.groupId ?? null,
     isMergePrimary: info ? info.isPrimary : null,
   };
 }
@@ -223,43 +226,66 @@ router.patch("/tables/layout", async (req, res) => {
   }
 });
 
-// POST /api/tables/merge — temporarily join 2 tables (e.g. for a large reservation)
+// POST /api/tables/merge — temporarily join 2+ tables (e.g. for a large party).
+// Body: { primaryTableId, members: [{ id, origPositionX, origPositionY,
+//         newPositionX, newPositionY }], orderId?, reservationId? }
 router.post("/tables/merge", async (req, res) => {
   try {
-    const { primaryTableId, mergedTableId, orderId, reservationId } = req.body;
+    const { primaryTableId, members, orderId, reservationId } = req.body as {
+      primaryTableId: string;
+      members: { id: string; origPositionX?: number; origPositionY?: number; newPositionX?: number; newPositionY?: number }[];
+      orderId?: string;
+      reservationId?: string;
+    };
 
-    if (!primaryTableId || !mergedTableId) {
-      return res.status(400).json({ error: "primaryTableId y mergedTableId son requeridos" });
+    if (!primaryTableId || !Array.isArray(members) || members.length === 0) {
+      return res.status(400).json({ error: "primaryTableId y members son requeridos" });
     }
-    if (primaryTableId === mergedTableId) {
+    if (members.some((m) => m.id === primaryTableId)) {
       return res.status(400).json({ error: "No se puede unir una mesa consigo misma" });
     }
 
-    const existingPrimary = await findActiveMergeForTable(primaryTableId);
-    const existingSecondary = await findActiveMergeForTable(mergedTableId);
-    if (existingPrimary || existingSecondary) {
-      return res.status(409).json({ error: "Una de las mesas ya está unida a otra" });
+    // Reject if the primary or any member is already part of a merge.
+    const allIds = [primaryTableId, ...members.map((m) => m.id)];
+    for (const tid of allIds) {
+      if (await findActiveMergeForTable(tid)) {
+        return res.status(409).json({ error: "Una de las mesas ya está unida a otra" });
+      }
     }
 
-    const [merge] = await db
-      .insert(schema.tableMerges)
-      .values({
+    const movedTables: any[] = [];
+    for (const m of members) {
+      await db.insert(schema.tableMerges).values({
         primaryTableId,
-        mergedTableId,
+        mergedTableId: m.id,
         orderId: orderId || null,
         reservationId: reservationId || null,
-      })
-      .returning();
+        origPositionX: m.origPositionX ?? null,
+        origPositionY: m.origPositionY ?? null,
+      });
+      // Slide the member next to the primary (if the client provided a target).
+      if (m.newPositionX !== undefined && m.newPositionY !== undefined) {
+        const [t] = await db
+          .update(schema.tables)
+          .set({ positionX: m.newPositionX, positionY: m.newPositionY, updatedAt: new Date() })
+          .where(eq(schema.tables.id, m.id))
+          .returning();
+        if (t) movedTables.push(t);
+      }
+    }
 
-    emitTableMerged(merge);
-    res.status(201).json(merge);
+    const payload = { primaryTableId, mergedTableIds: members.map((m) => m.id) };
+    emitTableMerged(payload);
+    if (movedTables.length > 0) emitTableLayoutUpdated(movedTables);
+    res.status(201).json(payload);
   } catch (error) {
     console.error("Error merging tables:", error);
     res.status(500).json({ error: "Error al unir mesas" });
   }
 });
 
-// DELETE /api/tables/:id/merge — unmerge whichever active merge involves table :id
+// DELETE /api/tables/:id/merge — dissolve the whole merge group that table :id
+// belongs to (restoring every member to its original grid position).
 router.delete("/tables/:id/merge", async (req, res) => {
   try {
     const { id } = req.params;

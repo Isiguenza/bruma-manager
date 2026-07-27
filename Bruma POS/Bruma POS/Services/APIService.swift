@@ -175,16 +175,49 @@ class APIService {
         return response.tables
     }
 
-    func mergeTables(primaryTableId: String, mergedTableId: String, orderId: String? = nil, reservationId: String? = nil) async throws -> TableMerge {
+    func mergeTables(primaryTableId: String, members: [[String: Any]], orderId: String? = nil, reservationId: String? = nil) async throws {
         let url = URL(string: "\(baseURL)/api/tables/merge")!
-        var body: [String: Any] = ["primaryTableId": primaryTableId, "mergedTableId": mergedTableId]
+        var body: [String: Any] = ["primaryTableId": primaryTableId, "members": members]
         if let orderId { body["orderId"] = orderId }
         if let reservationId { body["reservationId"] = reservationId }
-        return try await request(url, method: "POST", body: body)
+        let (_, http) = try await requestRaw(url, method: "POST", body: body)
+        guard (200...299).contains(http.statusCode) else {
+            if http.statusCode == 409 { throw APIError.badRequest("Una de las mesas ya está unida a otra") }
+            throw APIError.serverError
+        }
     }
 
     func unmergeTable(tableId: String) async throws {
         let url = URL(string: "\(baseURL)/api/tables/\(tableId)/merge")!
+        let (_, http) = try await requestRaw(url, method: "DELETE")
+        guard (200...299).contains(http.statusCode) else {
+            throw APIError.serverError
+        }
+    }
+
+    // MARK: - Map Fixtures (walls/bars/furniture decoration on the floor-plan map)
+
+    func fetchMapFixtures() async throws -> [MapFixture] {
+        let url = URL(string: "\(baseURL)/api/map-fixtures")!
+        return try await request(url)
+    }
+
+    func createMapFixture(type: String, positionX: Int, positionY: Int, widthCells: Int, heightCells: Int) async throws -> MapFixture {
+        let url = URL(string: "\(baseURL)/api/map-fixtures")!
+        let body: [String: Any] = [
+            "type": type, "positionX": positionX, "positionY": positionY,
+            "widthCells": widthCells, "heightCells": heightCells,
+        ]
+        return try await request(url, method: "POST", body: body)
+    }
+
+    func updateMapFixture(id: String, body: [String: Any]) async throws -> MapFixture {
+        let url = URL(string: "\(baseURL)/api/map-fixtures/\(id)")!
+        return try await request(url, method: "PATCH", body: body)
+    }
+
+    func deleteMapFixture(id: String) async throws {
+        let url = URL(string: "\(baseURL)/api/map-fixtures/\(id)")!
         let (_, http) = try await requestRaw(url, method: "DELETE")
         guard (200...299).contains(http.statusCode) else {
             throw APIError.serverError
