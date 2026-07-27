@@ -14,6 +14,9 @@ class SocketService: ObservableObject {
     var onOrderUpdated: (([String: Any]) -> Void)?
     var onOrderPaid: ((String) -> Void)?
     var onTableUpdated: ((String) -> Void)?
+    var onTableLayoutUpdated: (([[String: Any]]) -> Void)?
+    var onTableMerged: (([String: Any]) -> Void)?
+    var onTableUnmerged: (([String: Any]) -> Void)?
     var onOrderRush: (([String: Any]) -> Void)?
     var onOrderHold: (([String: Any]) -> Void)?
     var onCashRegisterOpened: (() -> Void)?
@@ -112,7 +115,34 @@ class SocketService: ObservableObject {
             print("🪑 Table updated: \(tableId)")
             self?.onTableUpdated?(tableId)
         }
-        
+
+        socket?.on("table:layout:updated") { [weak self] data, ack in
+            guard let arr = data.first as? [[String: Any]] else {
+                print("⚠️ table:layout:updated received but no array found")
+                return
+            }
+            print("🗺️ Table layout updated: \(arr.count) tables")
+            self?.onTableLayoutUpdated?(arr)
+        }
+
+        socket?.on("table:merged") { [weak self] data, ack in
+            guard let dict = data.first as? [String: Any] else {
+                print("⚠️ table:merged received but no data found")
+                return
+            }
+            print("🔗 Tables merged: \(dict["id"] ?? "?")")
+            self?.onTableMerged?(dict)
+        }
+
+        socket?.on("table:unmerged") { [weak self] data, ack in
+            guard let dict = data.first as? [String: Any] else {
+                print("⚠️ table:unmerged received but no data found")
+                return
+            }
+            print("🔓 Tables unmerged: \(dict["id"] ?? "?")")
+            self?.onTableUnmerged?(dict)
+        }
+
         socket?.on("cash_register:opened") { [weak self] data, ack in
             print("💵 Cash register opened")
             self?.onCashRegisterOpened?()

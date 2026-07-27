@@ -1,9 +1,30 @@
 import { Router } from "express";
 import { db, schema } from "../db";
 import { eq, and, or, isNull, desc, sql } from "drizzle-orm";
-import { emitTableUpdated } from "../sockets/events";
+import { emitTableUpdated, emitTableLayoutUpdated, emitTableMerged, emitTableUnmerged } from "../sockets/events";
+import { findActiveMergeForTable, unmergeByTableId } from "../lib/tableMerges";
 
 const router = Router();
+
+async function buildMergeMap() {
+  const merges = await db.select().from(schema.tableMerges);
+  const map = new Map<string, { mergeId: string; partnerId: string; isPrimary: boolean }>();
+  for (const m of merges) {
+    map.set(m.primaryTableId, { mergeId: m.id, partnerId: m.mergedTableId, isPrimary: true });
+    map.set(m.mergedTableId, { mergeId: m.id, partnerId: m.primaryTableId, isPrimary: false });
+  }
+  return map;
+}
+
+function withMergeInfo(table: any, mergeMap: Map<string, { mergeId: string; partnerId: string; isPrimary: boolean }>) {
+  const info = mergeMap.get(table.id);
+  return {
+    ...table,
+    mergedWith: info?.partnerId ?? null,
+    mergeId: info?.mergeId ?? null,
+    isMergePrimary: info ? info.isPrimary : null,
+  };
+}
 
 // GET /api/tables
 router.get("/tables", async (req, res) => {
@@ -31,25 +52,30 @@ router.get("/tables", async (req, res) => {
       }
     }
 
+    const mergeMap = await buildMergeMap();
+
     // Merge
     const enriched = tables.map((table) => {
       const order = orderByTable.get(table.id);
-      return {
-        ...table,
-        activeOrder: order
-          ? {
-              id: order.id,
-              orderNumber: order.orderNumber,
-              status: order.status,
-              total: order.total,
-              itemCount: 0,
-              items: [],
-              createdAt: order.createdAt,
-              priority: order.priority,
-              onHold: order.onHold,
-            }
-          : null,
-      };
+      return withMergeInfo(
+        {
+          ...table,
+          activeOrder: order
+            ? {
+                id: order.id,
+                orderNumber: order.orderNumber,
+                status: order.status,
+                total: order.total,
+                itemCount: 0,
+                items: [],
+                createdAt: order.createdAt,
+                priority: order.priority,
+                onHold: order.onHold,
+              }
+            : null,
+        },
+        mergeMap
+      );
     });
 
     res.json(enriched);
@@ -91,22 +117,27 @@ router.get("/tables/:id", async (req, res) => {
     } catch (err) {
       console.error(`📋 Error fetching activeOrder:`, err);
     }
-    const enrichedTable = {
-      ...table,
-      activeOrder: activeOrder
-        ? {
-            id: activeOrder.id,
-            orderNumber: activeOrder.orderNumber,
-            status: activeOrder.status,
-            total: activeOrder.total,
-            itemCount: activeOrder.items?.length || 0,
-            items: activeOrder.items,
-            createdAt: activeOrder.createdAt,
-            priority: activeOrder.priority,
-            onHold: activeOrder.onHold,
-          }
-        : null,
-    };
+
+    const mergeMap = await buildMergeMap();
+    const enrichedTable = withMergeInfo(
+      {
+        ...table,
+        activeOrder: activeOrder
+          ? {
+              id: activeOrder.id,
+              orderNumber: activeOrder.orderNumber,
+              status: activeOrder.status,
+              total: activeOrder.total,
+              itemCount: activeOrder.items?.length || 0,
+              items: activeOrder.items,
+              createdAt: activeOrder.createdAt,
+              priority: activeOrder.priority,
+              onHold: activeOrder.onHold,
+            }
+          : null,
+      },
+      mergeMap
+    );
 
     res.json(enrichedTable);
   } catch (error) {
@@ -118,7 +149,7 @@ router.get("/tables/:id", async (req, res) => {
 // POST /api/tables
 router.post("/tables", async (req, res) => {
   try {
-    const { number, capacity, section } = req.body;
+    const { number, name, capacity, guestCount, shape, widthCells, heightCells } = req.body;
 
     if (!number) {
       return res.status(400).json({ error: "number es requerido" });
@@ -128,8 +159,12 @@ router.post("/tables", async (req, res) => {
       .insert(schema.tables)
       .values({
         number,
+        name: name || null,
         capacity: capacity || 4,
-        section: section || null,
+        guestCount: guestCount || 1,
+        shape: shape || "square",
+        widthCells: widthCells || 1,
+        heightCells: heightCells || 1,
         status: "available",
       })
       .returning();
@@ -142,17 +177,134 @@ router.post("/tables", async (req, res) => {
   }
 });
 
+// PATCH /api/tables/layout — bulk save of floor-plan positions/sizes/shape/rotation
+// Must be declared before PATCH /tables/:id so Express doesn't treat "layout" as an :id.
+router.patch("/tables/layout", async (req, res) => {
+  try {
+    const { tables: updates } = req.body as {
+      tables: {
+        id: string;
+        positionX: number;
+        positionY: number;
+        widthCells: number;
+        heightCells: number;
+        rotation: number;
+        shape: string;
+      }[];
+    };
+
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ error: "tables array requerido" });
+    }
+
+    const updatedTables = [];
+    for (const t of updates) {
+      const [updated] = await db
+        .update(schema.tables)
+        .set({
+          positionX: t.positionX,
+          positionY: t.positionY,
+          widthCells: t.widthCells,
+          heightCells: t.heightCells,
+          rotation: t.rotation,
+          shape: t.shape as any,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.tables.id, t.id))
+        .returning();
+      if (updated) updatedTables.push(updated);
+    }
+
+    emitTableLayoutUpdated(updatedTables);
+    res.json({ tables: updatedTables });
+  } catch (error) {
+    console.error("Error updating table layout:", error);
+    res.status(500).json({ error: "Error al actualizar el mapa de mesas" });
+  }
+});
+
+// POST /api/tables/merge — temporarily join 2 tables (e.g. for a large reservation)
+router.post("/tables/merge", async (req, res) => {
+  try {
+    const { primaryTableId, mergedTableId, orderId, reservationId } = req.body;
+
+    if (!primaryTableId || !mergedTableId) {
+      return res.status(400).json({ error: "primaryTableId y mergedTableId son requeridos" });
+    }
+    if (primaryTableId === mergedTableId) {
+      return res.status(400).json({ error: "No se puede unir una mesa consigo misma" });
+    }
+
+    const existingPrimary = await findActiveMergeForTable(primaryTableId);
+    const existingSecondary = await findActiveMergeForTable(mergedTableId);
+    if (existingPrimary || existingSecondary) {
+      return res.status(409).json({ error: "Una de las mesas ya está unida a otra" });
+    }
+
+    const [merge] = await db
+      .insert(schema.tableMerges)
+      .values({
+        primaryTableId,
+        mergedTableId,
+        orderId: orderId || null,
+        reservationId: reservationId || null,
+      })
+      .returning();
+
+    emitTableMerged(merge);
+    res.status(201).json(merge);
+  } catch (error) {
+    console.error("Error merging tables:", error);
+    res.status(500).json({ error: "Error al unir mesas" });
+  }
+});
+
+// DELETE /api/tables/:id/merge — unmerge whichever active merge involves table :id
+router.delete("/tables/:id/merge", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const activeMerge = await findActiveMergeForTable(id);
+    if (!activeMerge) {
+      return res.status(404).json({ error: "No hay una unión activa para esta mesa" });
+    }
+    await unmergeByTableId(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error unmerging tables:", error);
+    res.status(500).json({ error: "Error al separar mesas" });
+  }
+});
+
 // PATCH /api/tables/:id
 router.patch("/tables/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { number, capacity, section, status } = req.body;
+    const {
+      number,
+      name,
+      capacity,
+      guestCount,
+      status,
+      positionX,
+      positionY,
+      widthCells,
+      heightCells,
+      shape,
+      rotation,
+    } = req.body;
 
     const updates: any = {};
     if (number !== undefined) updates.number = number;
+    if (name !== undefined) updates.name = name;
     if (capacity !== undefined) updates.capacity = capacity;
-    if (section !== undefined) updates.section = section;
+    if (guestCount !== undefined) updates.guestCount = guestCount;
     if (status !== undefined) updates.status = status;
+    if (positionX !== undefined) updates.positionX = positionX;
+    if (positionY !== undefined) updates.positionY = positionY;
+    if (widthCells !== undefined) updates.widthCells = widthCells;
+    if (heightCells !== undefined) updates.heightCells = heightCells;
+    if (shape !== undefined) updates.shape = shape;
+    if (rotation !== undefined) updates.rotation = rotation;
 
     // Si no hay nada que actualizar, retornar la mesa actual
     if (Object.keys(updates).length === 0) {
@@ -161,7 +313,7 @@ router.patch("/tables/:id", async (req, res) => {
         .from(schema.tables)
         .where(eq(schema.tables.id, id))
         .limit(1);
-      
+
       if (!currentTable) {
         return res.status(404).json({ error: "Mesa no encontrada" });
       }

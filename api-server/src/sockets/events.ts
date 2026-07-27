@@ -70,6 +70,30 @@ export function emitTableUpdated(table: any) {
   console.log(`📡 Emitted table:updated - ${table.id}`);
 }
 
+export function emitTableLayoutUpdated(tables: any[]) {
+  if (!io) return;
+  io.to("room:pos").emit("table:layout:updated", tables);
+  io.to("room:waitress").emit("table:layout:updated", tables);
+  io.to("room:tables").emit("table:layout:updated", tables);
+  console.log(`📡 Emitted table:layout:updated - ${tables.length} tables`);
+}
+
+export function emitTableMerged(merge: any) {
+  if (!io) return;
+  io.to("room:pos").emit("table:merged", merge);
+  io.to("room:waitress").emit("table:merged", merge);
+  io.to("room:tables").emit("table:merged", merge);
+  console.log(`📡 Emitted table:merged - ${merge.id}`);
+}
+
+export function emitTableUnmerged(payload: { id: string; primaryTableId: string; mergedTableId: string }) {
+  if (!io) return;
+  io.to("room:pos").emit("table:unmerged", payload);
+  io.to("room:waitress").emit("table:unmerged", payload);
+  io.to("room:tables").emit("table:unmerged", payload);
+  console.log(`📡 Emitted table:unmerged - ${payload.id}`);
+}
+
 export function emitCashRegisterOpened(register: any) {
   if (!io) return;
   io.to("room:pos").emit("cash_register:opened", register);

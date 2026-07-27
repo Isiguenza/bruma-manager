@@ -12,6 +12,7 @@ import {
 } from "../sockets/events";
 import { sendAppleWalletPush } from "../lib/apple-push";
 import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
+import { unmergeByOrderId } from "../lib/tableMerges";
 
 const router = Router();
 
@@ -436,6 +437,8 @@ router.delete("/orders/:id", async (req, res) => {
       return res.status(404).json({ error: "Orden no encontrada" });
     }
 
+    await unmergeByOrderId(id);
+
     emitOrderUpdated({ id, deleted: true });
     res.json({ success: true, message: "Orden eliminada" });
   } catch (error) {
@@ -601,6 +604,7 @@ router.post("/orders/:id/pay", async (req, res) => {
         emitTableUpdated(updatedTable);
       }
     }
+    await unmergeByOrderId(id);
 
     // Handle loyalty stamps
     if (loyaltyCardId && loyaltyStamps > 0) {
@@ -785,6 +789,7 @@ router.post("/orders/:id/pay-split", async (req, res) => {
         emitTableUpdated(updatedTable);
       }
     }
+    await unmergeByOrderId(id);
 
     emitOrderPaid(completeOrder);
     res.json(completeOrder);

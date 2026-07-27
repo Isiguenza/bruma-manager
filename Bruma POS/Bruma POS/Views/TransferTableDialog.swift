@@ -68,7 +68,7 @@ struct TransferTableDialog: View {
     
     var availableTables: [Table] {
         vm.tables
-            .filter { $0.id != vm.selectedTable?.id }
+            .filter { $0.id != vm.selectedTable?.id && !$0.isMerged }
             .sorted { (Int($0.number) ?? 0) < (Int($1.number) ?? 0) }
     }
     

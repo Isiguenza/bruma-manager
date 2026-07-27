@@ -371,8 +371,12 @@ export const tables = pgTable("tables", {
   capacity: integer("capacity").notNull().default(4),
   guestCount: integer("guest_count").notNull().default(1),
   status: tableStatusEnum("status").notNull().default("available"),
+  // Grid column/row index in Bruma POS's floor-plan map editor. NULL = not yet placed.
   positionX: integer("position_x"),
   positionY: integer("position_y"),
+  // Footprint in grid cells, pre-rotation.
+  widthCells: integer("width_cells").notNull().default(1),
+  heightCells: integer("height_cells").notNull().default(1),
   shape: tableShapeEnum("shape").default("square"),
   rotation: integer("rotation").default(0),
   active: boolean("active").notNull().default(true),
@@ -661,6 +665,43 @@ export const reservationsRelations = relations(reservations, ({ one }) => ({
 
 export const tablesRelationsWithReservations = relations(tables, ({ many }) => ({
   reservations: many(reservations),
+}));
+
+// Temporary table merges (e.g. joining 2 tables for a large reservation).
+// A row's existence means the merge is active; it is deleted once the
+// associated order is paid/deleted or the reservation is cancelled/no-show.
+export const tableMerges = pgTable("table_merges", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  primaryTableId: uuid("primary_table_id")
+    .notNull()
+    .references(() => tables.id, { onDelete: "cascade" }),
+  mergedTableId: uuid("merged_table_id")
+    .notNull()
+    .references(() => tables.id, { onDelete: "cascade" }),
+  orderId: uuid("order_id").references(() => orders.id, { onDelete: "cascade" }),
+  reservationId: uuid("reservation_id").references(() => reservations.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const tableMergesRelations = relations(tableMerges, ({ one }) => ({
+  primaryTable: one(tables, {
+    fields: [tableMerges.primaryTableId],
+    references: [tables.id],
+    relationName: "primaryTableMerges",
+  }),
+  mergedTable: one(tables, {
+    fields: [tableMerges.mergedTableId],
+    references: [tables.id],
+    relationName: "mergedTableMerges",
+  }),
+  order: one(orders, {
+    fields: [tableMerges.orderId],
+    references: [orders.id],
+  }),
+  reservation: one(reservations, {
+    fields: [tableMerges.reservationId],
+    references: [reservations.id],
+  }),
 }));
 
 export const loyaltyTransactionsRelations = relations(loyaltyTransactions, ({ one }) => ({

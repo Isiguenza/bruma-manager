@@ -153,7 +153,44 @@ class APIService {
         let url = URL(string: "\(baseURL)/api/tables/\(tableId)")!
         let _: Table = try await request(url, method: "PATCH", body: ["status": status])
     }
-    
+
+    struct TableLayoutResponse: Decodable { let tables: [Table] }
+
+    func saveTableLayout(_ updates: [TableLayoutUpdate]) async throws -> [Table] {
+        let url = URL(string: "\(baseURL)/api/tables/layout")!
+        let body: [String: Any] = [
+            "tables": updates.map { u in
+                [
+                    "id": u.id,
+                    "positionX": u.positionX,
+                    "positionY": u.positionY,
+                    "widthCells": u.widthCells,
+                    "heightCells": u.heightCells,
+                    "rotation": u.rotation,
+                    "shape": u.shape,
+                ] as [String: Any]
+            }
+        ]
+        let response: TableLayoutResponse = try await request(url, method: "PATCH", body: body)
+        return response.tables
+    }
+
+    func mergeTables(primaryTableId: String, mergedTableId: String, orderId: String? = nil, reservationId: String? = nil) async throws -> TableMerge {
+        let url = URL(string: "\(baseURL)/api/tables/merge")!
+        var body: [String: Any] = ["primaryTableId": primaryTableId, "mergedTableId": mergedTableId]
+        if let orderId { body["orderId"] = orderId }
+        if let reservationId { body["reservationId"] = reservationId }
+        return try await request(url, method: "POST", body: body)
+    }
+
+    func unmergeTable(tableId: String) async throws {
+        let url = URL(string: "\(baseURL)/api/tables/\(tableId)/merge")!
+        let (_, http) = try await requestRaw(url, method: "DELETE")
+        guard (200...299).contains(http.statusCode) else {
+            throw APIError.serverError
+        }
+    }
+
     // MARK: - Orders
     
     func deleteOrder(orderId: String) async throws {

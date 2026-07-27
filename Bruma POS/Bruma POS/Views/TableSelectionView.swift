@@ -37,67 +37,86 @@ struct TableSelectionView: View {
                                 .padding(.vertical, 20)
                                 .padding(.horizontal, 16)
                         }
-                        
-                        // MESAS SECTION
-                        if !vm.filteredTables.isEmpty {
+
+                        if vm.tableViewMode == .cards {
+                            // MESAS SECTION (cards)
+                            if !vm.filteredTables.isEmpty {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text("MESAS")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundColor(.gray)
+                                        Spacer()
+                                        Text("\(vm.filteredTables.count) mesas")
+                                            .font(.caption2)
+                                            .foregroundColor(.gray)
+                                    }
+                                    .padding(.horizontal, 16)
+
+                                    LazyVGrid(columns: [
+                                        GridItem(.flexible(), spacing: 10),
+                                        GridItem(.flexible(), spacing: 10),
+                                        GridItem(.flexible(), spacing: 10),
+                                        GridItem(.flexible(), spacing: 10)
+                                    ], spacing: 10) {
+                                        ForEach(vm.filteredTables) { table in
+                                            TableCardView(
+                                                table: table,
+                                                hasReadyItems: vm.tablesWithReadyItems.contains(table.id),
+                                                currentTime: currentTime,
+                                                action: { vm.handleSelectTable(table) },
+                                                onRush: {
+                                                    Task {
+                                                        guard let orderId = table.activeOrder?.id else { return }
+                                                        do {
+                                                            let order = try await APIService.shared.fetchOrder(orderId: orderId)
+                                                            if order.priority == 1 {
+                                                                try await APIService.shared.unrushOrder(orderId: orderId)
+                                                            } else {
+                                                                try await APIService.shared.rushOrder(orderId: orderId)
+                                                            }
+                                                        } catch {
+                                                            print("❌ Error toggling rush: \(error)")
+                                                        }
+                                                    }
+                                                },
+                                                onHold: {
+                                                    Task {
+                                                        guard let orderId = table.activeOrder?.id else { return }
+                                                        do {
+                                                            let order = try await APIService.shared.fetchOrder(orderId: orderId)
+                                                            if order.onHold == true {
+                                                                try await APIService.shared.unholdOrder(orderId: orderId)
+                                                            } else {
+                                                                try await APIService.shared.holdOrder(orderId: orderId)
+                                                            }
+                                                        } catch {
+                                                            print("❌ Error toggling hold: \(error)")
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                }
+                            }
+                        } else {
+                            // MESAS SECTION (mapa)
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
-                                    Text("MESAS")
+                                    Text("MAPA DE MESAS")
                                         .font(.caption.weight(.bold))
                                         .foregroundColor(.gray)
                                     Spacer()
-                                    Text("\(vm.filteredTables.count) mesas")
+                                    Text("\(vm.placedTables.count) mesas")
                                         .font(.caption2)
                                         .foregroundColor(.gray)
                                 }
                                 .padding(.horizontal, 16)
-                                
-                                LazyVGrid(columns: [
-                                    GridItem(.flexible(), spacing: 10),
-                                    GridItem(.flexible(), spacing: 10),
-                                    GridItem(.flexible(), spacing: 10),
-                                    GridItem(.flexible(), spacing: 10)
-                                ], spacing: 10) {
-                                    ForEach(vm.filteredTables) { table in
-                                        TableCardView(
-                                            table: table,
-                                            hasReadyItems: vm.tablesWithReadyItems.contains(table.id),
-                                            currentTime: currentTime,
-                                            action: { vm.handleSelectTable(table) },
-                                            onRush: {
-                                                Task {
-                                                    guard let orderId = table.activeOrder?.id else { return }
-                                                    do {
-                                                        let order = try await APIService.shared.fetchOrder(orderId: orderId)
-                                                        if order.priority == 1 {
-                                                            try await APIService.shared.unrushOrder(orderId: orderId)
-                                                        } else {
-                                                            try await APIService.shared.rushOrder(orderId: orderId)
-                                                        }
-                                                    } catch {
-                                                        print("❌ Error toggling rush: \(error)")
-                                                    }
-                                                }
-                                            },
-                                            onHold: {
-                                                Task {
-                                                    guard let orderId = table.activeOrder?.id else { return }
-                                                    do {
-                                                        let order = try await APIService.shared.fetchOrder(orderId: orderId)
-                                                        if order.onHold == true {
-                                                            try await APIService.shared.unholdOrder(orderId: orderId)
-                                                        } else {
-                                                            try await APIService.shared.holdOrder(orderId: orderId)
-                                                        }
-                                                    } catch {
-                                                        print("❌ Error toggling hold: \(error)")
-                                                    }
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                                .padding(.horizontal, 16)
+
+                                TableMapView(vm: vm)
+                                    .padding(.horizontal, 16)
                             }
                         }
                     }
@@ -226,16 +245,18 @@ struct TableSelectionView: View {
             }
             
             Spacer()
-            
+
             HStack(spacing: 12) {
+                viewModeToggle
+
                 Image(systemName: "person.circle.fill")
                     .font(.system(size: 20))
                     .foregroundColor(.white.opacity(0.7))
-                
+
                 Text(vm.employeeName ?? "Usuario")
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(.white)
-                
+
                 Button(action: {
                     vm.showReservations = true
                 }) {
@@ -288,6 +309,40 @@ struct TableSelectionView: View {
         .padding(.bottom, 12)
     }
     
+    // MARK: - Cards / Mapa toggle
+
+    private var viewModeToggle: some View {
+        HStack(spacing: 2) {
+            viewModeButton(mode: .cards, systemImage: "square.grid.2x2.fill")
+            viewModeButton(mode: .mapa, systemImage: "map.fill")
+        }
+        .padding(3)
+        .background {
+            Capsule().fill(Color.white.opacity(0.08))
+        }
+    }
+
+    private func viewModeButton(mode: POSViewModel.TableViewMode, systemImage: String) -> some View {
+        let isActive = vm.tableViewMode == mode
+        return Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                vm.tableViewMode = mode
+            }
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(isActive ? .white : Color(white: 0.5))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background {
+                    if isActive {
+                        Capsule().fill(Color.blue.opacity(0.7))
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Search Bar
     
     private var tableSearchBar: some View {
@@ -727,25 +782,25 @@ struct TableCardView: View {
                     if table.isOccupied, let activeOrder = table.activeOrder {
                         HStack(spacing: 4) {
                             Circle()
-                                .fill(kitchenStatusColor(activeOrder.status))
+                                .fill(Table.kitchenStatusColor(activeOrder.status))
                                 .frame(width: 5, height: 5)
                             Text(kitchenStatusLabel(activeOrder.status))
                                 .font(.caption2.weight(.medium))
-                                .foregroundColor(kitchenStatusColor(activeOrder.status))
+                                .foregroundColor(Table.kitchenStatusColor(activeOrder.status))
                         }
                     } else {
                         Text(table.name ?? "Mesa")
                             .font(.caption2)
                             .foregroundColor(.gray)
                     }
-                    
+
                     HStack(spacing: 4) {
                         Circle()
-                            .fill(tableStatusColor(table))
+                            .fill(table.statusColor)
                             .frame(width: 6, height: 6)
-                        Text(tableStatusLabel(table))
+                        Text(table.statusLabel)
                             .font(.caption2.weight(.medium))
-                            .foregroundColor(tableStatusColor(table))
+                            .foregroundColor(table.statusColor)
                         if table.isOccupied, let elapsed = occupancyTime(table) {
                             Text("· \(elapsed)")
                                 .font(.caption2)
@@ -772,10 +827,10 @@ struct TableCardView: View {
             .frame(height: 115)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(tableBackgroundColor(table))
+                    .fill(table.backgroundColor)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(tableBorderColor(table), lineWidth: hasReadyItems ? 2 : 1)
+                            .stroke(table.borderColor, lineWidth: hasReadyItems ? 2 : 1)
                     )
             )
         }
@@ -796,34 +851,6 @@ struct TableCardView: View {
         }
     }
     
-    private func tableStatusColor(_ table: Table) -> Color {
-        switch table.status {
-        case "available": return .green
-        case "occupied": return Color(red: 1.0, green: 0.45, blue: 0.0)
-        case "reserved": return .purple
-        default: return .gray
-        }
-    }
-    
-    private func tableStatusLabel(_ table: Table) -> String {
-        switch table.status {
-        case "available": return "Libre"
-        case "occupied": return "Ocupada"
-        case "reserved": return "Reservada"
-        default: return table.status
-        }
-    }
-    
-    private func kitchenStatusColor(_ status: String) -> Color {
-        switch status {
-        case "pending": return .orange
-        case "preparing": return .blue
-        case "ready": return .green
-        case "delivered", "completed": return .gray
-        default: return .gray
-        }
-    }
-    
     private func kitchenStatusLabel(_ status: String) -> String {
         switch status {
         case "pending": return "Sin enviar"
@@ -832,42 +859,6 @@ struct TableCardView: View {
         case "delivered": return "Entregado"
         case "completed": return "Completado"
         default: return status
-        }
-    }
-    
-    private func tableBackgroundColor(_ table: Table) -> Color {
-        // If on hold, red tint
-        if table.activeOrder?.onHold == true {
-            return Color.red.opacity(0.12)
-        }
-        // If occupied, use kitchen status color
-        if table.status == "occupied", let activeOrder = table.activeOrder {
-            return kitchenStatusColor(activeOrder.status).opacity(0.08)
-        }
-        
-        switch table.status {
-        case "reserved": return Color.purple.opacity(0.08)
-        default: return Color.white.opacity(0.05)
-        }
-    }
-    
-    private func tableBorderColor(_ table: Table) -> Color {
-        // If on hold, red border
-        if table.activeOrder?.onHold == true {
-            return Color.red.opacity(0.5)
-        }
-        // If rush, orange border
-        if table.activeOrder?.priority == 1 {
-            return Color.orange.opacity(0.5)
-        }
-        // If occupied, use kitchen status color
-        if table.status == "occupied", let activeOrder = table.activeOrder {
-            return kitchenStatusColor(activeOrder.status).opacity(0.4)
-        }
-        
-        switch table.status {
-        case "reserved": return Color.purple.opacity(0.3)
-        default: return Color.white.opacity(0.1)
         }
     }
     

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, schema } from "../db";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { emitReservationNew } from "../sockets/events";
+import { unmergeByReservationId } from "../lib/tableMerges";
 
 const MONTHS_ES = [
   "enero","febrero","marzo","abril","mayo","junio",
@@ -340,6 +341,10 @@ router.patch("/reservations/:id", async (req, res) => {
       return res.status(404).json({ error: "Reservación no encontrada" });
     }
 
+    if (updatedReservation.status === "cancelled" || updatedReservation.status === "no_show") {
+      await unmergeByReservationId(id);
+    }
+
     res.json(updatedReservation);
   } catch (error) {
     console.error("Error updating reservation:", error);
@@ -383,6 +388,8 @@ router.delete("/reservations/:id", async (req, res) => {
     if (!updated) {
       return res.status(404).json({ error: "Reservación no encontrada" });
     }
+
+    await unmergeByReservationId(id);
 
     res.json({ success: true, id });
   } catch (error) {
