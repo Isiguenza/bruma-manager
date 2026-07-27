@@ -86,6 +86,17 @@ extension Table {
         }
     }
 
+    static func kitchenStatusLabel(_ status: String) -> String {
+        switch status {
+        case "pending": return "Sin enviar"
+        case "preparing": return "En cocina"
+        case "ready": return "Listo"
+        case "delivered": return "Entregado"
+        case "completed": return "Completado"
+        default: return status
+        }
+    }
+
     var statusColor: Color {
         switch status {
         case "available": return .green

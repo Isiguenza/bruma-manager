@@ -94,6 +94,9 @@ struct TableMapView: View {
     static let minColumns = 10
 
     @ObservedObject var vm: POSViewModel
+    @State private var showOrders = false
+
+    private var ordersCount: Int { vm.deliveryOrders.count + vm.platformDeliveryOrders.count }
 
     var body: some View {
         GeometryReader { geo in
@@ -105,7 +108,9 @@ struct TableMapView: View {
             mapCanvas(metrics: metrics)
                 .environment(\.mapGridMetrics, metrics)
                 .overlay(alignment: .topTrailing) {
-                    editControls.padding(10)
+                    if ordersCount > 0 || vm.canEditLayout {
+                        editControls.padding(10)
+                    }
                 }
                 .overlay {
                     if vm.placedTables.isEmpty {
@@ -121,6 +126,9 @@ struct TableMapView: View {
         }
         .sheet(isPresented: $vm.showUnplacedTablesTray) {
             UnplacedTablesTray(vm: vm)
+        }
+        .sheet(isPresented: $showOrders) {
+            DeliveryOrdersSheet(vm: vm)
         }
     }
 
@@ -159,48 +167,60 @@ struct TableMapView: View {
     // taking its own row above the map — keeps the canvas as large as possible.
     private var editControls: some View {
         HStack(spacing: 10) {
-            if vm.editingLayout {
-                if vm.unplacedTables.count > 0 {
-                    Button {
-                        vm.showUnplacedTablesTray = true
-                    } label: {
-                        Label("Añadir mesa (\(vm.unplacedTables.count))", systemImage: "plus.circle.fill")
-                            .font(.caption.weight(.semibold))
+            if ordersCount > 0 {
+                Button {
+                    showOrders = true
+                } label: {
+                    Label("Órdenes: \(ordersCount)", systemImage: "bag.fill")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(MapToolbarButtonStyle(tint: .orange))
+            }
+
+            if vm.canEditLayout {
+                if vm.editingLayout {
+                    if vm.unplacedTables.count > 0 {
+                        Button {
+                            vm.showUnplacedTablesTray = true
+                        } label: {
+                            Label("Añadir mesa (\(vm.unplacedTables.count))", systemImage: "plus.circle.fill")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(MapToolbarButtonStyle(tint: .blue))
                     }
-                    .buttonStyle(MapToolbarButtonStyle(tint: .blue))
+
+                    Menu {
+                        Button { vm.addFixture(type: "wall") } label: {
+                            Label("Muro", systemImage: "minus")
+                        }
+                        Button { vm.addFixture(type: "bar") } label: {
+                            Label("Barra", systemImage: "wineglass.fill")
+                        }
+                        Button { vm.addFixture(type: "furniture") } label: {
+                            Label("Mueble", systemImage: "cube.fill")
+                        }
+                    } label: {
+                        Label("Añadir elemento", systemImage: "square.dashed")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                    }
                 }
 
-                Menu {
-                    Button { vm.addFixture(type: "wall") } label: {
-                        Label("Muro", systemImage: "minus")
-                    }
-                    Button { vm.addFixture(type: "bar") } label: {
-                        Label("Barra", systemImage: "wineglass.fill")
-                    }
-                    Button { vm.addFixture(type: "furniture") } label: {
-                        Label("Mueble", systemImage: "cube.fill")
+                Button {
+                    withAnimation(.snappy) {
+                        vm.editingLayout.toggle()
                     }
                 } label: {
-                    Label("Añadir elemento", systemImage: "square.dashed")
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                    Label(
+                        vm.editingLayout ? "Listo" : "Editar mapa",
+                        systemImage: vm.editingLayout ? "checkmark.circle.fill" : "pencil.circle.fill"
+                    )
+                    .font(.caption.weight(.semibold))
                 }
+                .buttonStyle(MapToolbarButtonStyle(tint: vm.editingLayout ? .green : nil))
             }
-
-            Button {
-                withAnimation(.snappy) {
-                    vm.editingLayout.toggle()
-                }
-            } label: {
-                Label(
-                    vm.editingLayout ? "Listo" : "Editar mapa",
-                    systemImage: vm.editingLayout ? "checkmark.circle.fill" : "pencil.circle.fill"
-                )
-                .font(.caption.weight(.semibold))
-            }
-            .buttonStyle(MapToolbarButtonStyle(tint: vm.editingLayout ? .green : nil))
         }
         .padding(6)
         .glassEffect(.regular.interactive(), in: Capsule())
@@ -307,6 +327,39 @@ struct TableMapChip: View {
     // Merged tables render as MergedTableChip, so a plain chip is always single.
     private var displayCapacity: Int { table.capacity }
 
+    // Status details only make sense in the plain (non-editing/merging) render.
+    private var showStatus: Bool { !vm.editingLayout && !vm.mergeModeActive }
+    private var hasReadyItems: Bool { vm.tablesWithReadyItems.contains(table.id) }
+
+    /// Compact rush / hold / listo badges along the top edge, mirroring cards.
+    @ViewBuilder
+    private var statusBadges: some View {
+        HStack(spacing: 3) {
+            if table.activeOrder?.onHold == true {
+                mapBadge(icon: "pause.fill", text: "ESPERA", color: .red)
+            }
+            if table.activeOrder?.priority == 1 {
+                mapBadge(icon: "flame.fill", text: "RUSH", color: .orange)
+            }
+            if hasReadyItems {
+                mapBadge(icon: "checkmark.circle.fill", text: "LISTO", color: .green)
+            }
+        }
+        .padding(.top, 3)
+    }
+
+    private func mapBadge(icon: String, text: String, color: Color) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: icon).font(.system(size: 7))
+            Text(text).font(.system(size: 7, weight: .black))
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.9))
+        .clipShape(Capsule())
+    }
+
     var body: some View {
         let cell = metrics.cellSize
         let spanW = CGFloat(screenCells.w) * cell
@@ -378,17 +431,37 @@ struct TableMapChip: View {
             .frame(width: rawW, height: rawH)
             .rotationEffect(.degrees(Double(table.rotation ?? 0)))
 
-            // Unrotated layer — number/capacity always stay upright and legible.
-            VStack(spacing: 2) {
+            // Unrotated layer — number/capacity/status always stay upright.
+            VStack(spacing: 1) {
                 Text(table.number)
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                 Text("\(displayCapacity)p")
                     .font(.system(size: 10))
                     .foregroundColor(.white.opacity(0.7))
+
+                if showStatus, let order = table.activeOrder {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(Table.kitchenStatusColor(order.status))
+                            .frame(width: 5, height: 5)
+                        Text(Table.kitchenStatusLabel(order.status))
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundColor(Table.kitchenStatusColor(order.status))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .padding(.top, 1)
+                }
             }
+            .padding(.horizontal, 4)
         }
         .frame(width: spanW, height: spanH)
+        .overlay(alignment: .top) {
+            if showStatus {
+                statusBadges
+            }
+        }
         .overlay(alignment: .topTrailing) {
             if table.isMerged {
                 Image(systemName: "link.circle.fill")
@@ -636,13 +709,25 @@ struct MergedTableChip: View {
                         SeatMarks(width: spanW - chipInset, height: spanH - chipInset, cellSize: cell, capacity: capacity, color: .blue)
                     }
 
-                VStack(spacing: 2) {
+                VStack(spacing: 1) {
                     Text(label)
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                     Text("\(capacity)p · combinadas")
                         .font(.system(size: 9))
                         .foregroundColor(.white.opacity(0.7))
+
+                    if let order = primary.activeOrder {
+                        HStack(spacing: 3) {
+                            Circle()
+                                .fill(Table.kitchenStatusColor(order.status))
+                                .frame(width: 5, height: 5)
+                            Text(Table.kitchenStatusLabel(order.status))
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundColor(Table.kitchenStatusColor(order.status))
+                        }
+                        .padding(.top, 1)
+                    }
                 }
             }
             .frame(width: spanW, height: spanH)

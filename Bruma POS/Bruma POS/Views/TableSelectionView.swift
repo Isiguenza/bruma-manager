@@ -5,7 +5,6 @@ import Combine
 struct TableSelectionView: View {
     @ObservedObject var vm: POSViewModel
     @State private var currentTime = Date()
-    @State private var showDeliveryOrdersSheet = false
     let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     
     var body: some View {
@@ -131,9 +130,6 @@ struct TableSelectionView: View {
             vm.pendingReservationsCount = 0
         }) {
             UpcomingReservationsView()
-        }
-        .sheet(isPresented: $showDeliveryOrdersSheet) {
-            DeliveryOrdersSheet(vm: vm)
         }
         .fullScreenCover(isPresented: $vm.showSettings) {
             SettingsView(vm: vm)
@@ -265,17 +261,6 @@ struct TableSelectionView: View {
             filterMenu
 
             Spacer(minLength: 12)
-
-            let totalOrders = vm.deliveryOrders.count + vm.platformDeliveryOrders.count
-            if totalOrders > 0 {
-                Button {
-                    showDeliveryOrdersSheet = true
-                } label: {
-                    Label("\(totalOrders)", systemImage: "bag.fill")
-                        .font(.caption.weight(.semibold))
-                }
-                .buttonStyle(HeaderPillButtonStyle(tint: .orange))
-            }
 
             if vm.config.takeoutEnabled || vm.config.deliveryEnabled {
                 nuevaOrdenMenu

@@ -50,6 +50,10 @@ class POSViewModel: ObservableObject {
     @Published var editingLayout: Bool = false
     @Published var mergeModeActive: Bool = false
     @Published var selectedForMerge: Set<String> = []
+    // The first table picked (the merge "anchor") — becomes the primary that
+    // keeps its position and order, unless another selected table holds the
+    // active order (which must always win to avoid orphaning it).
+    @Published var mergeAnchorId: String?
     @Published var showMergeConfirmation: Bool = false
     @Published var showUnplacedTablesTray: Bool = false
     @Published var mapFixtures: [MapFixture] = []
@@ -748,9 +752,18 @@ class POSViewModel: ObservableObject {
         Task {
             do {
                 let updated = try await APIService.shared.saveTableLayout(updates)
+                // Apply ONLY the layout fields from the server response — the
+                // /layout endpoint returns raw rows without merge/order
+                // enrichment, so replacing the whole table would wipe
+                // mergeGroupId/activeOrder that were set separately.
                 for u in updated {
                     if let idx = tables.firstIndex(where: { $0.id == u.id }) {
-                        tables[idx] = u
+                        tables[idx].positionX = u.positionX
+                        tables[idx].positionY = u.positionY
+                        tables[idx].widthCells = u.widthCells
+                        tables[idx].heightCells = u.heightCells
+                        tables[idx].rotation = u.rotation
+                        tables[idx].shape = u.shape
                     }
                 }
             } catch {
@@ -867,40 +880,55 @@ class POSViewModel: ObservableObject {
         mergeModeActive = true
         if let table {
             selectedForMerge = [table.id]
+            mergeAnchorId = table.id
         } else {
             selectedForMerge = []
+            mergeAnchorId = nil
         }
     }
 
     func cancelMergeMode() {
         mergeModeActive = false
         selectedForMerge = []
+        mergeAnchorId = nil
         showMergeConfirmation = false
     }
 
     func toggleMergeSelection(_ table: Table) {
         guard mergeModeActive else { return }
-        // Any number of tables (2+) can be combined into one group.
         if selectedForMerge.contains(table.id) {
             selectedForMerge.remove(table.id)
-        } else {
-            selectedForMerge.insert(table.id)
+            if mergeAnchorId == table.id { mergeAnchorId = nil }
+            return
         }
+        // Never combine two tables that both already carry an active order —
+        // the second order would get orphaned inside the merged group.
+        if table.activeOrder != nil,
+           tables.contains(where: { selectedForMerge.contains($0.id) && $0.activeOrder != nil }) {
+            showToast("No puedes unir 2 mesas con orden activa", isError: true)
+            return
+        }
+        // Any number of tables (2+) can be combined into one group.
+        selectedForMerge.insert(table.id)
+        if mergeAnchorId == nil { mergeAnchorId = table.id }
     }
 
     /// Confirms the merge of every currently-selected table into one group.
-    /// The primary is the table that already has an active order, else the
-    /// lowest table number; the rest slide up next to it (left→right).
+    /// Primary priority: the table holding the active order (so it's kept),
+    /// else the first-selected anchor, else the lowest table number. Only the
+    /// non-primary members slide next to it — the primary (and its order) stays.
     func confirmMerge() async {
         defer {
             mergeModeActive = false
             selectedForMerge = []
+            mergeAnchorId = nil
             showMergeConfirmation = false
         }
         let selected = tables.filter { selectedForMerge.contains($0.id) }
         guard selected.count >= 2 else { return }
 
         let primary = selected.first { $0.activeOrder != nil }
+            ?? selected.first { $0.id == mergeAnchorId }
             ?? selected.min { (Int($0.number) ?? 0) < (Int($1.number) ?? 0) }!
         let members = selected
             .filter { $0.id != primary.id }
