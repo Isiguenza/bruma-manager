@@ -9,7 +9,8 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var vm = POSViewModel()
-    
+    @StateObject private var idle = IdleMonitor()
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -36,6 +37,10 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden(true)
+        // Rest the screen (dim + clock) after 5 min of inactivity to save
+        // battery, except on the customer-facing display.
+        .idleScreenRest(idle, enabled: vm.currentScreen != .customerDisplay)
+        .onAppear { idle.timeout = 300 }
     }
 }
 

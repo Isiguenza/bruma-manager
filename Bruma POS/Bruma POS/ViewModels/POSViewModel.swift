@@ -55,6 +55,7 @@ class POSViewModel: ObservableObject {
     // active order (which must always win to avoid orphaning it).
     @Published var mergeAnchorId: String?
     @Published var showMergeConfirmation: Bool = false
+    @Published var isMerging: Bool = false
     @Published var showUnplacedTablesTray: Bool = false
     @Published var mapFixtures: [MapFixture] = []
     // Kept in sync by TableMapView from its live GeometryReader size, so grid
@@ -919,6 +920,7 @@ class POSViewModel: ObservableObject {
     /// non-primary members slide next to it — the primary (and its order) stays.
     func confirmMerge() async {
         defer {
+            isMerging = false
             mergeModeActive = false
             selectedForMerge = []
             mergeAnchorId = nil
@@ -926,6 +928,7 @@ class POSViewModel: ObservableObject {
         }
         let selected = tables.filter { selectedForMerge.contains($0.id) }
         guard selected.count >= 2 else { return }
+        isMerging = true
 
         let primary = selected.first { $0.activeOrder != nil }
             ?? selected.first { $0.id == mergeAnchorId }

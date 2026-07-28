@@ -231,14 +231,13 @@ struct TableSelectionView: View {
                         .background(
                             LinearGradient(colors: [Color.blue, Color.blue.opacity(0.8)], startPoint: .top, endPoint: .bottom)
                         )
-                        .cornerRadius(14)
+                        .clipShape(Capsule())
                         .shadow(color: Color.blue.opacity(0.3), radius: 8, y: 4)
                 }
                 .padding(.horizontal, 32)
             }
             .padding(32)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(red: 0.04, green: 0.04, blue: 0.05))
         }
     }
     
@@ -300,31 +299,42 @@ struct TableSelectionView: View {
 
     // MARK: - Merge mode banner (shown in both Cards and Mapa while combining tables)
 
+    @ViewBuilder
     private var mergeModeBanner: some View {
         let count = vm.selectedForMerge.count
-        return HStack(spacing: 14) {
-            Image(systemName: "link.circle.fill")
-                .font(.system(size: 18))
-                .foregroundColor(.blue)
-            Text(
-                count == 0
-                    ? "Toca las mesas que quieras combinar"
-                    : "\(count) mesa\(count == 1 ? "" : "s") seleccionada\(count == 1 ? "" : "s")"
-            )
-            .font(.subheadline.weight(.medium))
-            .foregroundColor(.white)
+        HStack(spacing: 14) {
+            if vm.isMerging {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white)
+                Text("Combinando mesas…")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+            } else {
+                Image(systemName: "link.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(.blue)
+                Text(
+                    count == 0
+                        ? "Toca las mesas que quieras combinar"
+                        : "\(count) mesa\(count == 1 ? "" : "s") seleccionada\(count == 1 ? "" : "s")"
+                )
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.white)
 
-            Button("Cancelar") { vm.cancelMergeMode() }
-                .buttonStyle(HeaderPillButtonStyle(tint: .red))
+                Button("Cancelar") { vm.cancelMergeMode() }
+                    .buttonStyle(HeaderPillButtonStyle(tint: .red))
 
-            Button("Unir") { vm.showMergeConfirmation = true }
-                .buttonStyle(HeaderPillButtonStyle(tint: .blue))
-                .disabled(count < 2)
-                .opacity(count < 2 ? 0.4 : 1)
+                Button("Unir") { vm.showMergeConfirmation = true }
+                    .buttonStyle(HeaderPillButtonStyle(tint: .blue))
+                    .disabled(count < 2)
+                    .opacity(count < 2 ? 0.4 : 1)
+            }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .glassEffect(.regular.interactive(), in: Capsule())
+        .animation(.snappy, value: vm.isMerging)
     }
 
     private func headerIconButton(systemImage: String, tint: Color, badge: Int = 0, action: @escaping () -> Void) -> some View {
@@ -448,7 +458,7 @@ struct TableSelectionView: View {
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+        
         }
         
         menuContent
