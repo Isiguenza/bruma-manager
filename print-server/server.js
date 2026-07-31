@@ -405,9 +405,10 @@ app.post('/print', async (req, res) => {
       content += commands.feedLine;
       
       for (const [promoName, items] of Object.entries(byPromo)) {
-        const totalQty = items.reduce((sum, item) => sum + (item.qty || 1), 0);
         const totalDiscount = items.reduce((sum, item) => sum + Math.round(item.promotionDiscount || 0), 0);
-        const promoLine = `${totalQty}x ${promoName}`;
+        // No quantity prefix — the promo name (e.g. "2x1 Orden Pescaditos")
+        // already conveys it; a leading "2x" just reads as "2x 2x1".
+        const promoLine = promoName;
         const promoPrice = `-$${totalDiscount}`;
         const promoSpaces = Math.max(1, 48 - promoLine.length - promoPrice.length);
         content += promoLine + " ".repeat(promoSpaces) + promoPrice + "\n";

@@ -224,6 +224,10 @@ router.post("/orders", async (req, res) => {
           course: item.course || 1,
           deliveredToTable: item.deliveredToTable || false,
           isGuest: isGuestItem,
+          promotionId: item.promotionId || null,
+          promotionName: item.promotionName || null,
+          originalPrice: item.originalPrice != null ? item.originalPrice.toString() : null,
+          promotionDiscount: item.promotionDiscount != null ? item.promotionDiscount.toString() : null,
         };
       });
 
@@ -311,6 +315,10 @@ router.post("/orders/:id/items", async (req, res) => {
         course: item.course || 1,
         deliveredToTable: item.deliveredToTable || false,
         isGuest: isGuestItem,
+        promotionId: item.promotionId || null,
+        promotionName: item.promotionName || null,
+        originalPrice: item.originalPrice != null ? item.originalPrice.toString() : null,
+        promotionDiscount: item.promotionDiscount != null ? item.promotionDiscount.toString() : null,
       };
     });
 

@@ -318,6 +318,10 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Promotions & Discounts
     @Published var activePromotions: [Promotion] = []
+    // Cart-item ids the user opted OUT of promotions for ("no quiere la promo").
+    // Persisted only for the current cart session — kept out of the promo engine
+    // so a recompute doesn't silently re-apply the discount.
+    @Published var excludedPromoItemIds: Set<UUID> = []
     @Published var availableDiscounts: [Discount] = []
     @Published var selectedDiscount: Discount?
     @Published var showFlexibleDiscountDialog = false
@@ -1324,8 +1328,15 @@ class POSViewModel: ObservableObject {
         if let orders = try? await APIService.shared.fetchDeliveryOrders() {
             separateDeliveryOrders(orders)
         }
+        // Promotions created/edited in the dashboard while a terminal's PIN
+        // session stays open (the normal case for a POS) were previously only
+        // picked up on next login or app relaunch — refresh them on the same
+        // 60s backup poll as tables so they show up without either.
+        if let pr = try? await APIService.shared.fetchActivePromotions() {
+            activePromotions = pr
+        }
     }
-    
+
     private func refreshReadyItemsAndDelivery() async {
         print("🔄 [refreshReadyItemsAndDelivery] Checking for ready items...")
         if let readyIds = try? await APIService.shared.fetchTablesWithReadyItems() {
@@ -2435,7 +2446,39 @@ class POSViewModel: ObservableObject {
             cart[i].promotionDiscount = nil
         }
         let productCategoryMap = Dictionary(uniqueKeysWithValues: products.map { ($0.id, $0.categoryId) })
-        cart = PromotionEngine.applyPromotions(cartItems: cart, promotions: activePromotions, productCategoryMap: productCategoryMap)
+        // Only items the user hasn't opted out of participate in the engine;
+        // excluded items stay at full price and are merged back untouched.
+        let eligibleIndices = cart.indices.filter { !excludedPromoItemIds.contains(cart[$0].id) }
+        guard !eligibleIndices.isEmpty else { return }
+        let eligibleItems = eligibleIndices.map { cart[$0] }
+        let updated = PromotionEngine.applyPromotions(cartItems: eligibleItems, promotions: activePromotions, productCategoryMap: productCategoryMap)
+        for (position, cartIndex) in eligibleIndices.enumerated() {
+            cart[cartIndex] = updated[position]
+        }
+    }
+
+    /// Toggles whether the given cart item participates in promotions. Used by
+    /// the cart's promo context menu ("Quitar promoción" / "Aplicar promoción").
+    func togglePromoExclusion(for item: CartItem) {
+        if excludedPromoItemIds.contains(item.id) {
+            excludedPromoItemIds.remove(item.id)
+            showToast("Promoción aplicada")
+        } else {
+            excludedPromoItemIds.insert(item.id)
+            showToast("Promoción quitada")
+        }
+        applyPromotions()
+    }
+
+    func isPromoExcluded(_ item: CartItem) -> Bool {
+        excludedPromoItemIds.contains(item.id)
+    }
+
+    /// Opts every item of a promo group out of promotions (whole card).
+    func excludePromoGroup(_ itemIds: [UUID]) {
+        for id in itemIds { excludedPromoItemIds.insert(id) }
+        applyPromotions()
+        showToast("Promoción quitada")
     }
     
     // MARK: - Remove Promotion from Group
@@ -2683,6 +2726,13 @@ class POSViewModel: ObservableObject {
         if let v = item.customModifiers { dict["customModifiers"] = v }
         if item.isGuest { dict["isGuest"] = true }
         if item.deliveredToTable { dict["deliveredToTable"] = true }
+        // Persist promo state so a promo that spans items across kitchen sends
+        // (e.g. 2x1 where one unit was already sent) survives reload and can be
+        // re-evaluated over the full cart.
+        if let v = item.promotionId { dict["promotionId"] = v }
+        if let v = item.promotionName { dict["promotionName"] = v }
+        if let v = item.originalPrice { dict["originalPrice"] = v }
+        if let v = item.promotionDiscount { dict["promotionDiscount"] = v }
         return dict
     }
     

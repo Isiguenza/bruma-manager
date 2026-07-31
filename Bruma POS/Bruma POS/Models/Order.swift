@@ -114,9 +114,15 @@ struct OrderItem: Codable, Identifiable {
     let voided: Bool?
     let createdAt: String?
     let isGuest: Bool?
-    
+    let promotionId: String?
+    let promotionName: String?
+    let originalPrice: String?
+    let promotionDiscount: String?
+
     var numericUnitPrice: Double { Double(unitPrice) ?? 0 }
     var numericSubtotal: Double { Double(subtotal) ?? 0 }
+    var numericOriginalPrice: Double? { originalPrice.flatMap { Double($0) } }
+    var numericPromotionDiscount: Double? { promotionDiscount.flatMap { Double($0) } }
 
     /// Parses `customModifiers` into `{name, price}` entries for display on customer-facing
     /// tickets (reprint), mirroring `POSViewModel.parseModifiersForTicket`.
@@ -232,10 +238,10 @@ struct CartItem: Identifiable {
             orderStatus: nil,
             deliveredToTable: item.deliveredToTable ?? false,
             variantName: variantName,
-            promotionId: nil,
-            promotionName: nil,
-            originalPrice: nil,
-            promotionDiscount: nil,
+            promotionId: item.promotionId,
+            promotionName: item.promotionName,
+            originalPrice: item.numericOriginalPrice,
+            promotionDiscount: item.numericPromotionDiscount,
             isGuest: item.isGuest ?? false
         )
     }

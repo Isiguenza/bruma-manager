@@ -214,11 +214,20 @@ struct CartItemRow: View {
                     .foregroundColor(.gray)
             } else if isInsidePromotionGroup {
                 Button {
-                    vm.removeItemFromPromotion(at: index)
+                    vm.togglePromoExclusion(for: item)
                 } label: {
                     Label("Quitar de promoción", systemImage: "person.crop.circle.badge.xmark")
                 }
             } else {
+                // Item previously opted out of promos — offer to re-enable.
+                if vm.isPromoExcluded(item) {
+                    Button {
+                        vm.togglePromoExclusion(for: item)
+                    } label: {
+                        Label("Aplicar promoción", systemImage: "tag.fill")
+                    }
+                    Divider()
+                }
                 // Change seat submenu
                 if vm.selectedTable != nil && vm.guestCount > 0 {
                     Menu {

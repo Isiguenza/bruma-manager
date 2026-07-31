@@ -67,22 +67,21 @@ struct PromotionGroupView: View {
         )
         .cornerRadius(10)
         .contextMenu {
-            // Quitar promo de todos los items
-            Button {
-                vm.removePromotionFromGroup(promotionId: group.promotionId)
+            // Quitar la promo de todo el grupo (persiste — no se re-aplica sola)
+            Button(role: .destructive) {
+                vm.excludePromoGroup(group.items.map { $0.item.id })
             } label: {
-                Label("Quitar promo", systemImage: "xmark.circle")
-                    .foregroundColor(.red)
+                Label("Quitar promoción", systemImage: "xmark.circle")
             }
-            
+
             Divider()
-            
+
             // Opciones por item
             ForEach(Array(group.items.enumerated()), id: \.offset) { _, element in
                 Button {
-                    vm.removeItemFromPromotion(at: element.index)
+                    vm.togglePromoExclusion(for: element.item)
                 } label: {
-                    Label("Quitar '\(element.item.productName)' de promo", systemImage: "person.crop.circle.badge.xmark")
+                    Label("Quitar '\(element.item.productName)'", systemImage: "person.crop.circle.badge.xmark")
                 }
             }
         }
