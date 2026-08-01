@@ -8,28 +8,23 @@ class PromotionEngine {
         productCategoryMap: [String: String?] = [:]
     ) -> [CartItem] {
         if promotions.isEmpty { return cartItems }
-        
-        // Group items by product + price + seat so promos are evaluated independently per seat
-        var itemsByProduct: [String: [(index: Int, item: CartItem)]] = [:]
-        var itemsBySeat: [String: [(index: Int, item: CartItem)]] = [:]
-        for (index, item) in cartItems.enumerated() {
-            let productKey = "\(item.productId)_\(item.unitPrice)_\(item.seat)"
-            itemsByProduct[productKey, default: []].append((index, item))
-            itemsBySeat[item.seat, default: []].append((index, item))
-        }
-        
+
         var updatedItems = cartItems
-        
-        // Track which combos have been applied per seat (only one combo per seat)
-        var comboAppliedSeats: Set<String> = []
-        
+
+        // Non-combo promos are evaluated per product across the WHOLE order
+        // (seat-independent), so e.g. a 2x1 applies to any 2 matching items on
+        // the table, not just 2 that happen to be on the same guest seat.
+        var itemsByProduct: [String: [(index: Int, item: CartItem)]] = [:]
+        for (index, item) in cartItems.enumerated() {
+            let productKey = "\(item.productId)_\(item.unitPrice)"
+            itemsByProduct[productKey, default: []].append((index, item))
+        }
+
         for (_, items) in itemsByProduct {
             guard let firstItem = items.first else { continue }
             let realProductId = firstItem.item.productId
             let productCategoryId = productCategoryMap[realProductId] ?? nil
-            let seat = firstItem.item.seat
-            
-            // Find applicable promotions (non-combo first)
+
             let nonComboPromos = promotions.filter { promo in
                 if promo.type == "combo" { return false }
                 if promo.applyTo == "all_products" { return true }
@@ -41,7 +36,7 @@ class PromotionEngine {
                 }
                 return false
             }
-            
+
             if let promo = nonComboPromos.sorted(by: { ($0.priority ?? 0) > ($1.priority ?? 0) }).first {
                 let totalQty = items.reduce(0) { $0 + $1.item.quantity }
                 switch promo.type {
@@ -55,18 +50,20 @@ class PromotionEngine {
                     break
                 }
             }
-            
-            // Apply combo if not already applied to this seat
-            if !comboAppliedSeats.contains(seat) {
-                let seatItems = itemsBySeat[seat] ?? []
-                let comboPromos = promotions.filter { $0.type == "combo" }
-                if let combo = comboPromos.sorted(by: { ($0.priority ?? 0) > ($1.priority ?? 0) }).first {
-                    applyCombo(promo: combo, items: seatItems, updatedItems: &updatedItems, productCategoryMap: productCategoryMap)
-                    comboAppliedSeats.insert(seat)
-                }
+        }
+
+        // Combo promos stay per seat — each guest can earn their own combo.
+        let comboPromos = promotions.filter { $0.type == "combo" }
+        if let combo = comboPromos.sorted(by: { ($0.priority ?? 0) > ($1.priority ?? 0) }).first {
+            var itemsBySeat: [String: [(index: Int, item: CartItem)]] = [:]
+            for (index, item) in cartItems.enumerated() {
+                itemsBySeat[item.seat, default: []].append((index, item))
+            }
+            for (_, seatItems) in itemsBySeat {
+                applyCombo(promo: combo, items: seatItems, updatedItems: &updatedItems, productCategoryMap: productCategoryMap)
             }
         }
-        
+
         return updatedItems
     }
     
