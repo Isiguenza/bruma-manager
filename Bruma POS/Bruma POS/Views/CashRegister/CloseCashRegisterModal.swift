@@ -4,23 +4,30 @@ struct CloseCashRegisterModal: View {
     @ObservedObject var vm: CashRegisterViewModel
     @ObservedObject var posVM: POSViewModel
     let register: CashRegister
+    /// Efectivo esperado calculado por el Corte (backend). Si es nil, cae al cálculo cliente.
+    var corteExpectedCash: Double? = nil
     @Environment(\.dismiss) private var dismiss
-    
+
     @State private var finalCash = ""
     @State private var notes = ""
     @State private var submitting = false
     @State private var showDifferenceConfirm = false
-    
+
+    /// Fuente única del efectivo esperado: prioriza el Corte, cae al cálculo cliente.
+    private var expectedCash: Double {
+        corteExpectedCash ?? vm.expectedCash
+    }
+
     private var finalCashDecimal: Decimal {
         Decimal(string: finalCash.replacingOccurrences(of: ",", with: "")) ?? 0
     }
-    
+
     private var finalCashAmount: Double {
         NSDecimalNumber(decimal: finalCashDecimal).doubleValue
     }
-    
+
     private var difference: Double {
-        finalCashAmount - vm.expectedCash
+        finalCashAmount - expectedCash
     }
     
     private var hasDifference: Bool {
@@ -75,7 +82,7 @@ struct CloseCashRegisterModal: View {
                         Divider()
                             .background(Color.white.opacity(0.2))
                         
-                        summaryRow(title: "Efectivo esperado", value: vm.formatCurrency(vm.expectedCash), bold: true)
+                        summaryRow(title: "Efectivo esperado", value: vm.formatCurrency(expectedCash), bold: true)
                     }
                     .padding(16)
                     .background(Color(white: 0.08))
@@ -231,7 +238,7 @@ struct CloseCashRegisterModal: View {
             "finalCash": finalCashAmount,
             "closedBy": employeeId,
             "notes": notes.isEmpty ? nil : notes,
-            "expectedCash": vm.expectedCash,
+            "expectedCash": expectedCash,
             "totalSales": vm.actualTotalSales,
             "cashSales": vm.actualCashSales,
             "terminalSales": vm.actualTerminalSales,

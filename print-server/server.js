@@ -501,15 +501,12 @@ app.post('/print', async (req, res) => {
 // Endpoint para imprimir resumen de ventas
 app.post('/print-summary', async (req, res) => {
   try {
-    const { 
+    const {
       date,
       registerName,
       totalOrders,
-      cashTotal,
-      cardTotal,
-      transferTotal,
-      totalTips,
-      grandTotal,
+      takeoutCount,
+      tableCount,
       products
     } = req.body;
 
@@ -531,7 +528,7 @@ app.post('/print-summary', async (req, res) => {
     // Título
     content += commands.bold;
     content += commands.textSizeDouble;
-    content += "RESUMEN DE VENTAS\n";
+    content += "RESUMEN DEL TURNO\n";
     content += commands.textSizeNormal;
     content += commands.boldOff;
     content += commands.feedLine;
@@ -559,55 +556,23 @@ app.post('/print-summary', async (req, res) => {
     content += "------------------------------------------------\n";
     content += commands.feedLine;
     
-    // Totales por método de pago
-    content += commands.bold;
-    content += "VENTAS POR METODO DE PAGO\n";
-    content += commands.boldOff;
-    content += commands.feedLine;
-    
-    if (cashTotal > 0) {
-      content += "Efectivo:";
-      const cashStr = `$${Math.round(cashTotal)}`;
-      content += " ".repeat(48 - 9 - cashStr.length) + cashStr + "\n";
-    }
-    
-    if (cardTotal > 0) {
-      content += "Tarjeta:";
-      const cardStr = `$${Math.round(cardTotal)}`;
-      content += " ".repeat(48 - 8 - cardStr.length) + cardStr + "\n";
-    }
-    
-    if (transferTotal > 0) {
-      content += "Transferencia:";
-      const transferStr = `$${Math.round(transferTotal)}`;
-      content += " ".repeat(48 - 14 - transferStr.length) + transferStr + "\n";
-    }
-    
-    content += commands.feedLine;
-    
-    // Propinas
-    if (totalTips > 0) {
-      content += "Propinas:";
-      const tipsStr = `$${Math.round(totalTips)}`;
-      content += " ".repeat(48 - 9 - tipsStr.length) + tipsStr + "\n";
-      content += commands.feedLine;
-    }
-    
-    // Línea separadora
-    content += "------------------------------------------------\n";
-    content += commands.feedLine;
-    
-    // Total general
+    // Conteo de órdenes (sin dinero — los montos van en el Corte)
+    const countLine = (label, value) => {
+      const v = `${value}`;
+      return label + " ".repeat(Math.max(1, 48 - label.length - v.length)) + v + "\n";
+    };
+
     content += commands.bold;
     content += commands.textSizeDouble;
-    content += "TOTAL:";
-    const totalStr = `$${Math.round(grandTotal)}`;
-    content += " ".repeat(Math.max(1, 24 - 6 - totalStr.length)) + totalStr + "\n";
+    content += "ORDENES:";
+    const ordersStr = `${totalOrders ?? 0}`;
+    content += " ".repeat(Math.max(1, 24 - 8 - ordersStr.length)) + ordersStr + "\n";
     content += commands.textSizeNormal;
     content += commands.boldOff;
     content += commands.feedLine;
-    
-    content += `Ordenes: ${totalOrders}\n`;
+
+    content += countLine("Para llevar:", takeoutCount ?? 0);
+    content += countLine("En mesa:", tableCount ?? 0);
     content += commands.feedLine;
     content += commands.feedLine;
     

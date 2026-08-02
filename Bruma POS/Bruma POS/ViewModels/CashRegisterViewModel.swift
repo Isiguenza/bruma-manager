@@ -62,6 +62,9 @@ class CashRegisterViewModel: ObservableObject {
     
     // MARK: - Corte
     @Published var showCorte = false
+
+    // MARK: - Resumen
+    @Published var showResumen = false
     
     var quickCashDifference: Double {
         let counted = Double(quickCashInput.replacingOccurrences(of: ",", with: "")) ?? 0
@@ -135,7 +138,37 @@ class CashRegisterViewModel: ObservableObject {
         let withdrawals = Double(register.withdrawals) ?? 0
         return initial + actualCashSales + actualCashTips - withdrawals + deposits
     }
-    
+
+    // MARK: - Resumen (operativo, sin dinero)
+
+    /// Órdenes para llevar (sin mesa asignada).
+    var takeoutOrdersCount: Int {
+        paidOrders.filter { $0.tableId == nil }.count
+    }
+
+    /// Órdenes en mesa.
+    var tableOrdersCount: Int {
+        paidOrders.filter { $0.tableId != nil }.count
+    }
+
+    /// Productos vendidos agrupados por nombre (incluye variantes), de mayor a
+    /// menor cantidad. Mismo patrón que usaba `printSummary`.
+    var productsSold: [(name: String, qty: Int)] {
+        var counts: [String: Int] = [:]
+        for order in paidOrders {
+            for item in order.items ?? [] {
+                counts[item.productName, default: 0] += item.quantity
+            }
+        }
+        return counts
+            .map { (name: $0.key, qty: $0.value) }
+            .sorted { $0.qty > $1.qty }
+    }
+
+    var totalProductsSold: Int {
+        productsSold.reduce(0) { $0 + $1.qty }
+    }
+
     // MARK: - Filtered Orders
     
     var filteredOrders: [Order] {

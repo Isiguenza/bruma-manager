@@ -3,7 +3,10 @@ import SwiftUI
 struct CashRegisterView: View {
     @ObservedObject var vm: CashRegisterViewModel
     @ObservedObject var posVM: POSViewModel
-    
+    // Reutiliza la lógica del Corte (backend) para alimentar los cards y barras
+    // con los mismos números que muestra el botón "Corte". No se toca su lógica.
+    @StateObject private var corteVM = CorteViewModel()
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -197,97 +200,77 @@ struct CashRegisterView: View {
     }
     
     private func openRegisterView(_ register: CashRegister) -> some View {
-        ScrollView {
-            VStack(spacing: 24) {
+        VStack(spacing: 16) {
 
-                // Header
-                HStack {
-                    Text("Caja Registradora")
-                        .font(.title.bold())
+            // Header
+            HStack {
+                Text("Caja Registradora")
+                    .font(.title.bold())
+                    .foregroundColor(.white)
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 8, height: 8)
+                    Text("Abierta")
+                        .font(.subheadline.bold())
                         .foregroundColor(.white)
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 8, height: 8)
-                        Text("Abierta")
-                            .font(.subheadline.bold())
-                            .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(8)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                
-                // Payment method bars
-                paymentMethodBars
-                    .padding(.horizontal, 20)
-                
-                // Metrics Cards
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 12),
-                    GridItem(.flexible(), spacing: 12)
-                ], spacing: 12) {
-                    metricCard(title: "Efectivo Inicial", value: vm.formatCurrency(register.initialCash), icon: "banknote.fill", accent: .green)
-                    
-                    metricCard(title: "Ventas Totales", value: vm.formatCurrency(vm.actualTotalSales), subtitle: "\(vm.paidOrders.count) órdenes · Propinas: \(vm.formatCurrency(vm.totalTips))", icon: "chart.line.uptrend.xyaxis", accent: .blue)
-                    
-                    metricCard(title: "Efectivo Esperado", value: vm.formatCurrency(vm.expectedCash), subtitle: vm.actualCashTips > 0 ? "Incluye \(vm.formatCurrency(vm.actualCashTips)) propina en efectivo" : nil, icon: "dollarsign.circle.fill", accent: .orange)
-                    
-                    metricCard(title: "Abierta desde", value: vm.formatDateTime(register.openedAt), subtitle: "Actualizado: \(vm.lastUpdated.map { formatTimeOnly($0) } ?? "N/A")", icon: "clock.fill", accent: .purple)
-                }
-                .padding(.horizontal, 20)
-                
-                // Action Buttons
-                HStack(spacing: 12) {
-                    actionButton(title: "Cajón", icon: "lock.open.fill", iconColor: .cyan) {
-                        Task {
-                            try? await APIService.shared.openCashDrawer()
-                        }
-                    }
-
-                    actionButton(title: "Depósito", icon: "arrow.down.circle.fill", iconColor: .green) {
-                        vm.showDepositDialog = true
-                    }
-
-                    actionButton(title: "Sangría", icon: "arrow.up.circle.fill", iconColor: .orange) {
-                        vm.showWithdrawDialog = true
-                    }
-
-                    actionButton(title: "Corte", icon: "doc.text.fill", iconColor: .yellow) {
-                        vm.showCorte = true
-                    }
-
-                    actionButton(title: "Resumen", icon: "printer.fill", iconColor: .blue) {
-                        Task {
-                            await printSummary(register: register)
-                        }
-                    }
-
-                    actionButton(title: "Cerrar", icon: "lock.fill", iconColor: .red) {
-                        vm.showCloseDialog = true
-                    }
-                }
-                .padding(.horizontal, 20)
-                
-                // Movimientos (Transactions)
-                transactionsSection
-                    .padding(.horizontal, 20)
-                
-                // Orders Section with Filters
-                ordersSection
-                    .padding(.horizontal, 20)
-                
-                Spacer(minLength: 100)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(8)
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+
+            // Dos columnas: órdenes (izq, ancha) + ventas y acciones (der, angosta)
+            HStack(alignment: .top, spacing: 16) {
+
+                // Izquierda: barras por método de pago (arriba) + lista de órdenes
+                ScrollView {
+                    VStack(spacing: 16) {
+                        paymentMethodBars
+                        ordersSection
+                    }
+                    .padding(.bottom, 40)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .refreshable {
+                    await vm.loadData()
+                    await corteVM.loadCorte(registerId: register.id)
+                }
+
+                // Derecha: Ventas Netas (arriba) + acciones (abajo)
+                ScrollView {
+                    VStack(spacing: 16) {
+                        Button {
+                            showVentasDetalle = true
+                        } label: {
+                            heroCard
+                        }
+                        .buttonStyle(.plain)
+                        actionButtonsGrid
+                        transactionsSection
+                    }
+                    .padding(.bottom, 40)
+                }
+                .frame(width: 380)
+                .frame(maxHeight: .infinity)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
         }
-        .refreshable {
-            await vm.loadData()
+        .task(id: register.id) {
+            await corteVM.loadCorte(registerId: register.id)
+        }
+        .sheet(isPresented: $vm.showResumen) {
+            ResumenView(vm: vm)
+        }
+        .sheet(isPresented: $showVentasDetalle) {
+            ventasDetalleSheet(register)
         }
         .sheet(isPresented: $vm.showDepositDialog) {
             DepositModal(vm: vm, posVM: posVM, registerId: register.id)
@@ -296,7 +279,12 @@ struct CashRegisterView: View {
             WithdrawModal(vm: vm, posVM: posVM, registerId: register.id)
         }
         .sheet(isPresented: $vm.showCloseDialog) {
-            CloseCashRegisterModal(vm: vm, posVM: posVM, register: register)
+            CloseCashRegisterModal(
+                vm: vm,
+                posVM: posVM,
+                register: register,
+                corteExpectedCash: corteVM.hasData ? corteVM.cashExpected : nil
+            )
         }
         .sheet(item: $vm.selectedOrder) { order in
             orderDetailSheet(order)
@@ -356,35 +344,249 @@ struct CashRegisterView: View {
         )
     }
     
-    private func actionButton(title: String, icon: String, iconColor: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(iconColor)
-                Text(title)
-                    .font(.caption.bold())
-                    .foregroundColor(.white)
+    // Acciones de caja — grid de 3 columnas para el panel derecho.
+    private var actionButtonsGrid: some View {
+        LazyVGrid(columns: [
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10)
+        ], spacing: 10) {
+            actionButton(title: "Corte", subtitle: "Ver corte de caja", icon: "doc.text.fill", iconColor: .yellow) {
+                vm.showCorte = true
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+
+            actionButton(title: "Resumen", subtitle: "Órdenes y productos", icon: "list.clipboard.fill", iconColor: .blue) {
+                vm.showResumen = true
+            }
+
+            actionButton(title: "Cajón", subtitle: "Abrir cajón", icon: "lock.open.fill", iconColor: .cyan) {
+                Task {
+                    try? await APIService.shared.openCashDrawer()
+                }
+            }
+
+            actionButton(title: "Depósito", subtitle: "Ingresar efectivo", icon: "arrow.down.circle.fill", iconColor: .green) {
+                vm.showDepositDialog = true
+            }
+
+            actionButton(title: "Sangría", subtitle: "Retirar efectivo", icon: "arrow.up.circle.fill", iconColor: .orange) {
+                vm.showWithdrawDialog = true
+            }
+
+            actionButton(title: "Cerrar", subtitle: "Cerrar caja", icon: "lock.fill", iconColor: .red) {
+                vm.showCloseDialog = true
+            }
+        }
+    }
+
+    private func actionButton(title: String, subtitle: String, icon: String, iconColor: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(iconColor.opacity(0.18))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: icon)
+                        .font(.headline)
+                        .foregroundColor(iconColor)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
             .background(Color(white: 0.08))
-            .cornerRadius(12)
+            .cornerRadius(16)
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(Color(white: 0.15), lineWidth: 1)
             )
         }
+        .buttonStyle(.plain)
     }
     
+    // MARK: - Hero (Ventas Netas del Corte)
+
+    private var heroCard: some View {
+        let data = corteVM.corteData
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("VENTAS NETAS")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(.white.opacity(0.6))
+                    .tracking(1)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(.white.opacity(0.35))
+            }
+            Text(data == nil ? "…" : corteVM.formatCurrency(corteVM.totalNetSales))
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .contentTransition(.numericText())
+            if let data {
+                Text("Bruto \(corteVM.formatCurrency(data.sales.total)) · \(data.summary.totalOrders) órdenes")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.55))
+            } else {
+                Text("Cargando corte…")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.4))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(
+            LinearGradient(colors: [Color.green.opacity(0.22), Color(white: 0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.green.opacity(0.25), lineWidth: 1))
+    }
+
+    // MARK: - Corte Cards
+
+    private func corteCardsGrid(_ register: CashRegister) -> some View {
+        let data = corteVM.corteData
+        return LazyVGrid(columns: [
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12)
+        ], spacing: 12) {
+            metricCard(
+                title: "Propinas (neto)",
+                value: data == nil ? "…" : corteVM.formatCurrency(corteVM.totalNetTips),
+                subtitle: data.map { "Bruto: \(corteVM.formatCurrency($0.tips.total))" },
+                icon: "heart.fill", accent: .pink
+            )
+            metricCard(
+                title: "Efectivo esperado",
+                value: data == nil ? "…" : corteVM.formatCurrency(corteVM.cashExpected),
+                subtitle: nil,
+                icon: "dollarsign.circle.fill", accent: .yellow
+            )
+            metricCard(
+                title: "Fondo inicial",
+                value: vm.formatCurrency(register.initialCash),
+                subtitle: nil,
+                icon: "banknote.fill", accent: .green
+            )
+            metricCard(
+                title: "Órdenes",
+                value: "\(data?.summary.totalOrders ?? vm.paidOrders.count)",
+                subtitle: "\(vm.takeoutOrdersCount) para llevar · \(vm.tableOrdersCount) en mesa",
+                icon: "list.number", accent: .blue
+            )
+        }
+    }
+
+    // MARK: - Desglose de ventas (sheet al tocar el hero)
+
+    private func ventasDetalleSheet(_ register: CashRegister) -> some View {
+        let data = corteVM.corteData
+        return NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    heroCard
+                    corteCardsGrid(register)
+
+                    // Desglose detallado
+                    VStack(spacing: 0) {
+                        detailRow(label: "Fondo inicial (apertura)", value: vm.formatCurrency(register.initialCash))
+                        detailDivider
+                        detailRow(label: "Ventas brutas", value: data.map { corteVM.formatCurrency($0.sales.total) } ?? "…")
+                        detailDivider
+                        detailRow(label: "Ventas netas", value: data == nil ? "…" : corteVM.formatCurrency(corteVM.totalNetSales), highlight: true)
+                        detailDivider
+                        detailRow(label: "Efectivo", value: data.map { corteVM.formatCurrency($0.sales.cash) } ?? "…")
+                        detailDivider
+                        detailRow(label: "Tarjeta (neto)", value: data.map { corteVM.formatCurrency($0.sales.netCard) } ?? "…")
+                        detailDivider
+                        detailRow(label: "Transferencia", value: data.map { corteVM.formatCurrency($0.sales.transfer) } ?? "…")
+                        detailDivider
+                        detailRow(label: "Propinas (bruto)", value: data.map { corteVM.formatCurrency($0.tips.total) } ?? "…")
+                        detailDivider
+                        detailRow(label: "Propinas (neto)", value: data == nil ? "…" : corteVM.formatCurrency(corteVM.totalNetTips))
+                        detailDivider
+                        detailRow(
+                            label: "Comisiones",
+                            value: data.map { "-\(corteVM.formatCurrency($0.commissions.total))" } ?? "…",
+                            subtitle: data.map { "Tasa \(corteVM.formatPercentage($0.commissions.rateWithIVA))" }
+                        )
+                        detailDivider
+                        detailRow(label: "Efectivo esperado en caja", value: data == nil ? "…" : corteVM.formatCurrency(corteVM.cashExpected), highlight: true)
+                        detailDivider
+                        detailRow(
+                            label: "Órdenes",
+                            value: "\(data?.summary.totalOrders ?? vm.paidOrders.count)",
+                            subtitle: "\(vm.takeoutOrdersCount) para llevar · \(vm.tableOrdersCount) en mesa"
+                        )
+                    }
+                    .padding(.horizontal, 16)
+                    .background(Color(white: 0.08))
+                    .cornerRadius(14)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(white: 0.15), lineWidth: 1))
+
+                    Spacer(minLength: 20)
+                }
+                .padding(20)
+            }
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("Desglose de ventas")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Listo") { showVentasDetalle = false }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var detailDivider: some View {
+        Divider().background(Color.white.opacity(0.08))
+    }
+
+    private func detailRow(label: String, value: String, subtitle: String? = nil, highlight: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.subheadline)
+                    .foregroundColor(highlight ? .white : .gray)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundColor(.gray.opacity(0.7))
+                }
+            }
+            Spacer()
+            Text(value)
+                .font(highlight ? .headline.bold() : .subheadline.weight(.semibold))
+                .foregroundColor(highlight ? .green : .white)
+        }
+        .padding(.vertical, 12)
+    }
+
     // MARK: - Payment Method Bars
-    
+
     private var paymentMethodBars: some View {
-        VStack(spacing: 8) {
+        let data = corteVM.corteData
+        let cash = data?.sales.cash ?? vm.actualCashSales
+        let card = data?.sales.netCard ?? vm.actualTerminalSales
+        let transfer = data?.sales.transfer ?? vm.actualTransferSales
+        let total = max(cash + card + transfer, 0.01)
+        return VStack(spacing: 8) {
             HStack(spacing: 12) {
-                paymentBar(label: "Efectivo", value: vm.actualCashSales + vm.actualCashTips, total: vm.actualTotalSales, color: .green)
-                paymentBar(label: "Terminal", value: vm.actualTerminalSales, total: vm.actualTotalSales, color: .blue)
-                paymentBar(label: "Transfer", value: vm.actualTransferSales, total: vm.actualTotalSales, color: .purple)
+                paymentBar(label: "Efectivo", value: cash, total: total, color: .green)
+                paymentBar(label: "Tarjeta", value: card, total: total, color: .blue)
+                paymentBar(label: "Transfer", value: transfer, total: total, color: .purple)
             }
         }
     }
@@ -942,6 +1144,9 @@ struct CashRegisterView: View {
     @State private var orderToDelete: Order?
     @State private var showDeleteConfirm = false
     @State private var deleteReason = ""
+
+    // Desglose de ventas (sheet al tocar el hero)
+    @State private var showVentasDetalle = false
     
     private func paymentMethodText(_ method: String) -> String {
         switch method {
@@ -987,49 +1192,4 @@ struct CashRegisterView: View {
         return formatter.string(from: date)
     }
     
-    private func printSummary(register: CashRegister) async {
-        // Calcular totales por método de pago
-        let totalTips = vm.paidOrders.reduce(0.0) { sum, order in
-            sum + (Double(order.tip ?? "0") ?? 0)
-        }
-        
-        // Agrupar productos vendidos (incluyendo variantes)
-        var productSales: [String: Int] = [:]
-        for order in vm.paidOrders {
-            if let items = order.items {
-                for item in items {
-                    let displayName = item.productName
-                    productSales[displayName] = (productSales[displayName] ?? 0) + item.quantity
-                }
-            }
-        }
-        
-        let productList = productSales.map { ["name": $0.key, "qty": $0.value] }
-            .sorted { ($0["qty"] as? Int ?? 0) > ($1["qty"] as? Int ?? 0) }
-        
-        let summaryData: [String: Any] = [
-            "date": ISO8601DateFormatter().string(from: Date()),
-            "registerName": "Caja \(register.id.prefix(8))",
-            "totalOrders": vm.paidOrders.count,
-            "cashTotal": vm.actualCashSales,
-            "cardTotal": vm.actualTerminalSales,
-            "transferTotal": vm.actualTransferSales,
-            "totalTips": totalTips,
-            "grandTotal": vm.actualTotalSales,
-            "products": productList
-        ]
-        
-        guard let url = URL(string: "\(APIService.shared.printServerURL)/print-summary") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: summaryData)
-        
-        do {
-            _ = try await URLSession.shared.data(for: request)
-            vm.showToast("Resumen impreso")
-        } catch {
-            vm.showToast("Error imprimiendo resumen", isError: true)
-        }
-    }
 }
