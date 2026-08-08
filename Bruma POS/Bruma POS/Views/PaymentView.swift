@@ -181,6 +181,24 @@ struct PaymentView: View {
                 .buttonStyle(.glass)
                 .clipShape(Capsule())
 
+                if vm.paymentMethod == "cash" {
+                    Button {
+                        vm.parkCurrentPaymentIfNeeded()
+                        vm.showingPayment = false
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "rectangle.compress.vertical")
+                            Text("Minimizar")
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.glass)
+                    .clipShape(Capsule())
+                }
+
                 Button {
                     vm.resetPaymentState()
                 } label: {

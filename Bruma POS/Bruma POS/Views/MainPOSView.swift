@@ -42,8 +42,46 @@ struct MainPOSView: View {
                 }
             }
             
+            // MARK: - Cobro pendiente (chip flotante para reanudar)
+
+            if vm.currentTableHasParkedPayment, let table = vm.selectedTable {
+                VStack {
+                    Spacer()
+                    Button {
+                        vm.resumeParkedPaymentForCurrentTable()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "banknote.fill")
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Cobro pendiente · Mesa \(table.number)")
+                                    .font(.subheadline.weight(.bold))
+                                if let p = vm.parkedPayments[table.id] {
+                                    Text("Recibido \(vm.formatCurrency(Double(p.cashReceived) ?? 0)) · Cambio \(vm.formatCurrency(p.changeSnapshot))")
+                                        .font(.caption2)
+                                        .foregroundColor(.white.opacity(0.85))
+                                }
+                            }
+                            Spacer()
+                            Text("Reanudar").font(.caption.weight(.bold))
+                            Image(systemName: "chevron.up")
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(Color.green)
+                        .clipShape(Capsule())
+                        .shadow(radius: 8)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 344)
+                    .padding(.trailing, 24)
+                    .padding(.bottom, 16)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             // MARK: - Dialog Overlays
-            
+
             if vm.showVariantDialog || vm.showNotesDialog {
                 dialogOverlay {
                     ProductAddDialog(vm: vm)

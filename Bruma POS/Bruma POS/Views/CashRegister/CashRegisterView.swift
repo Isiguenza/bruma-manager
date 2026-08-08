@@ -272,6 +272,9 @@ struct CashRegisterView: View {
         .sheet(isPresented: $showVentasDetalle) {
             ventasDetalleSheet(register)
         }
+        .sheet(isPresented: $showReportes) {
+            ReportesView(registerId: register.id)
+        }
         .sheet(isPresented: $vm.showDepositDialog) {
             DepositModal(vm: vm, posVM: posVM, registerId: register.id)
         }
@@ -295,19 +298,48 @@ struct CashRegisterView: View {
         .sheet(isPresented: $vm.showCorte) {
             CorteView(registerId: register.id, register: register)
         }
-        .alert("Eliminar Orden", isPresented: $showDeleteConfirm) {
-            TextField("Motivo de eliminación", text: $deleteReason)
+        .alert("Reembolsar Orden", isPresented: $showDeleteConfirm) {
+            TextField("Motivo", text: $deleteReason)
+            SecureField("PIN de gerente", text: $deletePin)
             Button("Cancelar", role: .cancel) {
                 orderToDelete = nil
                 deleteReason = ""
+                deletePin = ""
             }
-            Button("Eliminar", role: .destructive) {
+            Button("Reembolsar", role: .destructive) {
                 handleDeleteOrder()
             }
         } message: {
             if let order = orderToDelete {
-                Text("¿Eliminar orden #\(order.orderNumber)? Esta acción no se puede deshacer.")
+                Text("¿Reembolsar y anular la orden #\(order.orderNumber)? Requiere PIN de gerente. Queda registrada para auditoría.")
             }
+        }
+        .alert("Agregar propina", isPresented: $showTipDialog) {
+            TextField("Monto de propina", text: $tipInput)
+                .keyboardType(.decimalPad)
+            Button("Cancelar", role: .cancel) {
+                orderForTip = nil
+                tipInput = ""
+            }
+            Button("Guardar") { handleAddTip() }
+        } message: {
+            if let order = orderForTip {
+                Text("Propina para la orden #\(order.orderNumber). Se cobra por el mismo método (\(paymentMethodText(order.paymentMethod ?? "cash"))). Actualiza corte y ventas del día.")
+            }
+        }
+    }
+
+    private func handleAddTip() {
+        guard let order = orderForTip,
+              let tip = Double(tipInput.replacingOccurrences(of: ",", with: ".")),
+              tip >= 0 else { return }
+        Task {
+            let ok = await vm.addTip(orderId: order.id, tip: tip, tipPaymentMethod: order.paymentMethod ?? "cash")
+            if ok, let rid = vm.register?.id {
+                await corteVM.loadCorte(registerId: rid)
+            }
+            orderForTip = nil
+            tipInput = ""
         }
     }
     
@@ -371,6 +403,10 @@ struct CashRegisterView: View {
 
             actionButton(title: "Sangría", subtitle: "Retirar efectivo", icon: "arrow.up.circle.fill", iconColor: .orange) {
                 vm.showWithdrawDialog = true
+            }
+
+            actionButton(title: "Reportes", subtitle: "Empleado/producto/hora", icon: "chart.bar.fill", iconColor: .purple) {
+                showReportes = true
             }
 
             actionButton(title: "Cerrar", subtitle: "Cerrar caja", icon: "lock.fill", iconColor: .red) {
@@ -863,12 +899,20 @@ struct CashRegisterView: View {
                 } label: {
                     Label("Reimprimir", systemImage: "printer")
                 }
-                
+
+                Button {
+                    orderForTip = order
+                    tipInput = ""
+                    showTipDialog = true
+                } label: {
+                    Label("Editar propina", systemImage: "heart.fill")
+                }
+
                 Button(role: .destructive) {
                     orderToDelete = order
                     showDeleteConfirm = true
                 } label: {
-                    Label("Eliminar", systemImage: "trash")
+                    Label("Reembolsar", systemImage: "arrow.uturn.backward")
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -1144,9 +1188,18 @@ struct CashRegisterView: View {
     @State private var orderToDelete: Order?
     @State private var showDeleteConfirm = false
     @State private var deleteReason = ""
+    @State private var deletePin = ""
+
+    // Editar propina de orden pagada
+    @State private var orderForTip: Order?
+    @State private var tipInput = ""
+    @State private var showTipDialog = false
 
     // Desglose de ventas (sheet al tocar el hero)
     @State private var showVentasDetalle = false
+
+    // Reportes (empleado/producto/hora)
+    @State private var showReportes = false
     
     private func paymentMethodText(_ method: String) -> String {
         switch method {
@@ -1159,12 +1212,13 @@ struct CashRegisterView: View {
     
     // Delete order handler
     private func handleDeleteOrder() {
-        guard let order = orderToDelete, !deleteReason.isEmpty else { return }
+        guard let order = orderToDelete, !deleteReason.isEmpty, deletePin.count == 4 else { return }
         Task {
-            let success = await vm.deleteOrder(orderId: order.id, reason: deleteReason)
+            let success = await vm.refundOrder(orderId: order.id, reason: deleteReason, pin: deletePin)
             if success {
                 orderToDelete = nil
                 deleteReason = ""
+                deletePin = ""
             }
         }
     }

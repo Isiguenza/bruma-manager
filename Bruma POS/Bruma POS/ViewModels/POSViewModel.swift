@@ -234,6 +234,70 @@ class POSViewModel: ObservableObject {
     @Published var editingSplitPayment: SplitPayment? = nil
     @Published var activeNumericField: String? = nil // "cash", "tip", nil
     
+    // MARK: - Cobros pendientes (parking por mesa)
+    // Permite dejar un cobro en efectivo a medias (esperando propina/cambio),
+    // salir a comandar otra mesa, y regresar a terminarlo sin perder nada.
+    @Published var parkedPayments: [String: PendingCashPayment] = [:]
+
+    /// Parquea el cobro en efectivo en progreso de la mesa actual (si aplica).
+    func parkCurrentPaymentIfNeeded() {
+        guard showingPayment,
+              paymentMethod == "cash",
+              !paymentCompleted,
+              let table = selectedTable,
+              !cashReceived.isEmpty else { return }
+        parkedPayments[table.id] = PendingCashPayment(
+            cashReceived: cashReceived,
+            tipPercentage: tipPercentage,
+            customTip: customTip,
+            showCustomTip: showCustomTip,
+            tipPaymentMethod: tipPaymentMethod,
+            paymentStep: paymentStep,
+            totalSnapshot: totalWithTip,
+            changeSnapshot: changeAmount,
+            tableNumber: table.number
+        )
+    }
+
+    /// Restaura un cobro parqueado para la mesa (si existe) y reabre el cobro.
+    func restoreParkedPaymentIfNeeded(tableId: String) {
+        guard let parked = parkedPayments[tableId] else { return }
+        paymentMethod = "cash"
+        cashReceived = parked.cashReceived
+        tipPercentage = parked.tipPercentage
+        customTip = parked.customTip
+        showCustomTip = parked.showCustomTip
+        tipPaymentMethod = parked.tipPaymentMethod
+        paymentStep = parked.paymentStep
+        showingPayment = true
+    }
+
+    /// Reanuda el cobro parqueado de la mesa actual (para el chip flotante).
+    func resumeParkedPaymentForCurrentTable() {
+        guard let id = selectedTable?.id else { return }
+        restoreParkedPaymentIfNeeded(tableId: id)
+    }
+
+    func clearParkedPayment(tableId: String?) {
+        guard let tableId else { return }
+        parkedPayments.removeValue(forKey: tableId)
+    }
+
+    /// Volver a la selección de mesa parqueando el cobro en progreso (si aplica),
+    /// para no perderlo al salir a comandar otra mesa.
+    func handleBackToTables() {
+        parkCurrentPaymentIfNeeded()
+        showingPayment = false
+        currentScreen = .tableSelection
+        Task { await refreshTables() }
+    }
+
+    /// ¿La mesa actual tiene un cobro parqueado y el panel de cobro está cerrado?
+    var currentTableHasParkedPayment: Bool {
+        guard let id = selectedTable?.id else { return false }
+        return parkedPayments[id] != nil && !showingPayment
+    }
+
     // Reset payment state when switching tables/orders
     func resetPaymentState() {
         showingPayment = false
@@ -358,11 +422,28 @@ class POSViewModel: ObservableObject {
     // MARK: - Computed
     
     var filteredProducts: [Product] {
+        let result: [Product]
         if !searchQuery.isEmpty {
-            return products.filter { $0.active && $0.name.localizedCaseInsensitiveContains(searchQuery) }
+            result = products.filter { $0.active && $0.name.localizedCaseInsensitiveContains(searchQuery) }
+        } else if let catId = selectedCategory {
+            result = products.filter { $0.active && $0.categoryId == catId }
+        } else {
+            return []
         }
-        guard let catId = selectedCategory else { return [] }
-        return products.filter { $0.active && $0.categoryId == catId }
+        // Orden alfabético (case/acentos-insensible) al abrir una categoría o buscar.
+        return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// Subtotal corriendo de un asiento/comensal (excluye invitados). Se muestra
+    /// en el encabezado de cada asiento en el carrito para anticipar el split.
+    func seatSubtotal(_ seat: String) -> Double {
+        cart.filter { $0.seat == seat && !$0.isGuest }
+            .reduce(0.0) { $0 + $1.total }
+    }
+
+    /// ¿Ese Tiempo tiene items sin enviar a cocina? (para el disparo por tiempo)
+    func hasUnsentItems(inCourse course: Int) -> Bool {
+        cart.contains { $0.course == course && !$0.sentToKitchen }
     }
     
     var cartSubtotalBeforeDiscounts: Double {
@@ -1518,6 +1599,8 @@ class POSViewModel: ObservableObject {
         }
 
         print("🏠 handleTableSelect: table=\(table.id) (\(table.number)), status=\(table.status)")
+        // Parquea el cobro en progreso de la mesa que estamos dejando (si aplica)
+        parkCurrentPaymentIfNeeded()
         // Reset payment state for new table/order
         resetPaymentState()
         selectedEmployee = nil
@@ -1581,9 +1664,11 @@ class POSViewModel: ObservableObject {
                 } catch {
                     print("❌ Error loading table orders: \(error)")
                 }
-                
+
                 currentScreen = .pos
                 loading = false
+                // Si esta mesa tenía un cobro parqueado, reábrelo donde se dejó.
+                restoreParkedPaymentIfNeeded(tableId: table.id)
             }
         } else if table.isReserved {
             print("🏠 Mesa RESERVADA - estableciendo selectedTable")
@@ -2560,13 +2645,15 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Send to Kitchen
     
-    func handleSendToKitchen() {
+    /// Envía a cocina los items no enviados. Si se pasa `course` (coursing),
+    /// solo dispara ese Tiempo; los demás tiempos quedan pendientes.
+    func handleSendToKitchen(course: Int? = nil) {
         guard !submitting else {
             print("⚠️ handleSendToKitchen: already submitting, ignoring")
             return
         }
-        
-        let unsentItems = cart.filter { !$0.sentToKitchen }
+
+        let unsentItems = cart.filter { !$0.sentToKitchen && (course == nil || $0.course == course) }
         guard !unsentItems.isEmpty else { return }
         
         print("🔥 handleSendToKitchen: currentOrderId=\(currentOrderId ?? "nil"), selectedTable=\(selectedTable?.id ?? "nil"), items=\(unsentItems.count)")
@@ -2582,9 +2669,9 @@ class POSViewModel: ObservableObject {
                     // Send to kitchen (mark as preparing)
                     try await APIService.shared.sendToKitchen(orderId: orderId)
                     
-                    // Mark all unsent as sent
+                    // Mark only the items just sent (respeta el filtro de tiempo)
                     for i in cart.indices {
-                        if !cart[i].sentToKitchen {
+                        if !cart[i].sentToKitchen && (course == nil || cart[i].course == course) {
                             cart[i].sentToKitchen = true
                             cart[i].orderId = orderId
                             // Try to match itemId from response
@@ -2635,20 +2722,21 @@ class POSViewModel: ObservableObject {
                     }
                     
                     for i in cart.indices {
-                        if !cart[i].sentToKitchen {
+                        if !cart[i].sentToKitchen && (course == nil || cart[i].course == course) {
                             cart[i].sentToKitchen = true
                             cart[i].orderId = order.id
                         }
                     }
-                    
+
                     await printComanda(items: unsentItems, orderId: order.id)
                 }
-                
-                showToast("Enviado a cocina (\(unsentItems.count) items)")
+
+                let scopeLabel = course.map { "Tiempo \($0)" } ?? "cocina"
+                showToast("Enviado a \(scopeLabel) (\(unsentItems.count) items)")
             } catch let error as APIError where error == .offlineQueued {
-                // Offline: items are queued for sync, mark local state
+                // Offline: items are queued for sync, mark local state (respeta tiempo)
                 for i in cart.indices {
-                    if !cart[i].sentToKitchen {
+                    if !cart[i].sentToKitchen && (course == nil || cart[i].course == course) {
                         cart[i].sentToKitchen = true
                     }
                 }
@@ -3652,7 +3740,10 @@ class POSViewModel: ObservableObject {
     func handleConfirmOrder() {
         emitCustomerDisplayState(mode: "idle", force: true)
         showToast("Orden completada")
-        
+
+        // El cobro se finalizó: quita cualquier cobro parqueado de esta mesa.
+        clearParkedPayment(tableId: selectedTable?.id)
+
         cart = []
         activeCourse = 1
         loyaltyCard = nil

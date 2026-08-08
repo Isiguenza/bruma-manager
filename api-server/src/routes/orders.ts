@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcrypt";
 import { db, schema } from "../db";
 import { eq, and, or, desc, inArray, sql, isNull } from "drizzle-orm";
 import {
@@ -94,7 +95,36 @@ router.get("/orders", async (req, res) => {
       orderBy: desc(schema.orders.createdAt),
     });
 
-    res.json(orders);
+    // Marcar cada item como bebida si su categoría es bebida O su flujo por
+    // producto tiene isBeverage=true (para el ruteo "solo bebidas" del Dispatch).
+    const productIds = Array.from(
+      new Set(orders.flatMap((o) => (o.items || []).map((i: any) => i.productId)))
+    );
+    let beverageFlowIds = new Set<string>();
+    if (productIds.length > 0) {
+      const flows = await db
+        .select({ productId: schema.productFlows.productId })
+        .from(schema.productFlows)
+        .where(
+          and(
+            inArray(schema.productFlows.productId, productIds),
+            eq(schema.productFlows.isBeverage, true)
+          )
+        );
+      beverageFlowIds = new Set(flows.map((f) => f.productId));
+    }
+
+    const serialized = orders.map((o) => ({
+      ...o,
+      items: (o.items || []).map((it: any) => ({
+        ...it,
+        isBeverage:
+          it.product?.category?.isBeverage === true ||
+          beverageFlowIds.has(it.productId),
+      })),
+    }));
+
+    res.json(serialized);
   } catch (error) {
     console.error("Error fetching orders:", error);
     res.status(500).json({ error: "Error al obtener órdenes" });
@@ -324,12 +354,21 @@ router.post("/orders/:id/items", async (req, res) => {
 
     await db.insert(schema.orderItems).values(orderItems);
 
-    // Recalculate order total (excluding guest items)
-    const newItemsTotal = items.reduce((sum: number, item: any) => {
-      return item.isGuest === true ? sum : sum + (parseFloat(item.subtotal) || (item.quantity * item.unitPrice));
-    }, 0);
-    const currentSubtotal = parseFloat(order.subtotal) || 0;
-    const newSubtotal = currentSubtotal + newItemsTotal;
+    // Recalcular el subtotal desde TODOS los items en la BD (excluye anulados e
+    // invitados). Esto es seguro ante concurrencia: si dos iPads agregan a la
+    // misma mesa a la vez, los inserts son aditivos y el total se recomputa
+    // completo — no se pisa el total con un valor viejo leído en memoria.
+    const allItems = await db
+      .select({
+        subtotal: schema.orderItems.subtotal,
+        voided: schema.orderItems.voided,
+        isGuest: schema.orderItems.isGuest,
+      })
+      .from(schema.orderItems)
+      .where(eq(schema.orderItems.orderId, id));
+    const newSubtotal = allItems
+      .filter((i) => !i.voided && !i.isGuest)
+      .reduce((sum, i) => sum + (parseFloat(i.subtotal ?? "0") || 0), 0);
 
     // If order was "ready" (all previous items delivered), reset to "preparing" so KDS sees new items
     const statusUpdate: any = {
@@ -428,33 +467,196 @@ router.patch("/orders/:id/status", async (req, res) => {
 });
 
 // DELETE /api/orders/:id
+// Soft-cancel: NO se borra la orden — se marca status="cancelled" para conservar
+// el registro (auditoría). Solo aplica a órdenes NO pagadas; las pagadas deben
+// reembolsarse con POST /api/orders/:id/refund (así nunca se pierde un ingreso ni
+// queda una orden pagada fuera de sincronía con el corte).
 router.delete("/orders/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Primero eliminar los items de la orden (foreign key constraint)
-    await db.delete(schema.orderItems).where(eq(schema.orderItems.orderId, id));
+    const order = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, id),
+    });
 
-    // Luego eliminar la orden
-    const [deletedOrder] = await db
-      .delete(schema.orders)
-      .where(eq(schema.orders.id, id))
-      .returning();
-
-    if (!deletedOrder) {
+    if (!order) {
       return res.status(404).json({ error: "Orden no encontrada" });
     }
+
+    if (order.paymentStatus === "paid") {
+      return res.status(400).json({
+        error: "La orden ya está pagada; usa reembolso para anularla",
+        code: "ORDER_ALREADY_PAID",
+      });
+    }
+
+    const [cancelledOrder] = await db
+      .update(schema.orders)
+      .set({ status: "cancelled", updatedAt: new Date() })
+      .where(eq(schema.orders.id, id))
+      .returning();
 
     await unmergeByOrderId(id);
     // Also dissolve any merge on the freed table itself, in case the merge was
     // created before this order existed (so it isn't linked by orderId).
-    if (deletedOrder.tableId) await unmergeByTableId(deletedOrder.tableId);
+    if (cancelledOrder.tableId) await unmergeByTableId(cancelledOrder.tableId);
 
-    emitOrderUpdated({ id, deleted: true });
-    res.json({ success: true, message: "Orden eliminada" });
+    // Free the table if this dine-in order was occupying it.
+    if (cancelledOrder.tableId) {
+      await db
+        .update(schema.tables)
+        .set({ status: "available" })
+        .where(eq(schema.tables.id, cancelledOrder.tableId));
+      const freedTable = await db.query.tables.findFirst({
+        where: eq(schema.tables.id, cancelledOrder.tableId),
+      });
+      if (freedTable) emitTableUpdated(freedTable);
+    }
+
+    emitOrderUpdated({ ...cancelledOrder, cancelled: true });
+    res.json({ success: true, message: "Orden cancelada" });
   } catch (error) {
-    console.error("Error deleting order:", error);
-    res.status(500).json({ error: "Error al eliminar orden" });
+    console.error("Error cancelling order:", error);
+    res.status(500).json({ error: "Error al cancelar orden" });
+  }
+});
+
+// POST /api/orders/:id/refund  { pin, reason }
+// Anula una orden YA PAGADA. Requiere PIN de gerente (rol admin). Marca la orden
+// como paymentStatus="refunded" + status="cancelled" (sale del corte y de las
+// listas activas), y deja una transacción "refund" con el motivo/gerente para
+// auditoría. La orden NO se borra.
+router.post("/orders/:id/refund", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { pin, reason } = req.body;
+
+    if (!pin || String(pin).length !== 4) {
+      return res.status(400).json({ error: "PIN de gerente requerido (4 dígitos)" });
+    }
+
+    // Verificar PIN contra un empleado admin activo.
+    const admins = await db.query.userProfiles.findMany({
+      where: and(
+        eq(schema.userProfiles.active, true),
+        eq(schema.userProfiles.role, "admin")
+      ),
+    });
+    let manager = null;
+    for (const a of admins) {
+      if (a.pinHash && (await bcrypt.compare(String(pin), a.pinHash))) {
+        manager = a;
+        break;
+      }
+    }
+    if (!manager) {
+      return res.status(403).json({ error: "PIN de gerente inválido" });
+    }
+
+    const order = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, id),
+    });
+    if (!order) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
+    if (order.paymentStatus !== "paid") {
+      return res.status(400).json({ error: "Solo se pueden reembolsar órdenes pagadas" });
+    }
+
+    const [refundedOrder] = await db
+      .update(schema.orders)
+      .set({ paymentStatus: "refunded", status: "cancelled", updatedAt: new Date() })
+      .where(eq(schema.orders.id, id))
+      .returning();
+
+    // Transacción de reembolso (auditoría). El corte excluye la orden por su
+    // paymentStatus, así que no se resta doble.
+    if (order.cashRegisterId) {
+      await db.insert(schema.cashRegisterTransactions).values({
+        registerId: order.cashRegisterId,
+        type: "refund",
+        amount: order.total || "0",
+        paymentMethod: order.paymentMethod ?? undefined,
+        orderId: id,
+        userId: manager.id,
+        description: `Reembolso orden #${order.orderNumber}${reason ? `: ${reason}` : ""} (por ${manager.name})`,
+      });
+    }
+
+    // Liberar mesa si aplica.
+    if (refundedOrder.tableId) {
+      await db
+        .update(schema.tables)
+        .set({ status: "available" })
+        .where(eq(schema.tables.id, refundedOrder.tableId));
+      const freedTable = await db.query.tables.findFirst({
+        where: eq(schema.tables.id, refundedOrder.tableId),
+      });
+      if (freedTable) emitTableUpdated(freedTable);
+      await unmergeByTableId(refundedOrder.tableId);
+    }
+    await unmergeByOrderId(id);
+
+    emitOrderUpdated({ ...refundedOrder, refunded: true });
+    res.json({ success: true, message: "Orden reembolsada", order: refundedOrder });
+  } catch (error) {
+    console.error("Error refunding order:", error);
+    res.status(500).json({ error: "Error al reembolsar orden" });
+  }
+});
+
+// POST /api/orders/:id/tip  { tip, tipPaymentMethod }
+// Agrega/edita la propina de una orden YA PAGADA (ej. el cliente definió la
+// propina después de cerrar). Actualiza tip, método y total a nivel BD; como el
+// corte y la barrita leen order.tip/tipPaymentMethod en vivo, ventas del día,
+// propinas y efectivo esperado se recalculan solos. No aplica a split.
+router.post("/orders/:id/tip", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tip, tipPaymentMethod } = req.body;
+
+    const tipAmount = parseFloat(tip ?? "0");
+    if (isNaN(tipAmount) || tipAmount < 0) {
+      return res.status(400).json({ error: "Propina inválida" });
+    }
+
+    const order = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, id),
+    });
+    if (!order) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
+    if (order.paymentStatus !== "paid") {
+      return res.status(400).json({ error: "Solo se puede agregar propina a órdenes pagadas" });
+    }
+
+    // Split: la propina vive por pago en orderPayments; no se soporta aquí.
+    const splits = await db.query.orderPayments.findMany({
+      where: eq(schema.orderPayments.orderId, id),
+    });
+    if (splits.length > 0) {
+      return res.status(400).json({ error: "No disponible en órdenes con pago dividido" });
+    }
+
+    const subtotal = parseFloat(order.subtotal || "0");
+    const newTotal = (subtotal + tipAmount).toFixed(2);
+
+    const [updated] = await db
+      .update(schema.orders)
+      .set({
+        tip: tipAmount.toFixed(2),
+        tipPaymentMethod: tipPaymentMethod || order.paymentMethod || "cash",
+        total: newTotal,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.orders.id, id))
+      .returning();
+
+    emitOrderUpdated(updated);
+    res.json({ success: true, order: updated });
+  } catch (error) {
+    console.error("Error adding tip to order:", error);
+    res.status(500).json({ error: "Error al agregar propina" });
   }
 });
 
@@ -530,6 +732,12 @@ router.post("/orders/:id/pay", async (req, res) => {
 
     if (!order) {
       return res.status(404).json({ error: "Orden no encontrada" });
+    }
+
+    // Anti-doble-cobro: si ya está pagada, no volver a cobrar ni duplicar la
+    // transacción de caja (protege contra doble tap / reintentos de red).
+    if (order.paymentStatus === "paid") {
+      return res.status(409).json({ error: "La orden ya está pagada", code: "ALREADY_PAID" });
     }
 
     // Find open cash register
@@ -686,6 +894,12 @@ router.post("/orders/:id/pay-split", async (req, res) => {
       return res.status(404).json({ error: "Orden no encontrada" });
     }
 
+    // Anti-doble-cobro: si ya está pagada, no procesar el split de nuevo.
+    if (order.paymentStatus === "paid") {
+      console.log(`[pay-split] ERROR: order already paid`);
+      return res.status(409).json({ error: "La orden ya está pagada", code: "ALREADY_PAID" });
+    }
+
     console.log(`[pay-split] Order found: #${order.orderNumber}, total=${order.total}, subtotal=${order.subtotal}`);
 
     // Calculate totals — tips are separate from order subtotal
@@ -735,6 +949,7 @@ router.post("/orders/:id/pay-split", async (req, res) => {
     const isTakeout = !order.tableId;
 
     const updates: any = {
+      paymentMethod: "split",
       paymentStatus: "paid",
       paidAt: new Date(),
       amountPaid: totalPaid.toString(),
@@ -825,6 +1040,11 @@ router.post("/orders/:id/complete", async (req, res) => {
 
     if (!order) {
       return res.status(404).json({ error: "Orden no encontrada" });
+    }
+
+    // "Completar orden" solo aplica a órdenes ya pagadas (flujo de llevar).
+    if (order.paymentStatus !== "paid") {
+      return res.status(400).json({ error: "La orden debe estar pagada para completarse" });
     }
 
     await db

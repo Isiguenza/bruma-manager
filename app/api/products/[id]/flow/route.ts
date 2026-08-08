@@ -136,6 +136,7 @@ export async function GET(
         useDefaultFlow: false,
         steps,
         nodes: productFlow.nodes ? JSON.parse(productFlow.nodes) : null,
+        isBeverage: productFlow.isBeverage ?? false,
         source: "product",
       };
       console.log("📤 Full response:", JSON.stringify(response, null, 2));
@@ -178,6 +179,7 @@ export async function GET(
               active: o.active ?? true,
             })),
           })),
+          isBeverage: productFlow?.isBeverage ?? false,
           source: "category",
         });
       }
@@ -188,6 +190,7 @@ export async function GET(
       productId: id,
       useDefaultFlow: true,
       steps: [],
+      isBeverage: productFlow?.isBeverage ?? false,
       source: "default",
     });
   } catch (error) {
@@ -207,13 +210,14 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { useDefaultFlow, steps, nodes } = body;
-    
+    const { useDefaultFlow, steps, nodes, isBeverage } = body;
+
     console.log("💾 Saving product flow:", {
       productId: id,
       useDefaultFlow,
       stepsCount: steps?.length || 0,
       hasNodes: !!nodes,
+      isBeverage: !!isBeverage,
     });
 
     // Check if product flow exists
@@ -228,6 +232,7 @@ export async function POST(
       useDefaultFlow: useDefaultFlow ?? true,
       steps: JSON.stringify(steps || []),
       nodes: nodes ? JSON.stringify(nodes) : null,
+      isBeverage: isBeverage ?? false,
       updatedAt: new Date(),
     };
 

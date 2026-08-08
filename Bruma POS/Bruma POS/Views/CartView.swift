@@ -60,8 +60,7 @@ struct CartView: View {
                     HStack(spacing: 8) {
                         Button {
                             vm.emitCustomerDisplayState(mode: "idle", force: true)
-                            vm.currentScreen = .tableSelection
-                            Task { await vm.refreshTables() }
+                            vm.handleBackToTables()
                         } label: {
                             Image(systemName: "chevron.left")
                                 .padding(8)
@@ -124,8 +123,7 @@ struct CartView: View {
                         systemImage: "chevron.left",
                         action: {
                             vm.emitCustomerDisplayState(mode: "idle", force: true)
-                            vm.currentScreen = .tableSelection
-                            Task { await vm.refreshTables() }
+                            vm.handleBackToTables()
                         },
                         isActive: false,
                         activeColor: .blue
@@ -299,6 +297,8 @@ struct CartView: View {
                                                 .foregroundColor(Color(white: 0.4))
                                             Text("Tiempo \(firstItem.course)")
                                                 .font(.caption.weight(.semibold))
+                                            Spacer()
+                                            courseSendButton(firstItem.course)
                                         }
                                         .foregroundColor(.green)
                                         .padding(.horizontal, 8)
@@ -314,6 +314,9 @@ struct CartView: View {
                                                 .font(.caption2)
                                             Text(firstItem.seat == "C" ? "Centro (compartido)" : "Asiento \(firstItem.seat)")
                                                 .font(.caption.weight(.semibold))
+                                            Spacer()
+                                            Text(vm.formatCurrency(vm.seatSubtotal(firstItem.seat)))
+                                                .font(.caption.weight(.bold))
                                         }
                                         .foregroundColor(firstItem.seat == "C" ? .orange : .blue)
                                         .padding(.horizontal, 8)
@@ -335,6 +338,8 @@ struct CartView: View {
                                                 .foregroundColor(Color(white: 0.4))
                                             Text("Tiempo \(item.course)")
                                                 .font(.caption.weight(.semibold))
+                                            Spacer()
+                                            courseSendButton(item.course)
                                         }
                                         .foregroundColor(.green)
                                         .padding(.horizontal, 8)
@@ -350,6 +355,9 @@ struct CartView: View {
                                                 .font(.caption2)
                                             Text(item.seat == "C" ? "Centro (compartido)" : "Asiento \(item.seat)")
                                                 .font(.caption.weight(.semibold))
+                                            Spacer()
+                                            Text(vm.formatCurrency(vm.seatSubtotal(item.seat)))
+                                                .font(.caption.weight(.bold))
                                         }
                                         .foregroundColor(item.seat == "C" ? .orange : .blue)
                                         .padding(.horizontal, 8)
@@ -373,6 +381,29 @@ struct CartView: View {
         }
     }
     
+    /// Botón para disparar a cocina solo ese Tiempo (coursing). Aparece únicamente
+    /// cuando el tiempo tiene items sin enviar.
+    @ViewBuilder
+    private func courseSendButton(_ course: Int) -> some View {
+        if vm.hasUnsentItems(inCourse: course) {
+            Button {
+                vm.handleSendToKitchen(course: course)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "paperplane.fill").font(.caption2)
+                    Text("Enviar").font(.caption2.weight(.bold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.green)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(vm.submitting)
+        }
+    }
+
     private var tableInfoPill: some View {
         HStack(spacing: 8) {
             if let table = vm.selectedTable {

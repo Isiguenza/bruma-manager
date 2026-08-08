@@ -8,6 +8,7 @@ struct OrdersHistoryModal: View {
     @State private var showDeleteConfirm = false
     @State private var orderToDelete: Order?
     @State private var deleteReason = ""
+    @State private var deletePin = ""
     @State private var deleting = false
     @State private var reprintingOrderId: String?
     
@@ -77,18 +78,20 @@ struct OrdersHistoryModal: View {
             }
         }
         .preferredColorScheme(.dark)
-        .alert("Eliminar Orden", isPresented: $showDeleteConfirm) {
-            TextField("Motivo de eliminación", text: $deleteReason)
+        .alert("Reembolsar Orden", isPresented: $showDeleteConfirm) {
+            TextField("Motivo", text: $deleteReason)
+            SecureField("PIN de gerente", text: $deletePin)
             Button("Cancelar", role: .cancel) {
                 orderToDelete = nil
                 deleteReason = ""
+                deletePin = ""
             }
-            Button("Eliminar", role: .destructive) {
+            Button("Reembolsar", role: .destructive) {
                 handleDeleteOrder()
             }
         } message: {
             if let order = orderToDelete {
-                Text("¿Eliminar orden #\(order.orderNumber)? Esta acción no se puede deshacer.")
+                Text("¿Reembolsar y anular la orden #\(order.orderNumber)? Requiere PIN de gerente. Queda registrada para auditoría.")
             }
         }
     }
@@ -253,15 +256,16 @@ struct OrdersHistoryModal: View {
     }
     
     private func handleDeleteOrder() {
-        guard let order = orderToDelete, !deleteReason.isEmpty else { return }
-        
+        guard let order = orderToDelete, !deleteReason.isEmpty, deletePin.count == 4 else { return }
+
         deleting = true
         Task {
-            let success = await vm.deleteOrder(orderId: order.id, reason: deleteReason)
+            let success = await vm.refundOrder(orderId: order.id, reason: deleteReason, pin: deletePin)
             deleting = false
             if success {
                 orderToDelete = nil
                 deleteReason = ""
+                deletePin = ""
             }
         }
     }

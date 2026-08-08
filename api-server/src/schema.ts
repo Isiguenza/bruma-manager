@@ -914,6 +914,7 @@ export const productFlows = pgTable("product_flows", {
   useDefaultFlow: boolean("use_default_flow").notNull().default(true), // si true, usa el flujo de la categoría
   steps: text("steps").notNull().default("[]"), // JSON array de ModifierStep
   nodes: text("nodes"), // JSON para el editor visual (posiciones, conexiones)
+  isBeverage: boolean("is_beverage").notNull().default(false), // el producto de este flujo se rutea como bebida (barra)
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

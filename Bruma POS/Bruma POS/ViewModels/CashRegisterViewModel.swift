@@ -89,54 +89,83 @@ class CashRegisterViewModel: ObservableObject {
         paidOrders.reduce(0.0) { sum, order in sum + (Double(order.total ?? "0") ?? 0) }
     }
     
-    var actualCashSales: Double {
-        let cashOrdersTotal = paidOrders
-            .filter { $0.paymentMethod == "cash" }
-            .reduce(0.0) { sum, order in sum + (Double(order.total ?? "0") ?? 0) }
-        return cashOrdersTotal + actualCashTips
-    }
-    
-    var actualTerminalSales: Double {
-        paidOrders
-            .filter { $0.paymentMethod == "card" || $0.paymentMethod == "terminal_mercadopago" }
-            .reduce(0.0) { sum, order in
+    // MARK: - Desglose de efectivo (replica exacta del Corte, fuente de verdad)
+    //
+    // El Corte (backend) es la referencia. Estas computeds replican su método
+    // para que el cliente coincida incluso offline:
+    //   • los pagos divididos se leen de `order.payments` (método por pago),
+    //   • las ventas usan el SUBTOTAL (las propinas van aparte por su método),
+    //   • las propinas en efectivo se cuentan UNA sola vez,
+    //   • los movimientos salen en vivo de `transactions`.
+
+    /// (cash, card, transfer, cashTips) — subtotales por método y propinas por
+    /// método real, considerando pagos divididos. Espeja al Corte.
+    private var cashBreakdown: (cash: Double, card: Double, transfer: Double, cashTips: Double) {
+        var cash = 0.0, card = 0.0, transfer = 0.0, cashTips = 0.0
+        for order in paidOrders {
+            if let payments = order.payments, !payments.isEmpty {
+                // Orden dividida: sumar cada pago por su propio método.
+                for p in payments {
+                    let amount = Double(p.amount) ?? 0
+                    let tip = Double(p.tip ?? "0") ?? 0
+                    let method = p.paymentMethod
+                    let tipMethod = p.tipPaymentMethod ?? method
+                    switch method {
+                    case "cash": cash += amount
+                    case "card", "terminal_mercadopago": card += amount
+                    case "transfer": transfer += amount
+                    default: break
+                    }
+                    if tipMethod == "cash" { cashTips += tip }
+                }
+            } else {
+                // Pago único: la venta es el subtotal (sin propina).
                 let total = Double(order.total ?? "0") ?? 0
                 let tip = Double(order.tip ?? "0") ?? 0
-                // If tip was paid in cash, subtract it from terminal sales (it goes to cash)
-                if order.tipPaymentMethod == "cash" && tip > 0 {
-                    return sum + total - tip
+                let parsedSub = Double(order.subtotal ?? "0") ?? 0
+                let subtotal = parsedSub > 0 ? parsedSub : (total - tip)
+                let method = order.paymentMethod
+                let tipMethod = order.tipPaymentMethod ?? method
+                switch method {
+                case "cash": cash += subtotal
+                case "card", "terminal_mercadopago": card += subtotal
+                case "transfer": transfer += subtotal
+                default: break
                 }
-                return sum + total
+                if tipMethod == "cash" { cashTips += tip }
             }
+        }
+        return (cash, card, transfer, cashTips)
     }
-    
-    var actualTransferSales: Double {
-        paidOrders
-            .filter { $0.paymentMethod == "transfer" }
-            .reduce(0.0) { sum, order in
-                let total = Double(order.total ?? "0") ?? 0
-                let tip = Double(order.tip ?? "0") ?? 0
-                // If tip was paid in cash, subtract it from transfer sales (it goes to cash)
-                if order.tipPaymentMethod == "cash" && tip > 0 {
-                    return sum + total - tip
-                }
-                return sum + total
-            }
+
+    /// Ventas en efectivo (subtotal, sin propina) — igual que Corte `sales.cash`.
+    var actualCashSales: Double { cashBreakdown.cash }
+
+    /// Ventas con terminal (subtotal, sin propina) — igual que Corte `sales.card`.
+    var actualTerminalSales: Double { cashBreakdown.card }
+
+    /// Ventas con transferencia (subtotal) — igual que Corte `sales.transfer`.
+    var actualTransferSales: Double { cashBreakdown.transfer }
+
+    /// Propinas cobradas en efectivo (de cualquier orden), contadas una sola vez —
+    /// igual que Corte `tips.cash`.
+    var actualCashTips: Double { cashBreakdown.cashTips }
+
+    /// Depósitos y sangrías en vivo desde las transacciones (como el Corte).
+    private var depositsTotal: Double {
+        transactions.filter { $0.type == "deposit" }.reduce(0.0) { $0 + (Double($1.amount) ?? 0) }
     }
-    
-    // Cash tips from non-cash orders (e.g. terminal payment with cash tip)
-    var actualCashTips: Double {
-        paidOrders
-            .filter { $0.paymentMethod != "cash" && $0.tipPaymentMethod == "cash" }
-            .reduce(0.0) { sum, order in sum + (Double(order.tip ?? "0") ?? 0) }
+    private var withdrawalsTotal: Double {
+        transactions.filter { $0.type == "withdrawal" }.reduce(0.0) { $0 + (Double($1.amount) ?? 0) }
     }
-    
+
+    /// Efectivo esperado en caja — misma fórmula que el Corte: fondo inicial +
+    /// ventas efectivo (subtotal) + propinas efectivo + depósitos − sangrías.
     var expectedCash: Double {
         guard let register = register else { return 0 }
         let initial = Double(register.initialCash) ?? 0
-        let deposits = Double(register.deposits) ?? 0
-        let withdrawals = Double(register.withdrawals) ?? 0
-        return initial + actualCashSales + actualCashTips - withdrawals + deposits
+        let b = cashBreakdown
+        return initial + b.cash + b.cashTips + depositsTotal - withdrawalsTotal
     }
 
     // MARK: - Resumen (operativo, sin dinero)
@@ -400,6 +429,34 @@ class CashRegisterViewModel: ObservableObject {
             return true
         } catch {
             showToast("Error eliminando orden", isError: true)
+            return false
+        }
+    }
+
+    /// Agrega/edita la propina de una orden ya pagada. Recarga para reflejar
+    /// el nuevo total en la barrita (el corte se recarga desde la vista).
+    func addTip(orderId: String, tip: Double, tipPaymentMethod: String) async -> Bool {
+        do {
+            try await APIService.shared.addTipToOrder(orderId: orderId, tip: tip, tipPaymentMethod: tipPaymentMethod)
+            showToast("Propina agregada")
+            await loadData()
+            return true
+        } catch {
+            showToast("Error al agregar propina", isError: true)
+            return false
+        }
+    }
+
+    /// Reembolsa (anula) una orden pagada con PIN de gerente. En la tab de Caja
+    /// todas las órdenes están pagadas, por eso el "matar" desde aquí es refund.
+    func refundOrder(orderId: String, reason: String, pin: String) async -> Bool {
+        do {
+            try await APIService.shared.refundOrder(orderId: orderId, pin: pin, reason: reason)
+            showToast("Orden reembolsada")
+            await loadData()
+            return true
+        } catch {
+            showToast("PIN inválido o error al reembolsar", isError: true)
             return false
         }
     }

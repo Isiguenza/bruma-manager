@@ -37,6 +37,8 @@ interface FlowEditorProps {
   initialNodes?: any;
   onSave?: (steps: ModifierStep[], nodes: any) => void;
   onBack?: () => void;
+  isBeverage?: boolean;
+  onBeverageChange?: (value: boolean) => void;
 }
 
 export function FlowEditor({
@@ -46,6 +48,8 @@ export function FlowEditor({
   initialNodes,
   onSave,
   onBack,
+  isBeverage,
+  onBeverageChange,
 }: FlowEditorProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -187,6 +191,16 @@ export function FlowEditor({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {typeof isBeverage === "boolean" && onBeverageChange && (
+            <Button
+              variant={isBeverage ? "default" : "outline"}
+              onClick={() => onBeverageChange(!isBeverage)}
+              className="gap-2"
+              title="Rutear este producto como bebida (barra) en Dispatch"
+            >
+              {isBeverage ? "🥤 Es bebida" : "🥤 No bebida"}
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => setShowAddPanel(true)}

@@ -178,6 +178,14 @@ router.post("/cash-register/:id/deposit", async (req, res) => {
       description: description || "Depósito",
     });
 
+    // Keep the register's running deposits total in sync (used by the client
+    // mid-shift; the corte computes from transactions independently).
+    const newDeposits = parseFloat(register.deposits || "0") + parseFloat(amount.toString());
+    await db
+      .update(schema.cashRegisters)
+      .set({ deposits: newDeposits.toFixed(2) })
+      .where(eq(schema.cashRegisters.id, id));
+
     res.json({ success: true });
   } catch (error) {
     console.error("Error depositing to cash register:", error);
@@ -216,6 +224,14 @@ router.post("/cash-register/:id/withdraw", async (req, res) => {
       description: description || "Sangría",
     });
 
+    // Keep the register's running withdrawals total in sync (used by the client
+    // mid-shift; the corte computes from transactions independently).
+    const newWithdrawals = parseFloat(register.withdrawals || "0") + parseFloat(amount.toString());
+    await db
+      .update(schema.cashRegisters)
+      .set({ withdrawals: newWithdrawals.toFixed(2) })
+      .where(eq(schema.cashRegisters.id, id));
+
     res.json({ success: true });
   } catch (error) {
     console.error("Error withdrawing from cash register:", error);
@@ -242,13 +258,59 @@ router.get("/cash-register/:id/report", async (req, res) => {
       orderBy: desc(schema.cashRegisterTransactions.createdAt),
     });
 
-    // Get orders for this register
+    // Get orders for this register (con items y empleado para reportes)
     const orders = await db.query.orders.findMany({
       where: and(
         eq(schema.orders.cashRegisterId, id),
         eq(schema.orders.paymentStatus, "paid")
       ),
+      with: {
+        items: true,
+        user: { columns: { id: true, name: true } },
+      },
     });
+
+    // --- Reportes: por empleado / producto / hora ---
+    const byEmployeeMap: Record<string, { employeeId: string | null; employeeName: string; orders: number; total: number }> = {};
+    const byProductMap: Record<string, { productName: string; qty: number; total: number }> = {};
+    const byHourMap: Record<number, { hour: number; orders: number; total: number }> = {};
+
+    for (const o of orders) {
+      const orderTotal = parseFloat(o.total || "0");
+
+      // Por empleado
+      const empKey = o.userId || "sin_asignar";
+      if (!byEmployeeMap[empKey]) {
+        byEmployeeMap[empKey] = {
+          employeeId: o.userId ?? null,
+          employeeName: (o as any).user?.name || "Sin asignar",
+          orders: 0,
+          total: 0,
+        };
+      }
+      byEmployeeMap[empKey].orders++;
+      byEmployeeMap[empKey].total += orderTotal;
+
+      // Por producto (excluye anulados)
+      for (const it of ((o as any).items || [])) {
+        if (it.voided) continue;
+        const name = it.productName as string;
+        if (!byProductMap[name]) byProductMap[name] = { productName: name, qty: 0, total: 0 };
+        byProductMap[name].qty += it.quantity;
+        byProductMap[name].total += parseFloat(it.subtotal || "0");
+      }
+
+      // Por hora (usa la hora de pago; cae a creación)
+      const when = (o as any).paidAt ? new Date((o as any).paidAt) : new Date(o.createdAt);
+      const hour = when.getHours();
+      if (!byHourMap[hour]) byHourMap[hour] = { hour, orders: 0, total: 0 };
+      byHourMap[hour].orders++;
+      byHourMap[hour].total += orderTotal;
+    }
+
+    const byEmployee = Object.values(byEmployeeMap).sort((a, b) => b.total - a.total);
+    const byProduct = Object.values(byProductMap).sort((a, b) => b.qty - a.qty);
+    const byHour = Object.values(byHourMap).sort((a, b) => a.hour - b.hour);
 
     const report = {
       register,
@@ -263,6 +325,11 @@ router.get("/cash-register/:id/report", async (req, res) => {
         totalWithdrawals: transactions
           .filter((t) => t.type === "withdrawal")
           .reduce((sum, t) => sum + parseFloat(t.amount), 0),
+      },
+      reports: {
+        byEmployee,
+        byProduct,
+        byHour,
       },
     };
 

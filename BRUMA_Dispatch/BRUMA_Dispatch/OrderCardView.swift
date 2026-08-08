@@ -120,8 +120,8 @@ struct OrderCardView: View {
                     let visibleItems = batchIndex == 0 && !isExpanded ? Array(batch.items.prefix(3)) : batch.items
                     
                     VStack(alignment: .leading, spacing: 12) {
-                        let beverages = visibleItems.filter { $0.product?.category?.isBeverage == true }
-                        let food = visibleItems.filter { $0.product?.category?.isBeverage != true }
+                        let beverages = visibleItems.filter { $0.effectiveIsBeverage }
+                        let food = visibleItems.filter { !$0.effectiveIsBeverage }
                         
                         if !beverages.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {

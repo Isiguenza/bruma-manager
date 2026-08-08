@@ -17,6 +17,43 @@ struct TableSelectionView: View {
                 // else gets pushed down to give the content more height.
                 header
 
+                // Cobros en efectivo pendientes (parqueados). Tocar → ir a la
+                // mesa y reanudar el cobro donde se dejó.
+                if !vm.parkedPayments.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(Array(vm.parkedPayments.keys), id: \.self) { tid in
+                                if let p = vm.parkedPayments[tid] {
+                                    Button {
+                                        if let table = vm.tables.first(where: { $0.id == tid }) {
+                                            vm.handleSelectTable(table)
+                                        }
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "banknote.fill")
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text("Mesa \(p.tableNumber)")
+                                                    .font(.caption.weight(.bold))
+                                                Text("Cambio \(vm.formatCurrency(p.changeSnapshot))")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.white.opacity(0.85))
+                                            }
+                                        }
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Color.green.opacity(0.9))
+                                        .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+                    }
+                }
+
                 if vm.tableViewMode == .cards {
                     // Scroll content
                     ScrollView {

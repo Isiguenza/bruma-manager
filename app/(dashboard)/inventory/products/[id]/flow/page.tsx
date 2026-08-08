@@ -15,6 +15,7 @@ export default function ProductFlowPage({
   const { id } = use(params);
   const [loading, setLoading] = useState(true);
   const [flow, setFlow] = useState<any>(null);
+  const [isBeverage, setIsBeverage] = useState(false);
 
   useEffect(() => {
     fetchFlow();
@@ -26,6 +27,7 @@ export default function ProductFlowPage({
       if (res.ok) {
         const data = await res.json();
         setFlow(data);
+        setIsBeverage(data?.isBeverage ?? false);
       }
     } catch (error) {
       console.error("Error fetching flow:", error);
@@ -44,6 +46,7 @@ export default function ProductFlowPage({
           useDefaultFlow: false,
           steps,
           nodes,
+          isBeverage,
         }),
       });
 
@@ -76,6 +79,8 @@ export default function ProductFlowPage({
       initialNodes={flow?.nodes}
       onSave={handleSave}
       onBack={() => router.push("/inventory/products")}
+      isBeverage={isBeverage}
+      onBeverageChange={setIsBeverage}
     />
   );
 }

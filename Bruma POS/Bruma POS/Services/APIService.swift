@@ -230,7 +230,43 @@ class APIService {
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)")!
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
-        
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError
+        }
+    }
+
+    /// Agrega/edita la propina de una orden ya pagada (el cliente la definió
+    /// después de cerrar). Actualiza tip/total en BD; el corte se recalcula solo.
+    func addTipToOrder(orderId: String, tip: Double, tipPaymentMethod: String) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/tip")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "tip": tip,
+            "tipPaymentMethod": tipPaymentMethod,
+        ])
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError
+        }
+    }
+
+    /// Reembolsa una orden ya pagada. Requiere PIN de gerente (rol admin).
+    /// Lanza `APIError.serverError` si el PIN es inválido o falla.
+    func refundOrder(orderId: String, pin: String, reason: String) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/refund")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "pin": pin,
+            "reason": reason,
+        ])
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
@@ -691,6 +727,13 @@ class APIService {
         let url = URL(string: "\(baseURL)/api/cash-register/\(registerId)/report")!
         let (data, _) = try await requestRaw(url)
         return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+    }
+
+    /// Desgloses tipados (empleado/producto/hora) para la pantalla de Reportes.
+    func fetchRegisterReports(registerId: String) async throws -> RegisterReports {
+        let url = URL(string: "\(baseURL)/api/cash-register/\(registerId)/report")!
+        let envelope: RegisterReportEnvelope = try await request(url)
+        return envelope.reports
     }
     
     func fetchOrdersHistory(registerId: String) async throws -> [Order] {

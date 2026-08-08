@@ -44,10 +44,12 @@ export default function OrderHistoryPage() {
   const [editingPayment, setEditingPayment] = useState(false);
   const [newPaymentMethod, setNewPaymentMethod] = useState<string>("");
   const [showManualOrderDialog, setShowManualOrderDialog] = useState(false);
+  // Auditoría: ver órdenes canceladas (no cuentan en el historial normal).
+  const [showCancelled, setShowCancelled] = useState(false);
 
   useEffect(() => {
     fetchOrders();
-  }, []);
+  }, [showCancelled]);
 
   async function fetchOrders() {
     setLoading(true);
@@ -55,11 +57,16 @@ export default function OrderHistoryPage() {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const startDate = thirtyDaysAgo.toISOString();
-      
-      const res = await fetch(`/api/orders?paymentStatus=paid&startDate=${startDate}&limit=5000`);
+
+      // Historial normal: solo pagadas (excluye canceladas y reembolsadas).
+      // Modo auditoría: solo canceladas.
+      const query = showCancelled
+        ? `status=cancelled&startDate=${startDate}&limit=5000`
+        : `paymentStatus=paid&startDate=${startDate}&limit=5000`;
+      const res = await fetch(`/api/orders?${query}`);
       if (res.ok) {
         const data: Order[] = await res.json();
-        setOrders(data.filter(o => o.cashRegisterId));
+        setOrders(showCancelled ? data : data.filter(o => o.cashRegisterId));
       }
     } catch (error) {
       console.error("Error fetching orders:", error);
@@ -158,10 +165,17 @@ export default function OrderHistoryPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Historial de Órdenes</h1>
             <p className="text-muted-foreground mt-1">
-              Últimas 30 días de ventas
+              {showCancelled ? "Órdenes canceladas (solo auditoría)" : "Últimas 30 días de ventas"}
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <Button
+              onClick={() => setShowCancelled((v) => !v)}
+              variant={showCancelled ? "destructive" : "outline"}
+              size="sm"
+            >
+              {showCancelled ? "Ver pagadas" : "Ver canceladas"}
+            </Button>
             <Button
               onClick={() => setShowManualOrderDialog(true)}
               variant="default"

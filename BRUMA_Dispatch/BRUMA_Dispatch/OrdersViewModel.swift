@@ -155,9 +155,9 @@ class OrdersViewModel: ObservableObject {
             let filteredItems: [OrderItem]
             switch viewMode {
             case "food":
-                filteredItems = activeItems.filter { $0.product?.category?.isBeverage != true }
+                filteredItems = activeItems.filter { !$0.effectiveIsBeverage }
             case "beverages":
-                filteredItems = activeItems.filter { $0.product?.category?.isBeverage == true }
+                filteredItems = activeItems.filter { $0.effectiveIsBeverage }
             default:
                 filteredItems = activeItems
             }
