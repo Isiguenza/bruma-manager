@@ -386,6 +386,10 @@ router.get("/cash-register/:id/corte", async (req, res) => {
     let cardTips = 0;
     let transferTips = 0;
 
+    // Pedidos en línea (Stripe) — bucket propio, sin comisión de terminal.
+    let onlineSales = 0;
+    let onlineTips = 0;
+
     let splitOrderCount = 0;
 
     for (const order of registerOrders) {
@@ -402,10 +406,12 @@ router.get("/cash-register/:id/corte", async (req, res) => {
           if (paymentMethod === "cash") cashSales += amount;
           else if (paymentMethod === "card" || paymentMethod === "terminal_mercadopago") cardSales += amount;
           else if (paymentMethod === "transfer") transferSales += amount;
+          else if (paymentMethod === "online") onlineSales += amount;
 
           if (tipMethod === "cash") cashTips += tip;
           else if (tipMethod === "card" || tipMethod === "terminal_mercadopago") cardTips += tip;
           else if (tipMethod === "transfer") transferTips += tip;
+          else if (tipMethod === "online") onlineTips += tip;
         }
       } else {
         const orderTotal = parseFloat(order.total || "0");
@@ -417,15 +423,17 @@ router.get("/cash-register/:id/corte", async (req, res) => {
         if (paymentMethod === "cash") cashSales += orderSubtotal;
         else if (paymentMethod === "card" || paymentMethod === "terminal_mercadopago") cardSales += orderSubtotal;
         else if (paymentMethod === "transfer") transferSales += orderSubtotal;
+        else if (paymentMethod === "online") onlineSales += orderSubtotal;
 
         if (tipMethod === "cash") cashTips += orderTip;
         else if (tipMethod === "card" || tipMethod === "terminal_mercadopago") cardTips += orderTip;
         else if (tipMethod === "transfer") transferTips += orderTip;
+        else if (tipMethod === "online") onlineTips += orderTip;
       }
     }
 
-    const totalSales = cashSales + cardSales + transferSales;
-    const totalTips = cashTips + cardTips + transferTips;
+    const totalSales = cashSales + cardSales + transferSales + onlineSales;
+    const totalTips = cashTips + cardTips + transferTips + onlineTips;
 
     // Calculate commissions
     const cardCommission = (cardSales + cardTips) * COMMISSION_WITH_IVA;
@@ -470,6 +478,7 @@ router.get("/cash-register/:id/corte", async (req, res) => {
         cash: cashSales,
         card: cardSales,
         transfer: transferSales,
+        online: onlineSales,
         platformDelivery: 0,
         netCard: netCardSales,
       },
@@ -478,6 +487,7 @@ router.get("/cash-register/:id/corte", async (req, res) => {
         cash: cashTips,
         card: cardTips,
         transfer: transferTips,
+        online: onlineTips,
         netCard: netCardTips,
       },
       commissions: {

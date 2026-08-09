@@ -1,9 +1,13 @@
 import Foundation
 import SwiftUI
 import Combine
+import AVFoundation
 
 @MainActor
 class POSViewModel: ObservableObject {
+    // MARK: - Pedidos en línea (pantalla verde)
+    @Published var incomingOnlineOrder: Order?
+    private var onlineOrderAudioPlayer: AVAudioPlayer?
     
     // MARK: - WebSocket & Network
     private let socketService = SocketService.shared
@@ -786,6 +790,12 @@ class POSViewModel: ObservableObject {
                 self?.showToast("Orden cobrada")
                 await self?.refreshOrderFromSocket()
                 await self?.refreshReadyItemsAndDelivery()
+            }
+        }
+
+        socketService.onOnlineOrder = { [weak self] dict in
+            Task { @MainActor in
+                self?.handleIncomingOnlineOrder(dict)
             }
         }
         
@@ -2645,6 +2655,76 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Send to Kitchen
     
+    // MARK: - Pedidos en línea (pantalla verde)
+
+    /// Decodifica el pedido online recibido por socket, lo muestra y arranca el sonido.
+    func handleIncomingOnlineOrder(_ dict: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              let order = try? JSONDecoder().decode(Order.self, from: data) else {
+            print("⚠️ No se pudo decodificar el pedido online")
+            return
+        }
+        incomingOnlineOrder = order
+        startOnlineOrderSound()
+    }
+
+    /// Reproduce `delivery_sound.wav` EN LOOP mientras la pantalla verde esté visible.
+    private func startOnlineOrderSound() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+            try? session.overrideOutputAudioPort(.speaker)
+            if let url = Bundle.main.url(forResource: "delivery_sound", withExtension: "wav") {
+                onlineOrderAudioPlayer = try AVAudioPlayer(contentsOf: url)
+                onlineOrderAudioPlayer?.numberOfLoops = -1 // loop infinito
+                onlineOrderAudioPlayer?.volume = 1.0
+                onlineOrderAudioPlayer?.prepareToPlay()
+                onlineOrderAudioPlayer?.play()
+            }
+        } catch {
+            print("❌ Error reproduciendo sonido de pedido online:", error)
+        }
+    }
+
+    private func stopOnlineOrderSound() {
+        onlineOrderAudioPlayer?.stop()
+        onlineOrderAudioPlayer = nil
+    }
+
+    /// Cierra la pantalla verde y detiene el sonido.
+    func dismissOnlineOrder() {
+        stopOnlineOrderSound()
+        incomingOnlineOrder = nil
+    }
+
+    func acceptOnlineOrder() {
+        guard let order = incomingOnlineOrder else { return }
+        Task {
+            do {
+                try await APIService.shared.acceptOnlineOrder(orderId: order.id)
+                showToast("Pedido aceptado — enviado a cocina")
+            } catch {
+                showToast("Error al aceptar el pedido", isError: true)
+            }
+            dismissOnlineOrder()
+            await refreshOrderFromSocket()
+        }
+    }
+
+    func rejectOnlineOrder(reason: String) {
+        guard let order = incomingOnlineOrder else { return }
+        Task {
+            do {
+                try await APIService.shared.rejectOnlineOrder(orderId: order.id, reason: reason)
+                showToast("Pedido rechazado — reembolso emitido")
+            } catch {
+                showToast("Error al rechazar el pedido", isError: true)
+            }
+            dismissOnlineOrder()
+        }
+    }
+
     /// Envía a cocina los items no enviados. Si se pasa `course` (coursing),
     /// solo dispara ese Tiempo; los demás tiempos quedan pendientes.
     func handleSendToKitchen(course: Int? = nil) {

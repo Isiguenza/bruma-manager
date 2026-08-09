@@ -40,6 +40,10 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 }));
+// Stripe webhook: se monta con body RAW ANTES de express.json (para verificar firma).
+import onlineOrdersRouter, { stripeWebhookHandler } from "./routes/online-orders";
+app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookHandler);
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -75,6 +79,7 @@ import quickNotesRouter from "./routes/quick-notes";
 import mapFixturesRouter from "./routes/mapFixtures";
 
 app.use("/api", authRouter);
+app.use("/api", onlineOrdersRouter);
 app.use("/api", cashRegisterRouter);
 app.use("/api", tablesRouter);
 app.use("/api", productsRouter);

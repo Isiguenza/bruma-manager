@@ -44,6 +44,7 @@ export const paymentMethodEnum = pgEnum("payment_method", [
   "transfer",
   "split",
   "platform_delivery",
+  "online",
 ]);
 export const cashRegisterStatusEnum = pgEnum("cash_register_status", [
   "open",
@@ -295,9 +296,17 @@ export const orders = pgTable("orders", {
   discountId: uuid("discount_id").references(() => discounts.id),
   discountName: varchar("discount_name", { length: 255 }),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
-  source: varchar("source", { length: 50 }).default("pos"), // "pos", "uber_eats", "rappi", etc.
+  source: varchar("source", { length: 50 }).default("pos"), // "pos", "uber_eats", "rappi", "web", etc.
   deliveryOrderId: uuid("delivery_order_id"),
   tipPaymentMethod: paymentMethodEnum("tip_payment_method"),
+  // Pedidos en línea (web + Stripe)
+  customerPhone: varchar("customer_phone", { length: 50 }),
+  deliveryType: varchar("delivery_type", { length: 20 }), // "pickup" | "delivery"
+  deliveryAddress: text("delivery_address"),
+  deliveryLat: decimal("delivery_lat", { precision: 10, scale: 7 }),
+  deliveryLng: decimal("delivery_lng", { precision: 10, scale: 7 }),
+  deliveryFee: decimal("delivery_fee", { precision: 10, scale: 2 }).default("0"),
+  stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
   priority: integer("priority").default(0), // 0=normal, 1=rush
   onHold: boolean("on_hold").default(false),
   holdStartedAt: timestamp("hold_started_at"),
@@ -916,6 +925,19 @@ export const productFlows = pgTable("product_flows", {
   nodes: text("nodes"), // JSON para el editor visual (posiciones, conexiones)
   isBeverage: boolean("is_beverage").notNull().default(false), // el producto de este flujo se rutea como bebida (barra)
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Ajustes del restaurante (una sola fila) — pedidos en línea, ubicación y envío.
+export const restaurantSettings = pgTable("restaurant_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  onlineOrderingEnabled: boolean("online_ordering_enabled").notNull().default(false),
+  // Horario de servicio por día: { mon: {open:"09:00", close:"22:00", closed:false}, ... }
+  serviceHours: text("service_hours"), // JSON
+  restaurantLat: decimal("restaurant_lat", { precision: 10, scale: 7 }),
+  restaurantLng: decimal("restaurant_lng", { precision: 10, scale: 7 }),
+  // Tramos de envío: [{ maxMeters: 600, fee: 25 }, { maxMeters: 1200, fee: 40 }]
+  deliveryTiers: text("delivery_tiers"), // JSON
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

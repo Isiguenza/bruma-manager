@@ -55,11 +55,18 @@ export async function GET(_request: NextRequest) {
               : `$${parseFloat(p.price).toFixed(0)}`;
 
             return {
+              // Display (compat con la página /menu actual)
               name: p.name,
               description: p.description || "",
               price: basePrice,
               images,
               video: p.menuVideo || "",
+              // Para ordenar en línea
+              id: p.id,
+              categoryId: p.categoryId,
+              priceValue: parseFloat(p.price || "0"),
+              hasVariants: p.hasVariants,
+              variants: p.variants ? JSON.parse(p.variants) : null,
             };
           });
 

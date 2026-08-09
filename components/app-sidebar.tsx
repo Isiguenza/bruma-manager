@@ -150,6 +150,11 @@ const settingsNavItems = [
     url: "/settings/mercadopago",
     icon: GearSix,
   },
+  {
+    title: "Pedidos en línea",
+    url: "/settings/online-orders",
+    icon: Storefront,
+  },
 ];
 
 export function AppSidebar() {

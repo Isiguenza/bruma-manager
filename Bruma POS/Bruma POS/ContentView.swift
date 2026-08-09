@@ -34,7 +34,15 @@ struct ContentView: View {
             case .customerDisplay:
                 CustomerDisplayView(posVM: vm)
             }
+
+            // Pantalla verde de pedidos en línea (sobre cualquier pantalla).
+            if let online = vm.incomingOnlineOrder, vm.currentScreen != .customerDisplay {
+                OnlineOrderModal(vm: vm, order: online)
+                    .transition(.opacity)
+                    .zIndex(100)
+            }
         }
+        .animation(.easeInOut(duration: 0.25), value: vm.incomingOnlineOrder?.id)
         .preferredColorScheme(.dark)
         .statusBarHidden(true)
         // Rest the screen (dim + clock) after 5 min of inactivity to save

@@ -26,7 +26,14 @@ struct Order: Codable, Identifiable {
     let payments: [OrderPayment]?
     let priority: Int?      // 0=normal, 1=rush
     let onHold: Bool?       // true if order is on hold
-    
+
+    // Pedidos en línea (web + Stripe)
+    let customerPhone: String?
+    let deliveryType: String?     // "pickup" | "delivery"
+    let deliveryAddress: String?
+    let deliveryLat: String?
+    let deliveryLng: String?
+
     var isSplitPayment: Bool {
         (payments?.count ?? 0) > 1
     }

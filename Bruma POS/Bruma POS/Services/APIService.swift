@@ -256,6 +256,30 @@ class APIService {
         }
     }
 
+    /// Acepta un pedido en línea (pantalla verde) → entra a cocina.
+    func acceptOnlineOrder(orderId: String) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/accept-online")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw APIError.serverError
+        }
+    }
+
+    /// Rechaza un pedido en línea → reembolso automático por Stripe.
+    func rejectOnlineOrder(orderId: String, reason: String) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/reject-online")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["reason": reason])
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw APIError.serverError
+        }
+    }
+
     /// Reembolsa una orden ya pagada. Requiere PIN de gerente (rol admin).
     /// Lanza `APIError.serverError` si el PIN es inválido o falla.
     func refundOrder(orderId: String, pin: String, reason: String) async throws {

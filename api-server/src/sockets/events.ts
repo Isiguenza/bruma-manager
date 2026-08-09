@@ -40,6 +40,13 @@ export function emitOrderNew(order: any) {
   console.log(`📡 Emitted order:new to dispatch`);
 }
 
+// Pedido en línea recién pagado → pantalla verde del POS (aceptar/rechazar).
+export function emitOnlineOrder(order: any) {
+  if (!io) return;
+  io.to("room:pos").emit("order:online", order);
+  console.log(`📡 Emitted order:online to pos`);
+}
+
 export function emitOrderUpdated(order: any) {
   if (!io) return;
   io.to("room:dispatch").emit("order:updated", order);

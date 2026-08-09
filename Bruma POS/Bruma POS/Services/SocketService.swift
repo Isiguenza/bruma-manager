@@ -13,6 +13,7 @@ class SocketService: ObservableObject {
     // Callbacks for events
     var onOrderUpdated: (([String: Any]) -> Void)?
     var onOrderPaid: ((String) -> Void)?
+    var onOnlineOrder: (([String: Any]) -> Void)?
     var onTableUpdated: ((String) -> Void)?
     var onTableLayoutUpdated: (([[String: Any]]) -> Void)?
     var onTableMerged: (([String: Any]) -> Void)?
@@ -84,6 +85,15 @@ class SocketService: ObservableObject {
             }
             print("💰 Order paid: \(orderId)")
             self?.onOrderPaid?(orderId)
+        }
+
+        socket?.on("order:online") { [weak self] data, ack in
+            guard let dict = data.first as? [String: Any] else {
+                print("⚠️ order:online received but no payload")
+                return
+            }
+            print("🟢 Online order received: \(dict["id"] as? String ?? "?")")
+            self?.onOnlineOrder?(dict)
         }
         
         socket?.on("order:rush") { [weak self] data, ack in
