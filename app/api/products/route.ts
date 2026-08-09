@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { products, categories } from "@/lib/db/schema";
+import { products, categories, productFlows } from "@/lib/db/schema";
 import { eq, desc, isNull, and } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
@@ -41,7 +41,23 @@ export async function GET(request: NextRequest) {
       orderBy: [desc(products.createdAt)],
     });
 
-    return NextResponse.json(result);
+    // Marca qué productos tienen su propio flujo personalizado (no el default).
+    const flowRows = await db
+      .select({
+        productId: productFlows.productId,
+        useDefaultFlow: productFlows.useDefaultFlow,
+      })
+      .from(productFlows);
+    const customFlowIds = new Set(
+      flowRows.filter((f) => !f.useDefaultFlow).map((f) => f.productId)
+    );
+
+    const withFlag = result.map((p) => ({
+      ...p,
+      hasCustomFlow: customFlowIds.has(p.id),
+    }));
+
+    return NextResponse.json(withFlag);
   } catch (error) {
     console.error("Error fetching products:", error);
     return NextResponse.json(

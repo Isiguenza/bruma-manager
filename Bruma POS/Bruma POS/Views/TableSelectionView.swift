@@ -25,8 +25,11 @@ struct TableSelectionView: View {
                             ForEach(Array(vm.parkedPayments.keys), id: \.self) { tid in
                                 if let p = vm.parkedPayments[tid] {
                                     Button {
-                                        if let table = vm.tables.first(where: { $0.id == tid }) {
+                                        if let table = vm.tables.first(where: { $0.id == tid }), table.isOccupied {
                                             vm.handleSelectTable(table)
+                                        } else {
+                                            // Mesa ya liberada/pagada: quita el chip obsoleto.
+                                            vm.clearParkedPayment(tableId: tid)
                                         }
                                     } label: {
                                         HStack(spacing: 8) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { categories } from "@/lib/db/schema";
+import { categories, modifierSteps } from "@/lib/db/schema";
 import { asc } from "drizzle-orm";
 
 export async function GET() {
@@ -8,7 +8,19 @@ export async function GET() {
     const result = await db.query.categories.findMany({
       orderBy: [asc(categories.sortOrder), asc(categories.name)],
     });
-    return NextResponse.json(result);
+
+    // Marca qué categorías tienen flujo personalizado (tienen pasos definidos).
+    const stepRows = await db
+      .select({ categoryId: modifierSteps.categoryId })
+      .from(modifierSteps);
+    const withFlow = new Set(stepRows.map((r) => r.categoryId));
+
+    const withFlag = result.map((c) => ({
+      ...c,
+      hasCustomFlow: withFlow.has(c.id),
+    }));
+
+    return NextResponse.json(withFlag);
   } catch (error) {
     console.error("Error fetching categories:", error);
     return NextResponse.json({ error: "Error" }, { status: 500 });

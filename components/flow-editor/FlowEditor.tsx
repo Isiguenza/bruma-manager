@@ -39,6 +39,7 @@ interface FlowEditorProps {
   onBack?: () => void;
   isBeverage?: boolean;
   onBeverageChange?: (value: boolean) => void;
+  allowedStepTypes?: string[];
 }
 
 export function FlowEditor({
@@ -50,6 +51,7 @@ export function FlowEditor({
   onBack,
   isBeverage,
   onBeverageChange,
+  allowedStepTypes,
 }: FlowEditorProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -278,6 +280,7 @@ export function FlowEditor({
           <AddStepPanel
             onAdd={addStep}
             onClose={() => setShowAddPanel(false)}
+            allowedTypes={allowedStepTypes}
           />
         )}
 

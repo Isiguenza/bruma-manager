@@ -922,14 +922,21 @@ export default function ProductsPage() {
 
                   return sortedCategories.map((categoryName) => [
                     // Fila de encabezado de categoría
-                    <TableRow key={`category-${categoryName}`} className="bg-muted/50">
-                      <TableCell colSpan={6} className="font-semibold text-sm py-2">
-                        {categoryName} ({productsByCategory[categoryName].length})
+                    <TableRow key={`category-${categoryName}`} className="bg-muted/40 hover:bg-muted/40 border-b-0">
+                      <TableCell colSpan={6} className="py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold tracking-tight uppercase text-muted-foreground">
+                            {categoryName}
+                          </span>
+                          <Badge variant="secondary" className="rounded-full px-2 py-0 text-xs font-normal">
+                            {productsByCategory[categoryName].length}
+                          </Badge>
+                        </div>
                       </TableCell>
                     </TableRow>,
                     // Productos de esta categoría
                     ...productsByCategory[categoryName].map((product) => (
-                      <TableRow key={product.id}>
+                      <TableRow key={product.id} className="hover:bg-muted/30">
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             checked={selectedProducts.has(product.id)}
@@ -937,13 +944,39 @@ export default function ProductsPage() {
                           />
                         </TableCell>
                         <TableCell>
-                          <div>
-                            <p className="font-medium">{product.name}</p>
-                            {product.description && (
-                              <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-                                {product.description}
-                              </p>
+                          <div className="flex items-center gap-3">
+                            {/* Miniatura */}
+                            {(product as any).menuImages?.[0] ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={(product as any).menuImages[0]}
+                                alt={product.name}
+                                className="size-10 rounded-md object-cover border shrink-0"
+                              />
+                            ) : (
+                              <div className="size-10 rounded-md bg-muted border flex items-center justify-center text-sm font-semibold text-muted-foreground shrink-0">
+                                {product.name.charAt(0).toUpperCase()}
+                              </div>
                             )}
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium truncate">{product.name}</p>
+                                {(product as any).hasCustomFlow ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 text-blue-600 px-2 py-0.5 text-[11px] font-medium shrink-0">
+                                    <FlowArrow className="size-3" /> Flujo propio
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-[11px] shrink-0">
+                                    Default
+                                  </span>
+                                )}
+                              </div>
+                              {product.description && (
+                                <p className="text-xs text-muted-foreground truncate max-w-[240px]">
+                                  {product.description}
+                                </p>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>

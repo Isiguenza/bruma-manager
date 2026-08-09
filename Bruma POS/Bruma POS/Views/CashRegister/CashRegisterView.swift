@@ -614,9 +614,10 @@ struct CashRegisterView: View {
 
     private var paymentMethodBars: some View {
         let data = corteVM.corteData
-        let cash = data?.sales.cash ?? vm.actualCashSales
-        let card = data?.sales.netCard ?? vm.actualTerminalSales
-        let transfer = data?.sales.transfer ?? vm.actualTransferSales
+        // Directo del Corte: ventas + propinas por método (efectivo, tarjeta, transfer).
+        let cash = data.map { $0.sales.cash + $0.tips.cash } ?? (vm.actualCashSales + vm.actualCashTips)
+        let card = data.map { $0.sales.card + $0.tips.card } ?? vm.actualTerminalSales
+        let transfer = data.map { $0.sales.transfer + $0.tips.transfer } ?? vm.actualTransferSales
         let total = max(cash + card + transfer, 0.01)
         return VStack(spacing: 8) {
             HStack(spacing: 12) {

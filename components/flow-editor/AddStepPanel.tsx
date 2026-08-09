@@ -8,10 +8,13 @@ import { X } from "@phosphor-icons/react";
 interface AddStepPanelProps {
   onAdd: (stepType: string) => void;
   onClose: () => void;
+  // Si se pasa, solo se muestran estos tipos (ej. flujos de categoría no
+  // soportan "products"/"category" por su almacenamiento normalizado).
+  allowedTypes?: string[];
 }
 
-export function AddStepPanel({ onAdd, onClose }: AddStepPanelProps) {
-  const stepTypes = [
+export function AddStepPanel({ onAdd, onClose, allowedTypes }: AddStepPanelProps) {
+  const allStepTypes = [
     {
       type: "frosting",
       name: "Paso Tipo F",
@@ -55,6 +58,10 @@ export function AddStepPanel({ onAdd, onClose }: AddStepPanelProps) {
       color: "bg-pink-500",
     },
   ];
+
+  const stepTypes = allowedTypes
+    ? allStepTypes.filter((s) => allowedTypes.includes(s.type))
+    : allStepTypes;
 
   return (
     <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">

@@ -604,6 +604,18 @@ export default function CategoriesPage() {
                         </div>
                       </>
                     )}
+                    <span className="text-xs text-muted-foreground">•</span>
+                    {(category as any).hasCustomFlow ? (
+                      <div className="flex items-center gap-1 text-blue-600">
+                        <FlowArrow className="size-3.5" />
+                        <span className="text-xs font-medium">Flujo propio</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <FlowArrow className="size-3.5" />
+                        <span className="text-xs">Flujo default</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Description */}

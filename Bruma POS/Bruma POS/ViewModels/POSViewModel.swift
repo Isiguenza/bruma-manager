@@ -3908,7 +3908,10 @@ class POSViewModel: ObservableObject {
                 
                 let orderType = selectedTable != nil ? "Mesa \(selectedTable!.number)" : "Orden"
                 showToast("\(orderType) liberada")
-                
+
+                // Limpia cualquier cobro parqueado de esta mesa (ya se liberó).
+                clearParkedPayment(tableId: selectedTable?.id)
+
                 // 3. Resetear estado
                 selectedTable = nil
                 cart = []

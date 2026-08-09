@@ -803,7 +803,11 @@ struct PaymentView: View {
                 .foregroundColor(.gray)
             
             HStack(spacing: 12) {
-                tipMethodCard(method: vm.paymentMethod ?? "terminal_mercadopago", label: "En tarjeta", icon: "creditcard.fill", color: .blue)
+                if vm.paymentMethod == "transfer" {
+                    tipMethodCard(method: "transfer", label: "En transferencia", icon: "building.columns.fill", color: .purple)
+                } else {
+                    tipMethodCard(method: vm.paymentMethod ?? "terminal_mercadopago", label: "En tarjeta", icon: "creditcard.fill", color: .blue)
+                }
                 tipMethodCard(method: "cash", label: "En efectivo", icon: "banknote.fill", color: .green)
             }
         }
