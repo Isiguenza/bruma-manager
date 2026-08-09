@@ -99,7 +99,18 @@ router.post("/public/online-orders/intent", async (req: Request, res: Response) 
         return res.status(400).json({ error: `Producto no disponible: ${it.productName || it.productId}` });
       }
       const qty = Math.max(1, parseInt(it.quantity, 10) || 1);
-      const base = parseFloat(product.price || "0");
+      // Precio base: si el producto tiene variantes, usa el precio de la variante
+      // elegida (por nombre); si no, el precio base del producto.
+      let base = parseFloat(product.price || "0");
+      let displayName = product.name;
+      if (it.variantName && product.hasVariants && product.variants) {
+        const variants = safeParse(product.variants) || [];
+        const v = Array.isArray(variants) ? variants.find((x: any) => x.name === it.variantName) : null;
+        if (v) {
+          base = parseFloat(v.price) || base;
+          displayName = `${product.name} (${v.name})`;
+        }
+      }
       // Surcharge de modificadores (precio por opción enviado por la web).
       const mods = it.customModifiers ? safeParse(it.customModifiers) : null;
       const modsTotal = sumModifierPrices(mods);
@@ -108,7 +119,7 @@ router.post("/public/online-orders/intent", async (req: Request, res: Response) 
       subtotal += lineSubtotal;
       validatedItems.push({
         productId: product.id,
-        productName: product.name,
+        productName: displayName,
         quantity: qty,
         unitPrice: unit,
         subtotal: lineSubtotal,
@@ -213,15 +224,63 @@ router.post("/public/online-orders/intent", async (req: Request, res: Response) 
   }
 });
 
+// GET /api/public/online-orders/eta?type=pickup|delivery
+// Tiempo estimado según la carga de cocina: base 35 min + carga (órdenes activas
+// y comensales sentados) + buffer de reparto si es a domicilio.
+router.get("/public/online-orders/eta", async (req, res) => {
+  try {
+    const type = (req.query.type as string) || "pickup";
+    const BASE = 35;
+
+    const active = await db.query.orders.findMany({
+      where: sql`${schema.orders.status} IN ('pending','preparing','ready')`,
+      columns: { id: true, tableId: true, guestCount: true },
+    });
+    const activeOrders = active.length;
+    const seatedGuests = active
+      .filter((o) => o.tableId)
+      .reduce((s, o) => s + (o.guestCount || 1), 0);
+
+    // Cada orden activa suma 4 min; cada 4 comensales sentados suma 5 min. Tope +30.
+    const load = Math.min(30, activeOrders * 4 + Math.floor(seatedGuests / 4) * 5);
+    const deliveryBuffer = type === "delivery" ? 10 : 0;
+    const etaMinutes = BASE + load + deliveryBuffer;
+
+    res.json({ etaMinutes, activeOrders, seatedGuests });
+  } catch (error) {
+    res.json({ etaMinutes: 35 });
+  }
+});
+
 // GET /api/public/online-orders/:id/status  (polling desde la web)
 router.get("/public/online-orders/:id/status", async (req, res) => {
   try {
     const order = await db.query.orders.findFirst({
       where: eq(schema.orders.id, req.params.id),
-      columns: { id: true, orderNumber: true, status: true, paymentStatus: true },
+      columns: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        paymentStatus: true,
+        deliveryType: true,
+      },
     });
     if (!order) return res.status(404).json({ error: "No encontrado" });
     res.json(order);
+  } catch (error) {
+    res.status(500).json({ error: "Error" });
+  }
+});
+
+// GET /api/public/restaurant  → ubicación del restaurante (coords del dashboard).
+router.get("/public/restaurant", async (_req, res) => {
+  try {
+    const s = await getSettings();
+    res.json({
+      lat: s.restaurantLat,
+      lng: s.restaurantLng,
+      address: "Av. Panamericana Casa B14, Col. Pedregal de Carrasco, 04700, Coyoacán, CDMX",
+    });
   } catch (error) {
     res.status(500).json({ error: "Error" });
   }
@@ -245,6 +304,8 @@ router.post("/orders/:id/accept-online", async (req, res) => {
       where: eq(schema.orders.id, id),
       with: { items: true },
     });
+    // Al ACEPTAR es cuando cae a cocina (KDS/dispatch) y se marca preparando.
+    emitOrderNew(complete);
     emitOrderUpdated(complete);
     res.json({ success: true, order: updated });
   } catch (error) {
@@ -320,9 +381,9 @@ export async function stripeWebhookHandler(req: Request, res: Response) {
         where: eq(schema.orders.id, orderId),
         with: { items: true },
       });
-      // Cae al POS (pantalla verde) y a las listas de órdenes.
+      // Solo cae a la PANTALLA VERDE del POS (aceptar/rechazar). NO va a cocina
+      // todavía — eso pasa al aceptar (accept-online).
       emitOnlineOrder(complete);
-      emitOrderNew(complete);
     }
   }
 

@@ -2703,6 +2703,7 @@ class POSViewModel: ObservableObject {
         Task {
             do {
                 try await APIService.shared.acceptOnlineOrder(orderId: order.id)
+                await printOnlineComanda(order)   // imprime la comanda al aceptar
                 showToast("Pedido aceptado — enviado a cocina")
             } catch {
                 showToast("Error al aceptar el pedido", isError: true)
@@ -2710,6 +2711,48 @@ class POSViewModel: ObservableObject {
             dismissOnlineOrder()
             await refreshOrderFromSocket()
         }
+    }
+
+    /// Imprime la comanda de un pedido en línea (se llama al aceptarlo en la
+    /// pantalla verde). Reusa el print-server vía PrintService.
+    private func printOnlineComanda(_ order: Order) async {
+        let comandaItems: [[String: Any]] = (order.items ?? []).map { item in
+            var dict: [String: Any] = [
+                "name": item.productName,
+                "qty": item.quantity,
+                "seat": item.seat ?? "C",
+                "course": item.course ?? 1,
+            ]
+            if let n = item.notes, !n.isEmpty { dict["notes"] = n }
+            if let f = item.frostingName { dict["frosting"] = f }
+            if let t = item.dryToppingName { dict["topping"] = t }
+            if let e = item.extraName { dict["extra"] = e }
+            if let cm = item.customModifiers,
+               let data = cm.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                var flowSelections: [[String: Any]] = []
+                for (_, value) in json {
+                    if let stepData = value as? [String: Any],
+                       let stepName = stepData["stepName"] as? String,
+                       let options = stepData["options"] as? [[String: Any]] {
+                        for opt in options where opt["name"] is String {
+                            flowSelections.append(["stepName": stepName, "name": opt["name"] as! String])
+                        }
+                    }
+                }
+                if !flowSelections.isEmpty { dict["flowSteps"] = flowSelections }
+            }
+            return dict
+        }
+
+        await PrintService.shared.printComanda(
+            tableNumber: nil,
+            orderNumber: String(order.id.prefix(8)),
+            customerName: order.customerName,
+            items: comandaItems,
+            isDelivery: order.deliveryType == "delivery",
+            guestCount: 1
+        )
     }
 
     func rejectOnlineOrder(reason: String) {
