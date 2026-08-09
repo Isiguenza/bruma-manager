@@ -27,14 +27,34 @@ async function getSettings() {
   };
 }
 
-/** ¿El restaurante está abierto ahora según el horario configurado? */
+// Zona horaria del restaurante (el server corre en UTC; el horario se configura
+// en hora local de México).
+const RESTAURANT_TZ = "America/Mexico_City";
+
+/** ¿El restaurante está abierto ahora según el horario configurado? Usa la hora
+ * local de México, no la del server (que está en UTC). */
 function isOpenNow(serviceHours: any): boolean {
   if (!serviceHours) return true; // sin horario configurado → siempre abierto
-  const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-  const now = new Date();
-  const day = serviceHours[days[now.getDay()]];
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: RESTAURANT_TZ,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+
+  const wd = parts.find((p) => p.type === "weekday")?.value ?? "";
+  const hour = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+  const minute = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+
+  const map: Record<string, string> = {
+    Sun: "sun", Mon: "mon", Tue: "tue", Wed: "wed", Thu: "thu", Fri: "fri", Sat: "sat",
+  };
+  const day = serviceHours[map[wd]];
   if (!day || day.closed) return false;
-  const cur = now.getHours() * 60 + now.getMinutes();
+
+  const cur = hour * 60 + minute;
   const [oh, om] = String(day.open || "00:00").split(":").map(Number);
   const [ch, cm] = String(day.close || "23:59").split(":").map(Number);
   return cur >= oh * 60 + om && cur <= ch * 60 + cm;
