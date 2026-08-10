@@ -573,13 +573,26 @@ struct CartView: View {
                 .opacity(vm.cart.isEmpty ? 0.3 : 1)
                 .buttonStyle(.glass)
 
-                // Morphing button: Kitchen Send / Pay / Finalize
+                // Morphing button: Kitchen Send / Pay / Marcar listo / Marcar en camino / Finalize
                 let hasUnsentItems = !vm.cart.isEmpty && vm.cart.contains(where: { !$0.sentToKitchen })
                 let isPaidTakeout = vm.selectedTable == nil && vm.currentOrderPaymentStatus == "paid"
-                
+                let isWebOrder = vm.currentOrderSource == "web"
+                let isDeliveryOrder = vm.currentOrderAddress != nil
+                let webStatus = vm.currentOrderStatus ?? "preparing"
+                // Pedidos web: antes de "Finalizar orden" hay que avisarle al cliente
+                // por WhatsApp que está listo (y, si es domicilio, que va en camino).
+                let needsReadyStep = isWebOrder && isPaidTakeout && !hasUnsentItems
+                    && !["ready", "delivered", "completed"].contains(webStatus)
+                let needsDeliveringStep = isWebOrder && isPaidTakeout && !hasUnsentItems
+                    && isDeliveryOrder && webStatus == "ready"
+
                 Button {
                     if hasUnsentItems {
                         vm.handleSendToKitchen()
+                    } else if needsReadyStep {
+                        vm.handleMarkWebOrderStatus("ready")
+                    } else if needsDeliveringStep {
+                        vm.handleMarkWebOrderStatus("delivered")
                     } else if isPaidTakeout {
                         vm.handleFinalizeOrder()
                     } else {
@@ -587,11 +600,11 @@ struct CartView: View {
                     }
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: hasUnsentItems ? "frying.pan.fill" : (isPaidTakeout ? "checkmark.circle.fill" : "creditcard.fill"))
+                        Image(systemName: hasUnsentItems ? "frying.pan.fill" : needsReadyStep ? "bell.badge.fill" : needsDeliveringStep ? "bicycle" : (isPaidTakeout ? "checkmark.circle.fill" : "creditcard.fill"))
                             .font(.callout)
                             .contentTransition(.symbolEffect(.replace))
-                            
-                        Text(hasUnsentItems ? "Enviar a Cocina" : (isPaidTakeout ? "Finalizar orden" : "Pagar"))
+
+                        Text(hasUnsentItems ? "Enviar a Cocina" : needsReadyStep ? "Marcar listo" : needsDeliveringStep ? "Marcar en camino" : (isPaidTakeout ? "Finalizar orden" : "Pagar"))
                             .font(.callout.weight(.semibold))
                             .contentTransition(.numericText())
                     }
@@ -599,11 +612,11 @@ struct CartView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical,8)
                 }
-               
+
                 .buttonStyle(.glassProminent)
-                .tint(hasUnsentItems ? Color.orange : (isPaidTakeout ? Color.green : Color.blue))
+                .tint(hasUnsentItems ? Color.orange : needsReadyStep ? Color.blue : needsDeliveringStep ? Color.purple : (isPaidTakeout ? Color.green : Color.blue))
                 .disabled(vm.cart.isEmpty)
-                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasUnsentItems || isPaidTakeout)
+                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasUnsentItems || isPaidTakeout || needsReadyStep || needsDeliveringStep)
             }
         }
 

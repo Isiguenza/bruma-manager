@@ -15,6 +15,7 @@ import { sendAppleWalletPush } from "../lib/apple-push";
 import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
 import { unmergeByOrderId, unmergeByTableId } from "../lib/tableMerges";
 import { refundStripePayment } from "./online-orders";
+import { notifyOrderReady, notifyOrderOutForDelivery } from "../lib/whatsapp";
 
 const router = Router();
 
@@ -460,6 +461,13 @@ router.patch("/orders/:id/status", async (req, res) => {
     });
 
     emitOrderUpdated(completeOrder);
+
+    // Pedidos web: avisa por WhatsApp cuando el POS marca listo / en camino.
+    if (completeOrder?.source === "web" && completeOrder.customerPhone) {
+      if (status === "ready") notifyOrderReady(completeOrder).catch(() => {});
+      if (status === "delivered") notifyOrderOutForDelivery(completeOrder).catch(() => {});
+    }
+
     res.json(completeOrder);
   } catch (error) {
     console.error("Error updating order status:", error);

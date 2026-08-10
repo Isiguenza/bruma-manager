@@ -4,6 +4,7 @@ import { db, schema } from "../db";
 import { eq, sql } from "drizzle-orm";
 import { emitOrderNew, emitOnlineOrder, emitOrderUpdated } from "../sockets/events";
 import { haversineMeters, resolveDeliveryFee, type DeliveryTier } from "../lib/distance";
+import { notifyOrderReceived, notifyOrderConfirmed, notifyOrderCancelled } from "../lib/whatsapp";
 
 const router = Router();
 
@@ -320,6 +321,7 @@ router.post("/orders/:id/accept-online", async (req, res) => {
     // Al ACEPTAR es cuando cae a cocina (KDS/dispatch) y se marca preparando.
     emitOrderNew(complete);
     emitOrderUpdated(complete);
+    notifyOrderConfirmed(updated).catch(() => {});
     res.json({ success: true, order: updated });
   } catch (error) {
     console.error("[accept-online] error:", error);
@@ -350,6 +352,7 @@ router.post("/orders/:id/reject-online", async (req, res) => {
       .where(eq(schema.orders.id, id))
       .returning();
     emitOrderUpdated({ ...updated, rejected: true });
+    notifyOrderCancelled(updated).catch(() => {});
     res.json({ success: true });
   } catch (error) {
     console.error("[reject-online] error:", error);
@@ -397,6 +400,7 @@ export async function stripeWebhookHandler(req: Request, res: Response) {
       // Solo cae a la PANTALLA VERDE del POS (aceptar/rechazar). NO va a cocina
       // todavía — eso pasa al aceptar (accept-online).
       emitOnlineOrder(complete);
+      if (paid) notifyOrderReceived(paid).catch(() => {});
     }
   }
 

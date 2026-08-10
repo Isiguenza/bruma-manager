@@ -160,6 +160,8 @@ class POSViewModel: ObservableObject {
     @Published var currentOrderAddress: String?
     @Published var currentOrderLat: String?
     @Published var currentOrderLng: String?
+    @Published var currentOrderSource: String?
+    @Published var currentOrderStatus: String?
     @Published var showLocationModal = false
     @Published var submitting = false
     
@@ -323,6 +325,8 @@ class POSViewModel: ObservableObject {
         currentOrderAddress = nil
         currentOrderLat = nil
         currentOrderLng = nil
+        currentOrderSource = nil
+        currentOrderStatus = nil
         splitPayments = []
         showAddSplitPayment = false
         editingSplitPayment = nil
@@ -1914,6 +1918,8 @@ class POSViewModel: ObservableObject {
         currentOrderAddress = order.deliveryAddress
         currentOrderLat = order.deliveryLat
         currentOrderLng = order.deliveryLng
+        currentOrderSource = order.source
+        currentOrderStatus = order.status
 
         // Load items
         var items: [CartItem] = []
@@ -3389,8 +3395,25 @@ class POSViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Web order status (listo / en camino) — dispara WhatsApp al cliente
+
+    /// Marca el pedido web actual como "ready" o "delivered" (en camino). El
+    /// api-server manda el WhatsApp correspondiente al recibir el cambio.
+    func handleMarkWebOrderStatus(_ status: String) {
+        guard let orderId = currentOrderId else { return }
+        Task {
+            do {
+                try await APIService.shared.updateOrderStatus(orderId: orderId, status: status)
+                currentOrderStatus = status
+                showToast(status == "ready" ? "Pedido marcado como listo" : "Pedido marcado en camino")
+            } catch {
+                showToast("Error al actualizar el pedido", isError: true)
+            }
+        }
+    }
+
     // MARK: - Finalize Takeout Order
-    
+
     func handleFinalizeOrder() {
         guard let orderId = currentOrderId else { return }
         processing = true
