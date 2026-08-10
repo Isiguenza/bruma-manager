@@ -232,8 +232,11 @@ struct MainPOSView: View {
                 .animation(.spring(), value: vm.toastMessage)
             }
         }
+        .sheet(isPresented: $vm.showLocationModal) {
+            OrderLocationModal(vm: vm)
+        }
     }
-    
+
     @ViewBuilder
     private func dialogOverlay<Content: View>(onDismiss: @escaping () -> Void = {}, @ViewBuilder content: () -> Content) -> some View {
         ZStack {

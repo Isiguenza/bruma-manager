@@ -311,6 +311,10 @@ export const orders = pgTable("orders", {
   deliveryLng: decimal("delivery_lng", { precision: 10, scale: 7 }),
   deliveryFee: decimal("delivery_fee", { precision: 10, scale: 2 }).default("0"),
   stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+  // Tiempo de preparación que el POS le confirma al cliente al aceptar el
+  // pedido (en minutos). Si está definido, la web lo usa en vez de calcular
+  // un estimado.
+  estimatedReadyMinutes: integer("estimated_ready_minutes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

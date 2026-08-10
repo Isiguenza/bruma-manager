@@ -69,6 +69,7 @@ struct CartView: View {
                         .clipShape(Circle())
                         
                         Menu {
+                            contactMenuSection
                             if vm.selectedTable != nil {
                                 Button(role: .destructive) { vm.handleReleaseTable() } label: {
                                     Label("Liberar Mesa", systemImage: "door.left.hand.open")
@@ -83,7 +84,7 @@ struct CartView: View {
                             Button { vm.handleChangeTable() } label: {
                                 Label("Cambiar Mesa", systemImage: "arrow.left.arrow.right")
                             }
-                            
+
                             Button {
                                 vm.showAdminMenu = true
                             } label: {
@@ -105,16 +106,28 @@ struct CartView: View {
                         }
                         .buttonStyle(.glass)
                         
-                        Button {
-                            vm.tempGuestCount = vm.guestCount
-                            vm.showGuestCountDialog = true
-                        } label: {
-                            Label("\(vm.guestCount)", systemImage: "person.2.fill")
-                                .padding(8)
-                                .foregroundStyle(.blue)
-                                .font(.footnote)
+                        if vm.currentOrderAddress != nil {
+                            Button {
+                                vm.showLocationModal = true
+                            } label: {
+                            Image(systemName: "mappin.and.ellipse")
+                                    .padding(8)
+                                    .foregroundStyle(.blue)
+                                    .font(.footnote)
+                            }
+                            .buttonStyle(.glass)
+                        } else {
+                            Button {
+                                vm.tempGuestCount = vm.guestCount
+                                vm.showGuestCountDialog = true
+                            } label: {
+                                Label("\(vm.guestCount)", systemImage: "person.2.fill")
+                                    .padding(8)
+                                    .foregroundStyle(.blue)
+                                    .font(.footnote)
+                            }
+                            .buttonStyle(.glass)
                         }
-                        .buttonStyle(.glass)
                     }
                 }
             } else {
@@ -130,6 +143,7 @@ struct CartView: View {
                     )
                     
                     Menu {
+                        contactMenuSection
                         if vm.selectedTable != nil {
                             Button(role: .destructive) { vm.handleReleaseTable() } label: {
                                 Label("Liberar Mesa", systemImage: "door.open")
@@ -165,16 +179,26 @@ struct CartView: View {
                         tableInfoPill
                     }
                     
-                    GlassPillButton(
-                        label: "\(vm.guestCount)",
-                        systemImage: "person.2.fill",
-                        action: {
-                            vm.tempGuestCount = vm.guestCount
-                            vm.showGuestCountDialog = true
-                        },
-                        isActive: true,
-                        activeColor: .blue
-                    )
+                    if vm.currentOrderAddress != nil {
+                        GlassPillButton(
+                            label: "Ubicación",
+                            systemImage: "mappin.and.ellipse",
+                            action: { vm.showLocationModal = true },
+                            isActive: true,
+                            activeColor: .blue
+                        )
+                    } else {
+                        GlassPillButton(
+                            label: "\(vm.guestCount)",
+                            systemImage: "person.2.fill",
+                            action: {
+                                vm.tempGuestCount = vm.guestCount
+                                vm.showGuestCountDialog = true
+                            },
+                            isActive: true,
+                            activeColor: .blue
+                        )
+                    }
                 }
             }
         }
@@ -404,6 +428,25 @@ struct CartView: View {
         }
     }
 
+    /// Info de contacto del pedido (nombre + teléfono) para el menú ⋯.
+    @ViewBuilder
+    private var contactMenuSection: some View {
+        if !vm.customerName.isEmpty || vm.currentOrderPhone != nil {
+            Section(vm.customerName.isEmpty ? "Contacto" : vm.customerName) {
+                if let phone = vm.currentOrderPhone {
+                    Button {
+                        if let url = URL(string: "tel://\(phone.filter { $0.isNumber })") {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        Label(phone, systemImage: "phone.fill")
+                    }
+                }
+            }
+            Divider()
+        }
+    }
+
     private var tableInfoPill: some View {
         HStack(spacing: 8) {
             if let table = vm.selectedTable {
@@ -435,13 +478,7 @@ struct CartView: View {
                 }
                 Spacer()
                 if vm.currentOrderPaymentStatus == "paid" {
-                    Text("Pagado")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.green)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.green.opacity(0.15))
-                        .clipShape(Capsule())
+                    
                 }
                 Image(systemName: "chevron.down")
                     .font(.caption)
@@ -569,6 +606,224 @@ struct CartView: View {
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasUnsentItems || isPaidTakeout)
             }
         }
-        
+
     }
+}
+
+// MARK: - Previews
+
+/// Helpers para armar estados de ejemplo del CartView sin backend.
+private enum CartPreview {
+    static func item(
+        _ name: String,
+        _ price: Double,
+        qty: Int = 1,
+        seat: String = "C",
+        course: Int = 1,
+        sent: Bool = false,
+        notes: String = "",
+        variant: String? = nil
+    ) -> CartItem {
+        CartItem(
+            productId: UUID().uuidString,
+            productName: name,
+            unitPrice: price,
+            quantity: qty,
+            notes: notes,
+            frostingId: nil, frostingName: nil,
+            dryToppingId: nil, dryToppingName: nil,
+            extraId: nil, extraName: nil,
+            customModifiers: nil,
+            seat: seat,
+            course: course,
+            sentToKitchen: sent,
+            orderId: nil, itemId: nil,
+            isBeverage: false,
+            orderStatus: nil,
+            deliveredToTable: false,
+            variantName: variant,
+            promotionId: nil, promotionName: nil,
+            originalPrice: nil, promotionDiscount: nil,
+            isGuest: false
+        )
+    }
+
+    /// Envuelve el CartView con el ancho y fondo reales del POS.
+    @MainActor
+    static func stage(_ vm: POSViewModel) -> some View {
+        CartView(vm: vm)
+            .frame(width: 340)
+            .frame(maxHeight: .infinity)
+            .background(Color.black)
+            .preferredColorScheme(.dark)
+    }
+
+    /// Categorías + productos de ejemplo, para que ProductGridView/CategorySidebarView
+    /// tengan algo que mostrar en el preview.
+    static func seedMenu(_ vm: POSViewModel) {
+        vm.categories = [
+            Category(id: "c1", name: "Entradas", description: nil, color: "#22C55E", icon: "leaf.fill", sortOrder: 0, active: true, isBeverage: false),
+            Category(id: "c2", name: "Fuertes", description: nil, color: "#3B82F6", icon: "flame.fill", sortOrder: 1, active: true, isBeverage: false),
+            Category(id: "c3", name: "Postres", description: nil, color: "#EC4899", icon: "birthday.cake.fill", sortOrder: 2, active: true, isBeverage: false),
+            Category(id: "c4", name: "Bebidas", description: nil, color: "#F59E0B", icon: "cup.and.saucer.fill", sortOrder: 3, active: true, isBeverage: true)
+        ]
+        vm.selectedCategory = "c2"
+        vm.products = [
+            Product(id: "p1", name: "Ensalada César", description: "Lechuga, parmesano, aderezo de la casa", price: "180", platformPrice: nil, categoryId: "c1", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p2", name: "Ribeye 400g", description: "Corte premium a la parrilla", price: "620", platformPrice: nil, categoryId: "c2", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p3", name: "Burger Bruma", description: "Doble carne, queso, tocino", price: "210", platformPrice: nil, categoryId: "c2", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p4", name: "Alitas BBQ", description: "8 piezas, salsa BBQ o buffalo", price: "190", platformPrice: nil, categoryId: "c2", groupId: nil, hasVariants: true, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p5", name: "Pasta Alfredo", description: "Fettuccine, crema, parmesano", price: "220", platformPrice: nil, categoryId: "c2", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p6", name: "Molten Chocolate", description: "Centro líquido, helado de vainilla", price: "145", platformPrice: nil, categoryId: "c3", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p7", name: "Limonada", description: nil, price: "55", platformPrice: nil, categoryId: "c4", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p8", name: "Refresco", description: nil, price: "45", platformPrice: nil, categoryId: "c4", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil)
+        ]
+    }
+
+    /// Réplica de MainPOSView (carrito + categorías + productos) para diseñar
+    /// la pantalla completa sin backend.
+    @MainActor
+    static func fullScreen(_ vm: POSViewModel) -> some View {
+        seedMenu(vm)
+        return ZStack {
+            Color.black.ignoresSafeArea()
+            HStack(spacing: 12) {
+                CartView(vm: vm)
+                    .frame(width: 320)
+
+                HStack(spacing: 12) {
+                    CategorySidebarView(vm: vm)
+                        .frame(width: 220)
+                        .background(Color(uiColor: .systemGray6).opacity(0.4))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                    ProductGridView(vm: vm)
+                        .frame(maxWidth: .infinity)
+                        .background(Color(uiColor: .systemGray6).opacity(0.4))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .padding(.trailing, 12)
+                }
+                .padding(.vertical, 12)
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    /// Réplica de MainPOSView en modo pago (carrito + PaymentView).
+    @MainActor
+    static func fullScreenPayment(_ vm: POSViewModel) -> some View {
+        seedMenu(vm)
+        vm.showingPayment = true
+        return ZStack {
+            Color.black.ignoresSafeArea()
+            HStack(spacing: 12) {
+                CartView(vm: vm)
+                    .frame(width: 320)
+
+                PaymentView(vm: vm)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(uiColor: .systemGray6).opacity(0.4))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .padding(.trailing, 12)
+                    .padding(.vertical, 12)
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    // 1) Pedido en mesa (dine-in): asientos + tiempos.
+    @MainActor
+    static func dineIn() -> POSViewModel {
+        let vm = POSViewModel()
+        vm.selectedTable = Table(
+            id: "t5", number: "5", name: nil, capacity: 4,
+            status: "occupied", active: true, activeOrder: nil,
+            guestCount: 2, nextReservation: nil
+        )
+        vm.guestCount = 2
+        vm.activeSeat = "A1"
+        vm.activeCourse = 1
+        vm.cart = [
+            item("Ribeye 400g", 620, seat: "A1", course: 1, sent: true),
+            item("Ensalada César", 180, seat: "A2", course: 1, sent: true),
+            item("Papas al romero", 120, seat: "C", course: 1),
+            item("Molten chocolate", 145, seat: "C", course: 2)
+        ]
+        return vm
+    }
+
+    // 2) Pedido para llevar (takeout): sin mesa, con nombre.
+    @MainActor
+    static func takeout() -> POSViewModel {
+        let vm = POSViewModel()
+        vm.selectedTable = nil
+        vm.customerName = "Iñaki"
+        vm.activeCourse = 1
+        vm.cart = [
+            item("Burger Bruma", 210, qty: 2),
+            item("Orden de alitas", 190, variant: "BBQ"),
+            item("Limonada", 55, qty: 2)
+        ]
+        return vm
+    }
+
+    // 3) Pedido web pagado (online / envío a domicilio): dirección + "Pagado".
+    @MainActor
+    static func webOrder() -> POSViewModel {
+        let vm = POSViewModel()
+        vm.selectedTable = nil
+        vm.customerName = "María López"
+        vm.currentOrderPhone = "5544332211"
+        vm.currentOrderAddress = "Av. Panamericana Casa B14, Col. Pedregal de Carrasco, 04700, Coyoacán, CDMX"
+        vm.currentOrderLat = "19.3081"
+        vm.currentOrderLng = "-99.1799"
+        vm.currentOrderPaymentStatus = "paid"
+        vm.activeCourse = 1
+        vm.cart = [
+            item("Pizza Margherita", 240, sent: true),
+            item("Pasta Alfredo", 220, sent: true),
+            item("Tiramisú", 130, sent: true)
+        ]
+        return vm
+    }
+}
+
+#Preview("Mesa (dine-in)") {
+    CartPreview.stage(CartPreview.dineIn())
+}
+
+#Preview("Para llevar") {
+    CartPreview.stage(CartPreview.takeout())
+}
+
+#Preview("Web (pagado)") {
+    CartPreview.stage(CartPreview.webOrder())
+}
+
+// MARK: - Previews de pantalla completa (carrito + categorías + productos)
+
+#Preview("Full · Mesa + Menú", traits: .landscapeLeft) {
+    CartPreview.fullScreen(CartPreview.dineIn())
+}
+
+#Preview("Full · Para llevar + Menú", traits: .landscapeLeft) {
+    CartPreview.fullScreen(CartPreview.takeout())
+}
+
+#Preview("Full · Web + Menú", traits: .landscapeLeft) {
+    CartPreview.fullScreen(CartPreview.webOrder())
+}
+
+// MARK: - Previews de pasarela de pago (carrito + PaymentView)
+
+#Preview("Pago · Mesa", traits: .landscapeLeft) {
+    CartPreview.fullScreenPayment(CartPreview.dineIn())
+}
+
+#Preview("Pago · Para llevar", traits: .landscapeLeft) {
+    CartPreview.fullScreenPayment(CartPreview.takeout())
+}
+
+#Preview("Pago · Web", traits: .landscapeLeft) {
+    CartPreview.fullScreenPayment(CartPreview.webOrder())
 }

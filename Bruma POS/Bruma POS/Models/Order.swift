@@ -33,6 +33,7 @@ struct Order: Codable, Identifiable {
     let deliveryAddress: String?
     let deliveryLat: String?
     let deliveryLng: String?
+    let estimatedReadyMinutes: Int?
 
     var isSplitPayment: Bool {
         (payments?.count ?? 0) > 1

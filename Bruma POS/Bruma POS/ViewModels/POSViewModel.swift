@@ -155,6 +155,12 @@ class POSViewModel: ObservableObject {
     @Published var guestCount = 1
     @Published var currentOrderId: String?
     @Published var currentOrderPaymentStatus: String?
+    // Datos de contacto/entrega del pedido actual (para llevar / web / delivery)
+    @Published var currentOrderPhone: String?
+    @Published var currentOrderAddress: String?
+    @Published var currentOrderLat: String?
+    @Published var currentOrderLng: String?
+    @Published var showLocationModal = false
     @Published var submitting = false
     
     // MARK: - Guest Count Dialog
@@ -313,6 +319,10 @@ class POSViewModel: ObservableObject {
         showCustomTip = false
         tipPaymentMethod = nil
         currentOrderPaymentStatus = nil
+        currentOrderPhone = nil
+        currentOrderAddress = nil
+        currentOrderLat = nil
+        currentOrderLng = nil
         splitPayments = []
         showAddSplitPayment = false
         editingSplitPayment = nil
@@ -1900,7 +1910,11 @@ class POSViewModel: ObservableObject {
         selectedTable = nil
         currentOrderId = order.id
         currentOrderPaymentStatus = order.paymentStatus
-        
+        currentOrderPhone = order.customerPhone
+        currentOrderAddress = order.deliveryAddress
+        currentOrderLat = order.deliveryLat
+        currentOrderLng = order.deliveryLng
+
         // Load items
         var items: [CartItem] = []
         if let orderItems = order.items {
@@ -2669,7 +2683,7 @@ class POSViewModel: ObservableObject {
     }
 
     /// Reproduce `delivery_sound.wav` EN LOOP mientras la pantalla verde esté visible.
-    private func startOnlineOrderSound() {
+    func startOnlineOrderSound() {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
@@ -2687,7 +2701,7 @@ class POSViewModel: ObservableObject {
         }
     }
 
-    private func stopOnlineOrderSound() {
+    func stopOnlineOrderSound() {
         onlineOrderAudioPlayer?.stop()
         onlineOrderAudioPlayer = nil
     }
@@ -2698,11 +2712,11 @@ class POSViewModel: ObservableObject {
         incomingOnlineOrder = nil
     }
 
-    func acceptOnlineOrder() {
+    func acceptOnlineOrder(estimatedReadyMinutes: Int? = nil) {
         guard let order = incomingOnlineOrder else { return }
         Task {
             do {
-                try await APIService.shared.acceptOnlineOrder(orderId: order.id)
+                try await APIService.shared.acceptOnlineOrder(orderId: order.id, estimatedReadyMinutes: estimatedReadyMinutes)
                 await printOnlineComanda(order)   // imprime la comanda al aceptar
                 showToast("Pedido aceptado — enviado a cocina")
             } catch {

@@ -268,6 +268,8 @@ router.get("/public/online-orders/:id/status", async (req, res) => {
         status: true,
         paymentStatus: true,
         deliveryType: true,
+        estimatedReadyMinutes: true,
+        updatedAt: true,
       },
     });
     if (!order) return res.status(404).json({ error: "No encontrado" });
@@ -295,14 +297,20 @@ router.get("/public/restaurant", async (_req, res) => {
 router.post("/orders/:id/accept-online", async (req, res) => {
   try {
     const { id } = req.params;
+    const { estimatedReadyMinutes } = req.body;
     const order = await db.query.orders.findFirst({ where: eq(schema.orders.id, id) });
     if (!order) return res.status(404).json({ error: "Orden no encontrada" });
     if (order.paymentStatus !== "paid") {
       return res.status(400).json({ error: "El pedido aún no está pagado" });
     }
+    const minutes = Number.isFinite(estimatedReadyMinutes) ? Math.round(estimatedReadyMinutes) : null;
     const [updated] = await db
       .update(schema.orders)
-      .set({ status: "preparing", updatedAt: new Date() })
+      .set({
+        status: "preparing",
+        updatedAt: new Date(),
+        ...(minutes != null ? { estimatedReadyMinutes: minutes } : {}),
+      })
       .where(eq(schema.orders.id, id))
       .returning();
     const complete = await db.query.orders.findFirst({

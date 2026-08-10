@@ -256,15 +256,32 @@ class APIService {
         }
     }
 
-    /// Acepta un pedido en línea (pantalla verde) → entra a cocina.
-    func acceptOnlineOrder(orderId: String) async throws {
+    /// Acepta un pedido en línea (pantalla verde) → entra a cocina. `estimatedReadyMinutes`
+    /// es el tiempo que el POS confirma al cliente (se guarda en la orden y la web lo
+    /// muestra en vez de calcular un estimado).
+    func acceptOnlineOrder(orderId: String, estimatedReadyMinutes: Int? = nil) async throws {
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)/accept-online")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [:]
+        if let minutes = estimatedReadyMinutes { body["estimatedReadyMinutes"] = minutes }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw APIError.serverError
         }
+    }
+
+    /// Tiempo estimado sugerido (min) para pedidos en línea, según carga actual de cocina.
+    func fetchOnlineOrderEtaSuggestion(deliveryType: String) async throws -> Int {
+        let url = URL(string: "\(baseURL)/api/public/online-orders/eta?type=\(deliveryType)")!
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw APIError.serverError
+        }
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        return (json?["etaMinutes"] as? Int) ?? 35
     }
 
     /// Rechaza un pedido en línea → reembolso automático por Stripe.

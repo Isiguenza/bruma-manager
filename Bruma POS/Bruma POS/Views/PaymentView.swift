@@ -158,66 +158,97 @@ struct PaymentView: View {
                 Text("Cobrar")
                     .font(.title2.weight(.bold))
                     .foregroundColor(.white)
-                Spacer()
-                moreOptionsMenu
-                if !vm.availableDiscounts.isEmpty {
-                    discountPill
-                }
-
-                Button {
-                    Task {
-                        try? await APIService.shared.openCashDrawer()
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "lock.open.fill")
-                        Text("Cajón")
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.glass)
-                .clipShape(Capsule())
-
-                if vm.paymentMethod == "cash" {
-                    Button {
-                        vm.parkCurrentPaymentIfNeeded()
-                        vm.showingPayment = false
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "rectangle.compress.vertical")
-                            Text("Minimizar")
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.glass)
-                    .clipShape(Capsule())
-                }
-
-                Button {
-                    vm.resetPaymentState()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "xmark")
-                        Text("Cerrar")
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.glass)
-                .clipShape(Capsule())
+                    .lineLimit(1)
+                    .layoutPriority(1)
+                Spacer(minLength: 12)
+                headerActions
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
             .padding(.bottom, 8)
         }
+    }
+
+    /// Botones secundarios del header ("Pago Completo", Descuento, Cajón,
+    /// Minimizar, Cerrar). Con muchos botones a la vez (p. ej. hay descuentos
+    /// disponibles) el texto de las pills se rompía a dos líneas por falta de
+    /// espacio; `ViewThatFits` cae a la variante compacta (solo íconos) en
+    /// vez de dejar que el texto se envuelva.
+    private var headerActions: some View {
+        ViewThatFits(in: .horizontal) {
+            headerActionsFull
+            headerActionsCompact
+        }
+    }
+
+    private var headerActionsFull: some View {
+        HStack(spacing: 12) {
+            moreOptionsMenu
+            if !vm.availableDiscounts.isEmpty {
+                discountPill
+            }
+            headerPillButton(icon: "lock.open.fill", label: "Cajón") {
+                Task { try? await APIService.shared.openCashDrawer() }
+            }
+            if vm.paymentMethod == "cash" {
+                headerPillButton(icon: "rectangle.compress.vertical", label: "Minimizar") {
+                    vm.parkCurrentPaymentIfNeeded()
+                    vm.showingPayment = false
+                }
+            }
+            headerPillButton(icon: "xmark", label: "Cerrar") {
+                vm.resetPaymentState()
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var headerActionsCompact: some View {
+        HStack(spacing: 8) {
+            moreOptionsMenuCompact
+            if !vm.availableDiscounts.isEmpty {
+                discountCircleButton
+            }
+            GlassCircleButton(
+                systemImage: "lock.open.fill",
+                action: { Task { try? await APIService.shared.openCashDrawer() } },
+                isActive: false,
+                activeColor: .blue
+            )
+            if vm.paymentMethod == "cash" {
+                GlassCircleButton(
+                    systemImage: "rectangle.compress.vertical",
+                    action: {
+                        vm.parkCurrentPaymentIfNeeded()
+                        vm.showingPayment = false
+                    },
+                    isActive: false,
+                    activeColor: .blue
+                )
+            }
+            GlassCircleButton(
+                systemImage: "xmark",
+                action: { vm.resetPaymentState() },
+                isActive: false,
+                activeColor: .blue
+            )
+        }
+    }
+
+    private func headerPillButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                Text(label).lineLimit(1)
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .fixedSize()
+        }
+        .buttonStyle(.glass)
+        .clipShape(Capsule())
     }
     
     @ViewBuilder
@@ -253,10 +284,37 @@ struct PaymentView: View {
                     .font(.caption)
                 Text(vm.selectedDiscount?.name ?? "Descuento")
                     .font(.caption.weight(.medium))
+                    .lineLimit(1)
             }
             .foregroundColor(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .fixedSize()
+        }
+    }
+
+    /// Icono-only: mismo menú de descuentos, para el header compacto.
+    private var discountCircleButton: some View {
+        Menu {
+            Button("Sin descuento") { vm.selectedDiscount = nil }
+            ForEach(vm.availableDiscounts) { discount in
+                Button {
+                    if discount.type == "flexible" {
+                        vm.selectedDiscount = discount
+                        vm.showFlexibleDiscountDialog = true
+                    } else {
+                        vm.selectedDiscount = discount
+                    }
+                } label: {
+                    Text("\(discount.name) (\(discountLabel(discount)))")
+                }
+            }
+        } label: {
+            Image(systemName: "tag.fill")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(vm.selectedDiscount != nil ? Color.orange : .white)
+                .frame(width: 48, height: 48)
+                .modifier(GlassCircle(isActive: vm.selectedDiscount != nil, color: .orange))
         }
     }
 
@@ -281,28 +339,52 @@ struct PaymentView: View {
                 }
             }
         } label: {
-            
-            HStack(spacing: 12){
+            HStack(spacing: 12) {
                 Label("Pago Completo", systemImage: "creditcard.and.numbers")
-                    
                     .foregroundColor(.white)
-                    
-                
-                
-                
+                    .lineLimit(1)
+
                 Image(systemName: "chevron.down")
                     .foregroundStyle(.gray)
                     .font(.footnote)
             }
             .padding(.vertical, 8)
-            
-            
-                
+            .fixedSize()
         }
         .buttonStyle(.glass)
-        
     }
-    
+
+    /// Icono-only: mismo menú de "Pago Completo"/"Pago Dividido"/"Dividir Cuenta",
+    /// para el header compacto.
+    private var moreOptionsMenuCompact: some View {
+        Menu {
+            Button {
+                vm.paymentStep = "split-payment"
+                vm.splitPayments = []
+                vm.paymentMethod = nil
+            } label: {
+                Label("Pago Dividido", systemImage: "creditcard.arrow.trianglehead.2.clockwise.rotate.90")
+            }
+
+            if vm.guestCount > 1 {
+                Button {
+                    vm.currentPersonIndex = 0
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                        vm.paymentStep = "split-bill-mode"
+                    }
+                } label: {
+                    Label("Dividir Cuenta", systemImage: "person.2.fill")
+                }
+            }
+        } label: {
+            Image(systemName: "creditcard.and.numbers")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .modifier(GlassCircle(isActive: false, color: .blue))
+        }
+    }
+
     // MARK: - Segmented Method Picker
     
     private var methodSegmentedPicker: some View {
