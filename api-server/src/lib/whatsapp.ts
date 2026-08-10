@@ -7,12 +7,31 @@ function normalizePhone(phone: string): string {
   return digits.startsWith("52") ? digits : `52${digits}`;
 }
 
-async function sendTemplate(phone: string, template: string, params: string[]) {
+/**
+ * `buttonUrlParam`, si viene, es el valor que rellena el botón CTA de URL
+ * dinámica de la plantilla (configurado en Meta como
+ * `https://cocinabruma.com.mx/checkout/confirmacion?orderId={{1}}`) — se
+ * manda como componente `button` aparte de las variables del cuerpo del
+ * mensaje.
+ */
+async function sendTemplate(phone: string, template: string, params: string[], buttonUrlParam?: string) {
   const phoneId = process.env.META_WA_PHONE_ID;
   const token = process.env.META_WA_TOKEN;
   if (!phoneId || !token) return; // WhatsApp no configurado — no-op silencioso
 
   const to = normalizePhone(phone);
+  const components: Record<string, unknown>[] = [
+    { type: "body", parameters: params.map((text) => ({ type: "text", text })) },
+  ];
+  if (buttonUrlParam) {
+    components.push({
+      type: "button",
+      sub_type: "url",
+      index: "0",
+      parameters: [{ type: "text", text: buttonUrlParam }],
+    });
+  }
+
   try {
     const resp = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
       method: "POST",
@@ -26,10 +45,11 @@ async function sendTemplate(phone: string, template: string, params: string[]) {
         type: "template",
         template: {
           name: template,
-          language: { code: "es_MX" },
-          components: [
-            { type: "body", parameters: params.map((text) => ({ type: "text", text })) },
-          ],
+          // Las plantillas se crearon con idioma "Spanish" (código `es`), no
+          // "Spanish (MEX)" (`es_MX`) — hay que usar el código que Meta
+          // realmente tiene asociado a cada plantilla.
+          language: { code: "es" },
+          components,
         },
       }),
     });
@@ -61,6 +81,7 @@ function clockTimeIn(minutes: number): string {
 }
 
 type NotifiableOrder = {
+  id: string;
   customerName?: string | null;
   customerPhone?: string | null;
   orderNumber: number;
@@ -79,18 +100,18 @@ export async function notifyOrderReceived(order: NotifiableOrder) {
   ]);
 }
 
-/** El POS aceptó el pedido (entra a cocina). */
+/** El POS aceptó el pedido (entra a cocina). Incluye CTA al seguimiento del pedido. */
 export async function notifyOrderConfirmed(order: NotifiableOrder) {
   if (!order.customerPhone) return;
   const eta = order.estimatedReadyMinutes ? clockTimeIn(order.estimatedReadyMinutes) : "pronto";
-  await sendTemplate(order.customerPhone, "pedido_confirmado", [String(order.orderNumber), eta]);
+  await sendTemplate(order.customerPhone, "pedido_confirmado", [String(order.orderNumber), eta], order.id);
 }
 
-/** El pedido está listo (para recoger o para salir a reparto). */
+/** El pedido está listo (para recoger o para salir a reparto). Incluye CTA al seguimiento. */
 export async function notifyOrderReady(order: NotifiableOrder) {
   if (!order.customerPhone) return;
   const where = order.deliveryType === "delivery" ? "para tu repartidor" : "para recoger";
-  await sendTemplate(order.customerPhone, "pedido_listo", [String(order.orderNumber), where]);
+  await sendTemplate(order.customerPhone, "pedido_listo", [String(order.orderNumber), where], order.id);
 }
 
 /** El pedido salió a reparto (solo domicilio). */

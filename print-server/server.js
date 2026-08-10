@@ -1377,13 +1377,19 @@ app.post('/print-corte', async (req, res) => {
       }
     }
     if (sales.transfer > 0) content += `Transferencia: $${Math.round(sales.transfer)}\n`;
+    if (sales.online > 0) {
+      content += `Online:        $${Math.round(sales.online)}\n`;
+      if (sales.netOnline !== sales.online) {
+        content += `  Neto real:   $${Math.round(sales.netOnline)}\n`;
+      }
+    }
     content += "--------------------------------\n";
     content += `Total bruto:   $${Math.round(sales.total)}\n`;
-    if (sales.netCard && sales.netCard !== sales.card) {
-      content += `Total neto:    $${Math.round(sales.cash + sales.transfer + sales.netCard)}\n`;
+    if ((sales.netCard && sales.netCard !== sales.card) || (sales.netOnline && sales.netOnline !== sales.online)) {
+      content += `Total neto:    $${Math.round(sales.cash + sales.transfer + (sales.netCard ?? sales.card) + (sales.netOnline ?? sales.online))}\n`;
     }
     content += commands.feedLine;
-    
+
     // PROPINAS
     content += commands.bold;
     content += "PROPINAS\n";
@@ -1397,10 +1403,16 @@ app.post('/print-corte', async (req, res) => {
       }
     }
     if (tips.transfer > 0) content += `Transferencia: $${Math.round(tips.transfer)}\n`;
+    if (tips.online > 0) {
+      content += `Online:        $${Math.round(tips.online)}\n`;
+      if (tips.netOnline !== tips.online) {
+        content += `  Neto real:   $${Math.round(tips.netOnline)}\n`;
+      }
+    }
     content += "--------------------------------\n";
     content += `Total bruto:   $${Math.round(tips.total)}\n`;
     content += commands.feedLine;
-    
+
     // COMISIONES
     if (commissions && commissions.total > 0) {
       content += commands.bold;
@@ -1408,6 +1420,16 @@ app.post('/print-corte', async (req, res) => {
       content += commands.boldOff;
       content += `Tasa: ${(commissions.rateWithIVA * 100).toFixed(2)}%\n`;
       content += `Total: -$${Math.round(commissions.total)}\n`;
+      content += commands.feedLine;
+    }
+
+    // COMISIÓN ONLINE (Stripe) — distinta a la de terminal
+    if (commissions && commissions.online && commissions.online.total > 0) {
+      content += commands.bold;
+      content += "COMISION PEDIDOS EN LINEA\n";
+      content += commands.boldOff;
+      content += `Tasa: ${(commissions.online.rateWithIVA * 100).toFixed(2)}% + $${commissions.online.fixedFeeWithIVA.toFixed(2)}/op.\n`;
+      content += `Total: -$${Math.round(commissions.online.total)}\n`;
       content += commands.feedLine;
     }
     

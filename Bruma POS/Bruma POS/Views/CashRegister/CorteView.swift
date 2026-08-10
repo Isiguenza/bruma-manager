@@ -27,7 +27,12 @@ struct CorteView: View {
                         
                         // Comisiones
                         comisionesSection(data)
-                        
+
+                        // Comisión de pedidos en línea (Stripe)
+                        if data.sales.online > 0 {
+                            comisionesOnlineSection(data)
+                        }
+
                         // Movimientos de caja
                         movimientosSection(data)
                         
@@ -119,7 +124,17 @@ struct CorteView: View {
                     count: data.summary.transferOrders,
                     color: .purple
                 )
-                
+                if data.sales.online > 0 {
+                    paymentRow(
+                        method: "Online",
+                        amount: data.sales.online,
+                        netAmount: data.sales.netOnline,
+                        count: data.summary.onlineOrders,
+                        color: .teal,
+                        showNet: true
+                    )
+                }
+
                 if data.sales.platformDelivery > 0 {
                     paymentRow(
                         method: "Plataformas",
@@ -164,7 +179,10 @@ struct CorteView: View {
                 tipRow(method: "Efectivo", amount: data.tips.cash, color: .green)
                 tipRow(method: "Tarjeta", amount: data.tips.card, netAmount: data.tips.netCard, color: .blue, showNet: true)
                 tipRow(method: "Transferencia", amount: data.tips.transfer, color: .purple)
-                
+                if data.tips.online > 0 {
+                    tipRow(method: "Online", amount: data.tips.online, netAmount: data.tips.netOnline, color: .teal, showNet: true)
+                }
+
                 Divider().background(Color.white.opacity(0.1))
                 
                 HStack {
@@ -228,7 +246,45 @@ struct CorteView: View {
         .background(Color.white.opacity(0.05))
         .cornerRadius(12)
     }
-    
+
+    /// Comisión de pedidos en línea (Stripe): 3.6% + $3 MXN por transacción,
+    /// +IVA. Distinta de la comisión de terminal — se muestra aparte.
+    private func comisionesOnlineSection(_ data: CorteData) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Comisión Pedidos en Línea", icon: "globe", color: .teal)
+
+            VStack(spacing: 10) {
+                HStack {
+                    Text("Tasa aplicada")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Text("\(vm.formatPercentage(data.commissions.online.rateWithIVA)) + \(vm.formatCurrency(data.commissions.online.fixedFeeWithIVA))/transacción")
+                        .font(.subheadline)
+                        .foregroundColor(.teal)
+                }
+
+                detailRow(label: "Comisión por ventas", value: data.commissions.online.salesCommission, color: .white)
+                detailRow(label: "Comisión por propinas", value: data.commissions.online.tipsCommission, color: .white)
+
+                Divider().background(Color.white.opacity(0.1))
+
+                HStack {
+                    Text("Total comisión online")
+                        .font(.subheadline.bold())
+                        .foregroundColor(.teal)
+                    Spacer()
+                    Text("-\(vm.formatCurrency(data.commissions.online.total))")
+                        .font(.subheadline.bold())
+                        .foregroundColor(.teal)
+                }
+            }
+        }
+        .padding()
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(12)
+    }
+
     private func movimientosSection(_ data: CorteData) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("Movimientos de Caja", icon: "arrow.left.arrow.right", color: .cyan)

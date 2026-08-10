@@ -373,8 +373,13 @@ router.get("/cash-register/:id/corte", async (req, res) => {
         })
       : [];
 
+    // Terminal física (MercadoPago).
     const COMMISSION_RATE = 0.035;
     const COMMISSION_WITH_IVA = COMMISSION_RATE * 1.16;
+    // Pedidos en línea (Stripe): 3.6% + $3.00 MXN por transacción, +IVA.
+    const ONLINE_PCT_RATE = 0.036;
+    const ONLINE_FIXED_FEE = 3.0;
+    const IVA = 1.16;
 
     // Calculate sales by payment method
     let cashSales = 0;
@@ -386,9 +391,13 @@ router.get("/cash-register/:id/corte", async (req, res) => {
     let cardTips = 0;
     let transferTips = 0;
 
-    // Pedidos en línea (Stripe) — bucket propio, sin comisión de terminal.
+    // Pedidos en línea (Stripe) — sección propia en el corte, con su propia
+    // comisión (distinta a la de la terminal física).
     let onlineSales = 0;
     let onlineTips = 0;
+    let onlineOrderCount = 0;
+    let onlineCommissionSales = 0;
+    let onlineCommissionTips = 0;
 
     let splitOrderCount = 0;
 
@@ -406,12 +415,19 @@ router.get("/cash-register/:id/corte", async (req, res) => {
           if (paymentMethod === "cash") cashSales += amount;
           else if (paymentMethod === "card" || paymentMethod === "terminal_mercadopago") cardSales += amount;
           else if (paymentMethod === "transfer") transferSales += amount;
-          else if (paymentMethod === "online") onlineSales += amount;
+          else if (paymentMethod === "online") {
+            onlineSales += amount;
+            onlineOrderCount++;
+            onlineCommissionSales += (amount * ONLINE_PCT_RATE + ONLINE_FIXED_FEE) * IVA;
+          }
 
           if (tipMethod === "cash") cashTips += tip;
           else if (tipMethod === "card" || tipMethod === "terminal_mercadopago") cardTips += tip;
           else if (tipMethod === "transfer") transferTips += tip;
-          else if (tipMethod === "online") onlineTips += tip;
+          else if (tipMethod === "online") {
+            onlineTips += tip;
+            onlineCommissionTips += tip * ONLINE_PCT_RATE * IVA;
+          }
         }
       } else {
         const orderTotal = parseFloat(order.total || "0");
@@ -423,22 +439,34 @@ router.get("/cash-register/:id/corte", async (req, res) => {
         if (paymentMethod === "cash") cashSales += orderSubtotal;
         else if (paymentMethod === "card" || paymentMethod === "terminal_mercadopago") cardSales += orderSubtotal;
         else if (paymentMethod === "transfer") transferSales += orderSubtotal;
-        else if (paymentMethod === "online") onlineSales += orderSubtotal;
+        else if (paymentMethod === "online") {
+          onlineSales += orderSubtotal;
+          onlineOrderCount++;
+          // El fee fijo ($3) se carga una vez por transacción, sobre el renglón de venta.
+          onlineCommissionSales += (orderSubtotal * ONLINE_PCT_RATE + ONLINE_FIXED_FEE) * IVA;
+        }
 
         if (tipMethod === "cash") cashTips += orderTip;
         else if (tipMethod === "card" || tipMethod === "terminal_mercadopago") cardTips += orderTip;
         else if (tipMethod === "transfer") transferTips += orderTip;
-        else if (tipMethod === "online") onlineTips += orderTip;
+        else if (tipMethod === "online") {
+          onlineTips += orderTip;
+          onlineCommissionTips += orderTip * ONLINE_PCT_RATE * IVA;
+        }
       }
     }
 
     const totalSales = cashSales + cardSales + transferSales + onlineSales;
     const totalTips = cashTips + cardTips + transferTips + onlineTips;
 
-    // Calculate commissions
+    // Calculate commissions — terminal física (rate fijo) y online (rate + fee fijo) por separado.
     const cardCommission = (cardSales + cardTips) * COMMISSION_WITH_IVA;
     const netCardSales = cardSales - (cardSales * COMMISSION_WITH_IVA);
     const netCardTips = cardTips - (cardTips * COMMISSION_WITH_IVA);
+
+    const onlineCommission = onlineCommissionSales + onlineCommissionTips;
+    const netOnlineSales = onlineSales - onlineCommissionSales;
+    const netOnlineTips = onlineTips - onlineCommissionTips;
 
     // Get cash movements
     const transactions = await db.query.cashRegisterTransactions.findMany({
@@ -481,6 +509,7 @@ router.get("/cash-register/:id/corte", async (req, res) => {
         online: onlineSales,
         platformDelivery: 0,
         netCard: netCardSales,
+        netOnline: netOnlineSales,
       },
       tips: {
         total: totalTips,
@@ -489,6 +518,7 @@ router.get("/cash-register/:id/corte", async (req, res) => {
         transfer: transferTips,
         online: onlineTips,
         netCard: netCardTips,
+        netOnline: netOnlineTips,
       },
       commissions: {
         rate: COMMISSION_WITH_IVA,
@@ -496,6 +526,16 @@ router.get("/cash-register/:id/corte", async (req, res) => {
         total: cardCommission,
         salesCommission: cardSales * COMMISSION_WITH_IVA,
         tipsCommission: cardTips * COMMISSION_WITH_IVA,
+        // Comisión de pedidos en línea (Stripe): 3.6% + $3 MXN por transacción, +IVA.
+        online: {
+          percentRate: ONLINE_PCT_RATE,
+          fixedFee: ONLINE_FIXED_FEE,
+          rateWithIVA: ONLINE_PCT_RATE * IVA,
+          fixedFeeWithIVA: ONLINE_FIXED_FEE * IVA,
+          total: onlineCommission,
+          salesCommission: onlineCommissionSales,
+          tipsCommission: onlineCommissionTips,
+        },
       },
       movements: {
         deposits: {
@@ -524,6 +564,7 @@ router.get("/cash-register/:id/corte", async (req, res) => {
         cashOrders,
         cardOrders,
         transferOrders,
+        onlineOrders: onlineOrderCount,
         splitOrders: splitOrderCount,
         expectedCash,
         finalCash: register.finalCash ? parseFloat(register.finalCash) : null,

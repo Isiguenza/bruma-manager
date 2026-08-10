@@ -33,12 +33,12 @@ class CorteViewModel: ObservableObject {
     
     var totalNetSales: Double {
         guard let data = corteData else { return 0 }
-        return data.sales.cash + data.sales.transfer + data.sales.netCard
+        return data.sales.cash + data.sales.transfer + data.sales.netCard + data.sales.netOnline
     }
-    
+
     var totalNetTips: Double {
         guard let data = corteData else { return 0 }
-        return data.tips.cash + data.tips.transfer + data.tips.netCard
+        return data.tips.cash + data.tips.transfer + data.tips.netCard + data.tips.netOnline
     }
     
     var cashExpected: Double {
@@ -85,18 +85,27 @@ class CorteViewModel: ObservableObject {
                 "cash": data.sales.cash,
                 "card": data.sales.card,
                 "transfer": data.sales.transfer,
-                "netCard": data.sales.netCard
+                "online": data.sales.online,
+                "netCard": data.sales.netCard,
+                "netOnline": data.sales.netOnline
             ],
             "tips": [
                 "total": data.tips.total,
                 "cash": data.tips.cash,
                 "card": data.tips.card,
                 "transfer": data.tips.transfer,
-                "netCard": data.tips.netCard
+                "online": data.tips.online,
+                "netCard": data.tips.netCard,
+                "netOnline": data.tips.netOnline
             ],
             "commissions": [
                 "rateWithIVA": data.commissions.rateWithIVA,
-                "total": data.commissions.total
+                "total": data.commissions.total,
+                "online": [
+                    "rateWithIVA": data.commissions.online.rateWithIVA,
+                    "fixedFeeWithIVA": data.commissions.online.fixedFeeWithIVA,
+                    "total": data.commissions.online.total
+                ]
             ],
             "movements": [
                 "deposits": [

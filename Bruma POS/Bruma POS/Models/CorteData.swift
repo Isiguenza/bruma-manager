@@ -27,8 +27,10 @@ struct CorteSales: Codable {
     let cash: Double
     let card: Double
     let transfer: Double
+    let online: Double
     let platformDelivery: Double
     let netCard: Double
+    let netOnline: Double
 }
 
 struct CorteTips: Codable {
@@ -36,12 +38,25 @@ struct CorteTips: Codable {
     let cash: Double
     let card: Double
     let transfer: Double
+    let online: Double
     let netCard: Double
+    let netOnline: Double
 }
 
 struct CorteCommissions: Codable {
     let rate: Double
     let rateWithIVA: Double
+    let total: Double
+    let salesCommission: Double
+    let tipsCommission: Double
+    let online: CorteOnlineCommission
+}
+
+struct CorteOnlineCommission: Codable {
+    let percentRate: Double
+    let fixedFee: Double
+    let rateWithIVA: Double
+    let fixedFeeWithIVA: Double
     let total: Double
     let salesCommission: Double
     let tipsCommission: Double
@@ -78,6 +93,7 @@ struct CorteSummary: Codable {
     let cashOrders: Int
     let cardOrders: Int
     let transferOrders: Int
+    let onlineOrders: Int
     let splitOrders: Int
     let expectedCash: Double
     let finalCash: Double?

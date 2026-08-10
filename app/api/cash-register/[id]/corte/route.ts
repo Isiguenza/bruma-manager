@@ -3,8 +3,13 @@ import { db } from "@/lib/db";
 import { cashRegisters, orders, cashRegisterTransactions, orderPayments } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
+// Terminal física (MercadoPago).
 const COMMISSION_RATE = 0.035;
 const COMMISSION_WITH_IVA = COMMISSION_RATE * 1.16; // 4.06%
+// Pedidos en línea (Stripe): 3.6% + $3.00 MXN por transacción, +IVA.
+const ONLINE_PCT_RATE = 0.036;
+const ONLINE_FIXED_FEE = 3.0;
+const IVA = 1.16;
 
 function calculateNetAmount(grossAmount: number): number {
   return grossAmount - (grossAmount * COMMISSION_WITH_IVA);
@@ -44,20 +49,27 @@ export async function GET(
     let cardSales = 0;
     let transferSales = 0;
     let platformDeliverySales = 0;
+    // Pedidos en línea (Stripe) — sección propia, con su propia comisión.
+    let onlineSales = 0;
 
     let cashTips = 0;
     let cardTips = 0;
     let transferTips = 0;
+    let onlineTips = 0;
 
     let totalOrders = 0;
     let cashOrders = 0;
     let cardOrders = 0;
     let transferOrders = 0;
+    let onlineOrders = 0;
     let splitOrdersCount = 0;
 
-    // Card commission calculation
+    // Card commission calculation — solo terminal física.
     let cardCommission = 0;
     let cardTipCommission = 0;
+    // Online commission — 3.6% + $3 MXN por transacción, +IVA.
+    let onlineCommissionSales = 0;
+    let onlineCommissionTips = 0;
 
     // Split payments processing
     const splitPaymentsByOrder: Record<string, typeof orderPayments.$inferSelect[]> = {};
@@ -103,6 +115,10 @@ export async function GET(
             transferSales += amount;
           } else if (method === "platform_delivery") {
             platformDeliverySales += amount * 0.73;
+          } else if (method === "online") {
+            onlineSales += amount;
+            onlineOrders++;
+            onlineCommissionSales += (amount * ONLINE_PCT_RATE + ONLINE_FIXED_FEE) * IVA;
           }
 
           if (tipMethod === "cash") {
@@ -112,6 +128,9 @@ export async function GET(
             cardTipCommission += tip * COMMISSION_WITH_IVA;
           } else if (tipMethod === "transfer") {
             transferTips += tip;
+          } else if (tipMethod === "online") {
+            onlineTips += tip;
+            onlineCommissionTips += tip * ONLINE_PCT_RATE * IVA;
           }
         }
       } else {
@@ -131,6 +150,11 @@ export async function GET(
           transferOrders++;
         } else if (method === "platform_delivery") {
           platformDeliverySales += orderSubtotal * 0.73;
+        } else if (method === "online") {
+          onlineSales += orderSubtotal;
+          onlineOrders++;
+          // El fee fijo ($3) se carga una vez por transacción, sobre el renglón de venta.
+          onlineCommissionSales += (orderSubtotal * ONLINE_PCT_RATE + ONLINE_FIXED_FEE) * IVA;
         }
 
         if (tipMethod === "cash") {
@@ -140,6 +164,9 @@ export async function GET(
           cardTipCommission += orderTip * COMMISSION_WITH_IVA;
         } else if (tipMethod === "transfer") {
           transferTips += orderTip;
+        } else if (tipMethod === "online") {
+          onlineTips += orderTip;
+          onlineCommissionTips += orderTip * ONLINE_PCT_RATE * IVA;
         }
       }
     }
@@ -148,6 +175,10 @@ export async function GET(
     const netCardSales = calculateNetAmount(cardSales);
     const netCardTips = calculateNetAmount(cardTips);
     const totalCommission = cardCommission + cardTipCommission;
+
+    const netOnlineSales = onlineSales - onlineCommissionSales;
+    const netOnlineTips = onlineTips - onlineCommissionTips;
+    const onlineCommissionTotal = onlineCommissionSales + onlineCommissionTips;
 
     // Get deposits and withdrawals from transactions
     const deposits = register.transactions
@@ -175,8 +206,8 @@ export async function GET(
     const expectedCash = cashSales + cashTips + totalDeposits - totalWithdrawals + parseFloat(register.initialCash);
 
     // Total sales and tips
-    const totalSales = cashSales + cardSales + transferSales + platformDeliverySales;
-    const totalTips = cashTips + cardTips + transferTips;
+    const totalSales = cashSales + cardSales + transferSales + platformDeliverySales + onlineSales;
+    const totalTips = cashTips + cardTips + transferTips + onlineTips;
     const totalNetCard = netCardSales + netCardTips;
 
     const corte = {
@@ -194,15 +225,19 @@ export async function GET(
         cash: cashSales,
         card: cardSales,
         transfer: transferSales,
+        online: onlineSales,
         platformDelivery: platformDeliverySales,
         netCard: netCardSales,
+        netOnline: netOnlineSales,
       },
       tips: {
         total: totalTips,
         cash: cashTips,
         card: cardTips,
         transfer: transferTips,
+        online: onlineTips,
         netCard: netCardTips,
+        netOnline: netOnlineTips,
       },
       commissions: {
         rate: COMMISSION_RATE,
@@ -210,6 +245,15 @@ export async function GET(
         total: totalCommission,
         salesCommission: cardCommission,
         tipsCommission: cardTipCommission,
+        online: {
+          percentRate: ONLINE_PCT_RATE,
+          fixedFee: ONLINE_FIXED_FEE,
+          rateWithIVA: ONLINE_PCT_RATE * IVA,
+          fixedFeeWithIVA: ONLINE_FIXED_FEE * IVA,
+          total: onlineCommissionTotal,
+          salesCommission: onlineCommissionSales,
+          tipsCommission: onlineCommissionTips,
+        },
       },
       movements: {
         deposits: {
@@ -228,6 +272,7 @@ export async function GET(
         cashOrders,
         cardOrders,
         transferOrders,
+        onlineOrders,
         splitOrders: splitOrdersCount,
         expectedCash,
         finalCash: register.finalCash ? parseFloat(register.finalCash) : null,
