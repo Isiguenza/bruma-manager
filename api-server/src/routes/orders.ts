@@ -14,6 +14,7 @@ import {
 import { sendAppleWalletPush } from "../lib/apple-push";
 import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
 import { unmergeByOrderId, unmergeByTableId } from "../lib/tableMerges";
+import { refundStripePayment } from "./online-orders";
 
 const router = Router();
 
@@ -561,6 +562,16 @@ router.post("/orders/:id/refund", async (req, res) => {
     }
     if (order.paymentStatus !== "paid") {
       return res.status(400).json({ error: "Solo se pueden reembolsar órdenes pagadas" });
+    }
+
+    // Pedido online (Stripe): devolver el dinero por Stripe antes de marcar refunded.
+    if (order.paymentMethod === "online" && order.stripePaymentIntentId) {
+      try {
+        await refundStripePayment(order.stripePaymentIntentId);
+      } catch (e) {
+        console.error("[refund] Stripe refund falló:", e);
+        return res.status(502).json({ error: "No se pudo emitir el reembolso en Stripe" });
+      }
     }
 
     const [refundedOrder] = await db

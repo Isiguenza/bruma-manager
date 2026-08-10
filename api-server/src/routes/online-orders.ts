@@ -16,6 +16,11 @@ const DEFAULT_TIERS: DeliveryTier[] = [
   { maxMeters: 1200, fee: 40 },
 ];
 
+/** Reembolsa un pago de Stripe por su PaymentIntent. Reusable desde otras rutas. */
+export async function refundStripePayment(paymentIntentId: string) {
+  return stripe.refunds.create({ payment_intent: paymentIntentId });
+}
+
 async function getSettings() {
   const s: any = await db.query.restaurantSettings.findFirst();
   return {

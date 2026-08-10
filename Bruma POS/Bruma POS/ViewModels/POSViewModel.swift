@@ -4013,10 +4013,16 @@ class POSViewModel: ObservableObject {
                         }
                     }
                 } else if let orderId = currentOrderId {
-                    // Fallback: si no hay mesa (para llevar), borrar solo la orden actual
-                    print("🗑️ Deleting order \(orderId)")
-                    try await APIService.shared.deleteOrder(orderId: orderId)
-                    print("✅ Orden \(orderId) eliminada de la BD")
+                    // Para llevar / web. Si es un pedido WEB pagado, "Liberar Orden"
+                    // debe cancelarlo Y reembolsar por Stripe (no solo borrarlo).
+                    let existing = try? await APIService.shared.fetchOrder(orderId: orderId)
+                    if existing?.source == "web", existing?.paymentStatus == "paid" {
+                        print("💸 Pedido web pagado — cancelar + reembolsar por Stripe")
+                        try? await APIService.shared.rejectOnlineOrder(orderId: orderId, reason: "Liberado desde POS")
+                    } else {
+                        print("🗑️ Cancelando orden \(orderId)")
+                        try await APIService.shared.deleteOrder(orderId: orderId)
+                    }
                 } else {
                     print("⚠️ No currentOrderId to delete")
                 }
