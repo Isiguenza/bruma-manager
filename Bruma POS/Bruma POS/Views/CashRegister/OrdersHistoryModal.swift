@@ -225,6 +225,9 @@ struct OrdersHistoryModal: View {
         case "transfer":
             text = "Transferencia"
             color = .purple
+        case "online":
+            text = "Online"
+            color = .teal
         default:
             text = method ?? "N/A"
             color = .gray

@@ -7,6 +7,7 @@ enum PaymentMethodFilter: String, CaseIterable {
     case cash = "Efectivo"
     case card = "Terminal"
     case transfer = "Transferencia"
+    case online = "Online"
     case split = "Dividida"
 }
 
@@ -211,6 +212,8 @@ class CashRegisterViewModel: ObservableObject {
             result = result.filter { $0.paymentMethod == "card" || $0.paymentMethod == "terminal_mercadopago" }
         case .transfer:
             result = result.filter { $0.paymentMethod == "transfer" }
+        case .online:
+            result = result.filter { $0.paymentMethod == "online" }
         case .split:
             result = result.filter { $0.isSplitPayment }
         case .all:
@@ -237,7 +240,8 @@ class CashRegisterViewModel: ObservableObject {
             ("cash", "Efectivo", .green),
             ("card", "Terminal", .blue),
             ("terminal_mercadopago", "Terminal", .blue),
-            ("transfer", "Transferencia", .purple)
+            ("transfer", "Transferencia", .purple),
+            ("online", "Online", .teal)
         ]
         
         var groups: [(String, String, Color, [Order])] = []

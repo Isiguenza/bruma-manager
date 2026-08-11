@@ -100,18 +100,29 @@ export async function notifyOrderReceived(order: NotifiableOrder) {
   ]);
 }
 
-/** El POS aceptó el pedido (entra a cocina). Incluye CTA al seguimiento del pedido. */
+/**
+ * El POS aceptó el pedido (entra a cocina).
+ *
+ * NOTA: la plantilla `pedido_confirmado` en Meta todavía NO tiene el botón
+ * CTA (solo tiene el BODY) — mandar el componente `button` hace que Meta
+ * rechace el mensaje completo. Por eso no se pasa `order.id` aquí. En cuanto
+ * agregues el botón "Ir a un sitio web" (URL dinámica) en Meta, vuelve a
+ * agregar `, order.id` al final de la llamada de abajo.
+ */
 export async function notifyOrderConfirmed(order: NotifiableOrder) {
   if (!order.customerPhone) return;
   const eta = order.estimatedReadyMinutes ? clockTimeIn(order.estimatedReadyMinutes) : "pronto";
-  await sendTemplate(order.customerPhone, "pedido_confirmado", [String(order.orderNumber), eta], order.id);
+  await sendTemplate(order.customerPhone, "pedido_confirmado", [String(order.orderNumber), eta]);
 }
 
-/** El pedido está listo (para recoger o para salir a reparto). Incluye CTA al seguimiento. */
+/**
+ * El pedido está listo (para recoger o para salir a reparto).
+ * Mismo caso que `notifyOrderConfirmed`: sin botón CTA por ahora en Meta.
+ */
 export async function notifyOrderReady(order: NotifiableOrder) {
   if (!order.customerPhone) return;
   const where = order.deliveryType === "delivery" ? "para tu repartidor" : "para recoger";
-  await sendTemplate(order.customerPhone, "pedido_listo", [String(order.orderNumber), where], order.id);
+  await sendTemplate(order.customerPhone, "pedido_listo", [String(order.orderNumber), where]);
 }
 
 /** El pedido salió a reparto (solo domicilio). */
