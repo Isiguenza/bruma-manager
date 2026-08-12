@@ -77,9 +77,13 @@ import walletRouter from "./routes/wallet";
 import whatsappRouter from "./routes/whatsapp";
 import quickNotesRouter from "./routes/quick-notes";
 import mapFixturesRouter from "./routes/mapFixtures";
+import customerAddressesRouter from "./routes/customer-addresses";
+import paymentMethodsRouter from "./routes/payment-methods";
 
 app.use("/api", authRouter);
 app.use("/api", onlineOrdersRouter);
+app.use("/api", customerAddressesRouter);
+app.use("/api", paymentMethodsRouter);
 app.use("/api", cashRegisterRouter);
 app.use("/api", tablesRouter);
 app.use("/api", productsRouter);

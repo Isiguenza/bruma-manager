@@ -206,11 +206,31 @@ router.post("/public/online-orders/intent", async (req: Request, res: Response) 
       }))
     );
 
+    // Si el cliente inició sesión (Bearer opcional — invitados siguen
+    // funcionando igual), liga el pago a su Stripe Customer: el Payment
+    // Element le muestra sus tarjetas guardadas automáticamente, sin UI de
+    // selección propia — eso ya lo maneja Stripe. No fuerza guardar la
+    // tarjeta nueva que use aquí (eso solo pasa explícito en /perfil/pago).
+    let stripeCustomerId: string | undefined;
+    const authHeader = req.headers.authorization;
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (bearerToken && process.env.CLERK_SECRET_KEY) {
+      try {
+        const { verifyToken } = await import("@clerk/backend");
+        const verified = await verifyToken(bearerToken, { secretKey: process.env.CLERK_SECRET_KEY });
+        const { getOrCreateStripeCustomer } = await import("./payment-methods");
+        stripeCustomerId = await getOrCreateStripeCustomer(verified.sub, customerEmail);
+      } catch (e) {
+        console.error("[online-orders/intent] sesión opcional inválida (sigue como invitado):", e);
+      }
+    }
+
     // PaymentIntent (MXN, en centavos). metadata.orderId enlaza el webhook.
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(total * 100),
       currency: "mxn",
       automatic_payment_methods: { enabled: true },
+      ...(stripeCustomerId ? { customer: stripeCustomerId } : {}),
       metadata: { orderId: order.id },
       description: `Pedido #${order.orderNumber} — ${customerName}`,
     });
@@ -259,6 +279,46 @@ router.get("/public/online-orders/eta", async (req, res) => {
     res.json({ etaMinutes, activeOrders, seatedGuests });
   } catch (error) {
     res.json({ etaMinutes: 35 });
+  }
+});
+
+// GET /api/public/online-orders/delivery-quote?lat=&lng=
+// Cotiza el envío por distancia SIN crear orden ni PaymentIntent — mismo
+// cálculo que usa el intent real, para mostrarlo en vivo mientras el
+// cliente elige su ubicación en el checkout.
+router.get("/public/online-orders/delivery-quote", async (req, res) => {
+  try {
+    const settings = await getSettings();
+
+    // Sin lat/lng todavía (p. ej. antes de elegir ubicación): solo regresa
+    // los tramos reales, para reemplazar el texto estático de siempre.
+    const latRaw = req.query.lat as string | undefined;
+    const lngRaw = req.query.lng as string | undefined;
+    if (latRaw == null || lngRaw == null) {
+      return res.json({ feeAvailable: false, fee: null, distanceMeters: null, tiers: settings.deliveryTiers });
+    }
+
+    const lat = parseFloat(latRaw);
+    const lng = parseFloat(lngRaw);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "Coordenadas inválidas" });
+    }
+    if (settings.restaurantLat == null || settings.restaurantLng == null) {
+      return res.status(409).json({ error: "El restaurante no tiene ubicación configurada", code: "NO_ORIGIN" });
+    }
+
+    const distanceMeters = haversineMeters(settings.restaurantLat, settings.restaurantLng, lat, lng);
+    const fee = resolveDeliveryFee(distanceMeters, settings.deliveryTiers);
+
+    res.json({
+      feeAvailable: fee != null,
+      fee,
+      distanceMeters: Math.round(distanceMeters),
+      tiers: settings.deliveryTiers,
+    });
+  } catch (error) {
+    console.error("[online-orders/delivery-quote] error:", error);
+    res.status(500).json({ error: "Error al cotizar el envío" });
   }
 });
 

@@ -947,6 +947,33 @@ export const productFlows = pgTable("product_flows", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Direcciones guardadas de clientes de BRUMA Web (cuenta de Clerk). No es FK
+// a una tabla de usuarios — Clerk es el store de identidad, clerkUserId es
+// solo la llave de filtrado (mismo patrón que orders.clerkUserId).
+export const customerAddresses = pgTable("customer_addresses", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clerkUserId: varchar("clerk_user_id", { length: 255 }).notNull(),
+  label: varchar("label", { length: 20 }).notNull().default("other"), // "home" | "work" | "other"
+  addressText: text("address_text").notNull(),
+  street: varchar("street", { length: 255 }),
+  apartment: varchar("apartment", { length: 100 }),
+  postalCode: varchar("postal_code", { length: 20 }),
+  lat: decimal("lat", { precision: 10, scale: 7 }).notNull(),
+  lng: decimal("lng", { precision: 10, scale: 7 }).notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Mapeo 1:1 cuenta de Clerk ↔ Stripe Customer, para poder guardar tarjetas
+// (SetupIntent) y reusarlas en pedidos futuros sin volver a teclearlas.
+export const customerStripeAccounts = pgTable("customer_stripe_accounts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clerkUserId: varchar("clerk_user_id", { length: 255 }).notNull().unique(),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // User profiles relations
 export const userProfilesRelations = relations(userProfiles, ({ many }) => ({
   orders: many(orders),
