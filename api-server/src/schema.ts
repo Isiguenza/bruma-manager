@@ -301,6 +301,10 @@ export const orders = pgTable("orders", {
   tipPaymentMethod: paymentMethodEnum("tip_payment_method"),
   // Pedidos en línea (web + Stripe)
   customerPhone: varchar("customer_phone", { length: 50 }),
+  customerEmail: varchar("customer_email", { length: 255 }),
+  // Cuenta de Clerk (BRUMA Web) ligada a este pedido, si el cliente estaba
+  // logueado al ordenar o si se ligó después por coincidencia de correo.
+  clerkUserId: varchar("clerk_user_id", { length: 255 }),
   deliveryType: varchar("delivery_type", { length: 20 }), // "pickup" | "delivery"
   deliveryAddress: text("delivery_address"),
   deliveryLat: decimal("delivery_lat", { precision: 10, scale: 7 }),

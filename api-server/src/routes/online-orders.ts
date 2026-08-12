@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import Stripe from "stripe";
 import { db, schema } from "../db";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, or, desc, sql } from "drizzle-orm";
 import { emitOrderNew, emitOnlineOrder, emitOrderUpdated } from "../sockets/events";
 import { haversineMeters, resolveDeliveryFee, type DeliveryTier } from "../lib/distance";
 import { notifyOrderReceived, notifyOrderConfirmed, notifyOrderCancelled } from "../lib/whatsapp";
@@ -75,6 +75,8 @@ router.post("/public/online-orders/intent", async (req: Request, res: Response) 
       items,
       customerName,
       customerPhone,
+      customerEmail,
+      clerkUserId,
       deliveryType, // "pickup" | "delivery"
       lat,
       lng,
@@ -82,7 +84,7 @@ router.post("/public/online-orders/intent", async (req: Request, res: Response) 
       notes,
     } = req.body;
 
-    if (!items?.length || !customerName || !customerPhone || !deliveryType) {
+    if (!items?.length || !customerName || !customerPhone || !customerEmail || !deliveryType) {
       return res.status(400).json({ error: "Faltan datos del pedido" });
     }
 
@@ -181,6 +183,8 @@ router.post("/public/online-orders/intent", async (req: Request, res: Response) 
         deliveryFee: deliveryFee.toFixed(2),
         customerName,
         customerPhone,
+        customerEmail,
+        clerkUserId: clerkUserId || null,
         deliveryType,
         deliveryAddress: resolvedAddress,
         deliveryLat: dLat != null ? dLat.toString() : null,
@@ -291,6 +295,58 @@ router.get("/public/restaurant", async (_req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Error" });
+  }
+});
+
+// GET /api/public/profile/orders  (BRUMA Web, sitio estático → llamada
+// directa del navegador). Verifica el JWT de sesión de Clerk (nunca confía
+// en un correo mandado por el cliente — lo saca de Clerk server-side), liga
+// cualquier pedido pagado con ese correo hecho como invitado, y devuelve el
+// historial completo.
+router.get("/public/profile/orders", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!token || !process.env.CLERK_SECRET_KEY) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+
+    let clerkUserId: string;
+    try {
+      const { verifyToken, createClerkClient } = await import("@clerk/backend");
+      const verified = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
+      clerkUserId = verified.sub;
+
+      const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+      const user = await clerk.users.getUser(clerkUserId);
+      const email = user.primaryEmailAddress?.emailAddress;
+      if (!email) return res.status(400).json({ error: "Tu cuenta no tiene correo" });
+
+      // Liga (una sola vez) los pedidos hechos como invitado con este correo.
+      await db
+        .update(schema.orders)
+        .set({ clerkUserId })
+        .where(sql`${schema.orders.customerEmail} = ${email} AND ${schema.orders.clerkUserId} IS NULL AND ${schema.orders.paymentStatus} = 'paid'`);
+
+      // Solo pedidos pagados — un carrito abandonado no debe aparecer como
+      // "pedido" en el historial, aunque haya quedado ligado por clerkUserId.
+      const ordersList = await db.query.orders.findMany({
+        where: and(
+          eq(schema.orders.paymentStatus, "paid"),
+          or(eq(schema.orders.clerkUserId, clerkUserId), eq(schema.orders.customerEmail, email))
+        ),
+        with: { items: true },
+        orderBy: desc(schema.orders.createdAt),
+      });
+
+      res.json(ordersList);
+    } catch (verifyErr) {
+      console.error("[profile/orders] token inválido:", verifyErr);
+      return res.status(401).json({ error: "Sesión inválida" });
+    }
+  } catch (error) {
+    console.error("[profile/orders] error:", error);
+    res.status(500).json({ error: "Error al obtener pedidos" });
   }
 });
 
