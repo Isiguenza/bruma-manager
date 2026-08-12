@@ -956,6 +956,7 @@ export const customerAddresses = pgTable("customer_addresses", {
   label: varchar("label", { length: 20 }).notNull().default("other"), // "home" | "work" | "other"
   addressText: text("address_text").notNull(),
   street: varchar("street", { length: 255 }),
+  streetNumber: varchar("street_number", { length: 20 }),
   apartment: varchar("apartment", { length: 100 }),
   postalCode: varchar("postal_code", { length: 20 }),
   lat: decimal("lat", { precision: 10, scale: 7 }).notNull(),

@@ -22,7 +22,7 @@ router.get("/public/addresses", requireClerkAuth, async (req, res) => {
 // POST /api/public/addresses — crea una dirección nueva.
 router.post("/public/addresses", requireClerkAuth, async (req, res) => {
   try {
-    const { label, addressText, street, apartment, postalCode, lat, lng, isDefault } = req.body;
+    const { label, addressText, street, streetNumber, apartment, postalCode, lat, lng, isDefault } = req.body;
     if (!addressText || typeof lat !== "number" || typeof lng !== "number") {
       return res.status(400).json({ error: "Faltan datos de la dirección" });
     }
@@ -41,6 +41,7 @@ router.post("/public/addresses", requireClerkAuth, async (req, res) => {
         label: label || "other",
         addressText,
         street: street || null,
+        streetNumber: streetNumber || null,
         apartment: apartment || null,
         postalCode: postalCode || null,
         lat: lat.toString(),
@@ -66,7 +67,7 @@ router.put("/public/addresses/:id", requireClerkAuth, async (req, res) => {
       return res.status(404).json({ error: "Dirección no encontrada" });
     }
 
-    const { label, addressText, street, apartment, postalCode, lat, lng, isDefault } = req.body;
+    const { label, addressText, street, streetNumber, apartment, postalCode, lat, lng, isDefault } = req.body;
 
     if (isDefault) {
       await db
@@ -81,6 +82,7 @@ router.put("/public/addresses/:id", requireClerkAuth, async (req, res) => {
         label: label ?? existing.label,
         addressText: addressText ?? existing.addressText,
         street: street ?? existing.street,
+        streetNumber: streetNumber ?? existing.streetNumber,
         apartment: apartment ?? existing.apartment,
         postalCode: postalCode ?? existing.postalCode,
         lat: lat != null ? lat.toString() : existing.lat,
