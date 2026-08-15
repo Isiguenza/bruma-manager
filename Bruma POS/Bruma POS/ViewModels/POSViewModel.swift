@@ -155,6 +155,10 @@ class POSViewModel: ObservableObject {
     @Published var guestCount = 1
     @Published var currentOrderId: String?
     @Published var currentOrderPaymentStatus: String?
+    // Tickets separados de la mesa actual (de "dividir en tickets separados")
+    // — cuando no es nil, la mesa tiene varias órdenes que se cobran cada
+    // una por su cuenta, en vez de un solo carrito fusionado.
+    @Published var tableTickets: [Order]? = nil
     // Datos de contacto/entrega del pedido actual (para llevar / web / delivery)
     @Published var currentOrderPhone: String?
     @Published var currentOrderAddress: String?
@@ -231,7 +235,7 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Payment
     @Published var showingPayment = false
-    @Published var paymentStep = "payment" // summary, payment, confirmation, done, split-assign, split-overview, split-pay-person
+    @Published var paymentStep = "payment" // payment, confirmation, done, split-bill-mode, split-assign, split-seat-assign, split-tickets-confirm
     @Published var paymentMethod: String?
     @Published var cashReceived = ""
     @Published var tipPercentage = 0
@@ -241,9 +245,6 @@ class POSViewModel: ObservableObject {
     @Published var processing = false
     @Published var paymentCompleted = false
     @Published var confirmingOrder = false
-    @Published var splitPayments: [SplitPayment] = []
-    @Published var showAddSplitPayment = false
-    @Published var editingSplitPayment: SplitPayment? = nil
     @Published var activeNumericField: String? = nil // "cash", "tip", nil
     
     // MARK: - Cobros pendientes (parking por mesa)
@@ -327,22 +328,12 @@ class POSViewModel: ObservableObject {
         currentOrderLng = nil
         currentOrderSource = nil
         currentOrderStatus = nil
-        splitPayments = []
-        showAddSplitPayment = false
-        editingSplitPayment = nil
         processing = false
         paymentCompleted = false
         confirmingOrder = false
         splitBillMode = false
         splitBillType = "by-seat"
         itemAssignments = [:]
-        individualPayments = [:]
-        individualTips = [:]
-        splitPaymentMethod = nil
-        splitTipPaymentMethod = nil
-        splitPersonDiscountAmount = 0
-        splitPersonDiscountName = ""
-        splitCashReceived = ""
         currentPersonIndex = 0
         activeNumericField = nil
     }
@@ -384,19 +375,13 @@ class POSViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Split Bill
+    // MARK: - Split Bill (dividir en tickets separados)
     @Published var splitBillMode = false
     @Published var splitBillType: String = "by-seat" // "by-seat" | "custom"
-    @Published var itemAssignments: [Int: [Int]] = [:]
-    @Published var individualPayments: [Int: IndividualPayment] = [:]
-    @Published var individualTips: [Int: IndividualTip] = [:]
-    @Published var splitPaymentMethod: String?
-    @Published var splitTipPaymentMethod: String? = nil
-    @Published var splitPersonDiscountAmount: Double = 0
-    @Published var splitPersonDiscountName: String = ""
-    @Published var splitCashReceived = ""
+    // asiento -> [índice de carrito: cantidad asignada] — soporta partir una
+    // misma línea (cantidad > 1) entre varios tickets.
+    @Published var itemAssignments: [Int: [Int: Int]] = [:]
     @Published var currentPersonIndex = 0
-    @Published var selectedSplitPersonIndex = 0
     
     // MARK: - Promotions & Discounts
     @Published var activePromotions: [Promotion] = []
@@ -1656,11 +1641,20 @@ class POSViewModel: ObservableObject {
                     // Filter only active orders (not paid/completed)
                     let activeOrders = orders.filter { $0.paymentStatus != "paid" && $0.status != "completed" }
                     print("✅ Órdenes activas filtradas: \(activeOrders.count)")
-                    
-                    if let mainOrder = activeOrders.first {
+
+                    // Mesa con tickets divididos ("dividir en tickets separados") —
+                    // se muestran por separado, no se fusionan en un solo carrito.
+                    if activeOrders.count > 1, activeOrders.contains(where: { $0.splitGroupId != nil }) {
+                        tableTickets = activeOrders.sorted { $0.orderNumber < $1.orderNumber }
+                        currentOrderId = nil
+                        cart = []
+                        guestCount = table.guestCount ?? 1
+                        print("🎟️ Mesa con \(activeOrders.count) tickets separados")
+                    } else if let mainOrder = activeOrders.first {
+                        tableTickets = nil
                         currentOrderId = mainOrder.id
                         print("🎯 currentOrderId establecido: \(mainOrder.id)")
-                        
+
                         // Merge items from all active orders
                         var allItems: [CartItem] = []
                         for order in activeOrders {
@@ -1683,6 +1677,7 @@ class POSViewModel: ObservableObject {
                         guestCount = mainOrder.guestCount ?? 1
                         print("🛒 Cart final: \(cart.count) items, guestCount: \(guestCount)")
                     } else {
+                        tableTickets = nil
                         print("⚠️ No hay órdenes activas para esta mesa")
                     }
                 } catch {
@@ -1716,6 +1711,22 @@ class POSViewModel: ObservableObject {
             print("✅ selectedTable ahora es: \(selectedTable?.id ?? "nil")")
             showInitialGuestDialog = true
         }
+    }
+
+    /// Elige un ticket de `tableTickets` para verlo/cobrarlo — cada ticket se
+    /// cobra con el flujo normal de pago de una sola orden.
+    func selectSplitTicket(_ order: Order) {
+        currentOrderId = order.id
+        currentOrderPaymentStatus = order.paymentStatus
+        cart = (order.items ?? [])
+            .filter { !($0.voided ?? false) }
+            .map { item -> CartItem in
+                var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
+                cartItem.orderStatus = order.status
+                return cartItem
+            }
+        applyPromotions()
+        guestCount = order.guestCount ?? 1
     }
     
     func confirmInitialGuestCount() {
@@ -3212,44 +3223,6 @@ class POSViewModel: ObservableObject {
         }
     }
     
-    func handlePaySplit() {
-        guard let orderId = currentOrderId else { return }
-        guard !splitPayments.isEmpty else { return }
-        processing = true
-        Task {
-            do {
-                let paymentsData = splitPayments.map { payment in
-                    var dict: [String: Any] = [
-                        "paymentMethod": payment.paymentMethod,
-                        "amount": payment.amount,
-                        "tip": payment.tip,
-                        "sequenceNumber": payment.sequenceNumber
-                    ]
-                    if let tipMethod = payment.tipPaymentMethod {
-                        dict["tipPaymentMethod"] = tipMethod
-                    }
-                    return dict
-                }
-                
-                try await APIService.shared.payOrderSplit(
-                    orderId: orderId,
-                    payments: paymentsData,
-                    employeeId: employeeId,
-                    discount: totalDiscount > 0 ? totalDiscount : nil,
-                    discountName: selectedDiscount?.name,
-                    discountId: selectedDiscount?.id,
-                    subtotal: cartTotalWithDiscount > 0 ? cartTotalWithDiscount : nil
-                )
-                paymentCompleted = true
-                await handlePrint()
-                showToast("Pago dividido registrado")
-            } catch {
-                showToast("Error procesando pago dividido", isError: true)
-            }
-            processing = false
-        }
-    }
-    
     func handleDeliverToDriver() {
         guard let orderId = currentOrderId else { return }
         processing = true
@@ -3283,118 +3256,69 @@ class POSViewModel: ObservableObject {
     // MARK: - Split Bill Init
     
     func initSplitBySeat() {
-        var assignments: [Int: [Int]] = [:]
-        var payments: [Int: IndividualPayment] = [:]
-        var tips: [Int: IndividualTip] = [:]
+        var assignments: [Int: [Int: Int]] = [:]
         for i in 0..<guestCount {
-            assignments[i] = []
-            payments[i] = IndividualPayment()
-            tips[i] = IndividualTip()
+            assignments[i] = [:]
         }
         for (cartIndex, item) in cart.enumerated() {
             guard item.seat != "C" else { continue }
             if item.seat.hasPrefix("A"), let seatNum = Int(item.seat.dropFirst()), seatNum >= 1, seatNum <= guestCount {
-                assignments[seatNum - 1, default: []].append(cartIndex)
+                assignments[seatNum - 1, default: [:]][cartIndex] = item.quantity
             }
         }
         itemAssignments = assignments
-        individualPayments = payments
-        individualTips = tips
         splitBillType = "by-seat"
     }
-    
+
     func initSplitCustom() {
-        var assignments: [Int: [Int]] = [:]
-        var payments: [Int: IndividualPayment] = [:]
-        var tips: [Int: IndividualTip] = [:]
+        var assignments: [Int: [Int: Int]] = [:]
         for i in 0..<guestCount {
-            assignments[i] = []
-            payments[i] = IndividualPayment()
-            tips[i] = IndividualTip()
+            assignments[i] = [:]
         }
         itemAssignments = assignments
-        individualPayments = payments
-        individualTips = tips
         splitBillType = "custom"
     }
-    
-    // MARK: - Split Bill Payment
-    
-    func handleSplitPayPerson() {
-        let pIdx = selectedSplitPersonIndex
-        let assignedItems = itemAssignments[pIdx] ?? []
-        let tipData = individualTips[pIdx] ?? IndividualTip()
-        let personTotal = assignedItems.reduce(0.0) { sum, ci in
-            guard ci < cart.count else { return sum }
-            let item = cart[ci]
-            let basePrice = item.originalPrice ?? item.unitPrice
-            let promoDiscount = item.promotionDiscount ?? 0
-            return sum + (basePrice * Double(item.quantity) - promoDiscount)
-        }
-        let tipAmt = tipData.showCustom ? (Double(tipData.custom) ?? 0) : personTotal * Double(tipData.percentage) / 100
-        let finalTotal = personTotal + tipAmt
-        
-        let discountAmt = splitPersonDiscountAmount
-        let actualTotal = finalTotal - discountAmt
-        individualPayments[pIdx] = IndividualPayment(
-            paid: true,
-            method: splitPaymentMethod,
-            amount: actualTotal,
-            tipAmount: tipAmt,
-            tipPaymentMethod: splitTipPaymentMethod,
-            discountAmount: discountAmt,
-            discountName: splitPersonDiscountName
-        )
-        
-        // Print individual ticket
-        Task {
-            await printSplitPersonTicket(personIndex: pIdx, items: assignedItems, tip: tipAmt, total: finalTotal)
-        }
-        
-        showToast("Persona \(pIdx + 1) - Pago registrado: \(formatCurrency(finalTotal))")
-        paymentStep = "split-overview"
-    }
-    
-    func handleFinalizeSplitBill() {
+
+    // MARK: - Split Bill → Tickets separados
+
+    /// Convierte las asignaciones (asiento -> [índice de carrito: cantidad])
+    /// en tickets/órdenes nuevas, una por asiento con productos asignados.
+    /// Cada ticket se cobra después con el flujo normal de pago (un solo
+    /// método por ticket) — reemplaza al viejo cobro inline por persona.
+    func handleCreateSplitTickets() {
         guard let orderId = currentOrderId else { return }
+        guard let table = selectedTable else { return }
+
+        var groups: [[(orderItemId: String, quantity: Int)]] = []
+        for personIndex in 0..<guestCount {
+            guard let assigned = itemAssignments[personIndex], !assigned.isEmpty else { continue }
+            var group: [(orderItemId: String, quantity: Int)] = []
+            for (cartIndex, qty) in assigned {
+                guard cartIndex < cart.count, qty > 0, let itemId = cart[cartIndex].itemId else { continue }
+                group.append((orderItemId: itemId, quantity: qty))
+            }
+            if !group.isEmpty { groups.append(group) }
+        }
+        guard !groups.isEmpty else {
+            showToast("No hay productos asignados a ningún ticket", isError: true)
+            return
+        }
+
         confirmingOrder = true
         Task {
             do {
-                let paymentsData = (0..<guestCount).compactMap { i -> [String: Any]? in
-                    guard let payment = individualPayments[i], payment.paid else { return nil }
-                    var dict: [String: Any] = [
-                        "paymentMethod": payment.method ?? "cash",
-                        "amount": payment.amount - payment.tipAmount,
-                        "tip": payment.tipAmount,
-                        "sequenceNumber": i + 1
-                    ]
-                    if let tipMethod = payment.tipPaymentMethod {
-                        dict["tipPaymentMethod"] = tipMethod
-                    }
-                    return dict
-                }
-                
-                try await APIService.shared.payOrderSplit(
-                    orderId: orderId,
-                    payments: paymentsData,
-                    discount: totalDiscount > 0 ? totalDiscount : nil,
-                    discountName: selectedDiscount?.name,
-                    discountId: selectedDiscount?.id,
-                    subtotal: cartTotalWithDiscount > 0 ? cartTotalWithDiscount : nil
-                )
-                paymentCompleted = true
-                await handlePrint()
-                showToast("Pago dividido completado")
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    paymentStep = "done"
-                }
+                try await APIService.shared.createSplitTickets(orderId: orderId, groups: groups)
+                showToast("Cuenta dividida en \(groups.count) ticket\(groups.count == 1 ? "" : "s")")
+                confirmingOrder = false
+                handleSelectTable(table)
             } catch {
-                showToast("Error procesando pago dividido", isError: true)
+                let message = (error as? APIError)?.errorDescription ?? "Error al dividir la cuenta en tickets"
+                showToast(message, isError: true)
+                confirmingOrder = false
             }
-            confirmingOrder = false
         }
     }
-    
+
     // MARK: - Web order status (listo / en camino) — dispara WhatsApp al cliente
 
     /// Marca el pedido web actual como "ready" o "delivered" (en camino). El
@@ -3507,20 +3431,6 @@ class POSViewModel: ObservableObject {
             }
         }
 
-        let isSplit = !splitPayments.isEmpty
-        let paymentMethodToShow = isSplit ? "Dividido" : paymentMethod
-        let splitPaymentsData: [[String: Any]]? = isSplit ? splitPayments.map { p in
-            var dict: [String: Any] = [
-                "method": p.displayMethod,
-                "amount": p.amount
-            ]
-            if p.tip > 0 {
-                dict["tip"] = p.tip
-                dict["tipMethod"] = p.tipPaymentMethod ?? p.paymentMethod
-            }
-            return dict
-        } : nil
-        
         await PrintService.shared.printTicket(
             customerName: customerName,
             orderNumber: String((sentItems.first?.orderId ?? "N/A").prefix(8)),
@@ -3531,9 +3441,9 @@ class POSViewModel: ObservableObject {
             tableNumber: selectedTable?.number ?? "",
             isDelivery: selectedTable == nil,
             discount: discountData,
-            paymentMethod: paymentMethodToShow,
+            paymentMethod: paymentMethod,
             tipPaymentMethod: tipPaymentMethod,
-            splitPayments: splitPaymentsData,
+            splitPayments: nil,
             deliveryFee: Int(deliveryFeeAmount),
             openDrawer: openDrawer
         )
@@ -3809,66 +3719,23 @@ class POSViewModel: ObservableObject {
         return data
     }
     
-    func printSplitPersonTicket(personIndex: Int, items: [Int], tip: Double, total: Double) async {
-        guard !items.isEmpty else { return }
-        
-        var ticketItems: [[String: Any]] = []
-        for itemIndex in items {
-            guard itemIndex < cart.count else { continue }
-            let item = cart[itemIndex]
-            let originalTotal = Int(Double(item.quantity) * (item.originalPrice ?? item.unitPrice))
-            let mods = parseModifiersForTicket(item.customModifiers)
-            let modsUnitTotal = mods.reduce(0.0) { $0 + (Double($1["price"] as? String ?? "0") ?? 0) }
-            let baseTotal = originalTotal - Int(modsUnitTotal * Double(item.quantity))
-            var dict: [String: Any] = [
-                "name": item.productName,
-                "qty": item.quantity,
-                "price": item.originalPrice ?? item.unitPrice,
-                "total": baseTotal
-            ]
-            if let pn = item.promotionName { dict["promotionName"] = pn }
-            if !mods.isEmpty { dict["modifiers"] = mods }
-            ticketItems.append(dict)
-        }
-
-        let subtotal = items.reduce(0.0) { sum, ci in
-            guard ci < cart.count else { return sum }
-            let item = cart[ci]
-            return sum + ((item.originalPrice ?? item.unitPrice) * Double(item.quantity))
-        }
-        
-        let discountAmt = splitPersonDiscountAmount
-        let discountData: [String: Any]? = discountAmt > 0 ? ["name": splitPersonDiscountName.isEmpty ? "Descuento" : splitPersonDiscountName, "amount": discountAmt] : nil
-        
-        await PrintService.shared.printSeatBill(
-            tableNumber: selectedTable?.number,
-            orderNumber: currentOrderId?.prefix(8).description ?? "",
-            seatLabel: "Asiento \(personIndex + 1)",
-            items: ticketItems,
-            subtotal: subtotal,
-            tip: tip,
-            discount: discountData,
-            total: total - discountAmt,
-            paymentMethod: splitPaymentMethod
-        )
-    }
-    
     func printSeatPreAccount(seatIndex: Int) async {
-        let assignedIndices = itemAssignments[seatIndex] ?? []
-        guard !assignedIndices.isEmpty else { return }
-        
+        let assigned = itemAssignments[seatIndex] ?? [:]
+        guard !assigned.isEmpty else { return }
+
         var ticketItems: [[String: Any]] = []
-        for ci in assignedIndices {
-            guard ci < cart.count else { continue }
+        for (ci, qty) in assigned.sorted(by: { $0.key < $1.key }) {
+            guard ci < cart.count, qty > 0 else { continue }
             let item = cart[ci]
-            let originalTotal = Int(Double(item.quantity) * (item.originalPrice ?? item.unitPrice))
+            let unitPrice = item.originalPrice ?? item.unitPrice
+            let originalTotal = Int(Double(qty) * unitPrice)
             let mods = parseModifiersForTicket(item.customModifiers)
             let modsUnitTotal = mods.reduce(0.0) { $0 + (Double($1["price"] as? String ?? "0") ?? 0) }
-            let baseTotal = originalTotal - Int(modsUnitTotal * Double(item.quantity))
+            let baseTotal = originalTotal - Int(modsUnitTotal * Double(qty))
             var dict: [String: Any] = [
                 "name": item.productName,
-                "qty": item.quantity,
-                "price": item.originalPrice ?? item.unitPrice,
+                "qty": qty,
+                "price": unitPrice,
                 "total": baseTotal
             ]
             if let pn = item.promotionName { dict["promotionName"] = pn }
@@ -3876,12 +3743,14 @@ class POSViewModel: ObservableObject {
             ticketItems.append(dict)
         }
 
-        let subtotal = assignedIndices.reduce(0.0) { sum, ci in
-            guard ci < cart.count else { return sum }
+        let subtotal = assigned.reduce(0.0) { sum, entry in
+            let (ci, qty) = entry
+            guard ci < cart.count, cart[ci].quantity > 0 else { return sum }
             let item = cart[ci]
-            return sum + ((item.originalPrice ?? item.unitPrice) * Double(item.quantity) - (item.promotionDiscount ?? 0))
+            let lineTotal = (item.originalPrice ?? item.unitPrice) * Double(item.quantity) - (item.promotionDiscount ?? 0)
+            return sum + (lineTotal / Double(item.quantity)) * Double(qty)
         }
-        
+
         await PrintService.shared.printSeatBill(
             tableNumber: selectedTable?.number,
             orderNumber: currentOrderId?.prefix(8).description ?? "",
@@ -3921,17 +3790,9 @@ class POSViewModel: ObservableObject {
         customTip = ""
         showCustomTip = false
         tipPaymentMethod = nil
-        splitPayments = []
         splitBillMode = false
         splitBillType = "by-seat"
         itemAssignments = [:]
-        individualPayments = [:]
-        individualTips = [:]
-        splitPaymentMethod = nil
-        splitTipPaymentMethod = nil
-        splitPersonDiscountAmount = 0
-        splitPersonDiscountName = ""
-        splitCashReceived = ""
         selectedDiscount = nil
         guestItemsSelection = []
         
@@ -4390,32 +4251,6 @@ class POSViewModel: ObservableObject {
 }
 
 // MARK: - Supporting Types
-
-struct IndividualPayment {
-    var paid: Bool = false
-    var method: String?
-    var amount: Double = 0
-    var tipAmount: Double = 0
-    var tipPaymentMethod: String? = nil
-    var discountAmount: Double = 0
-    var discountName: String = ""
-
-    var methodDisplay: String {
-        switch method {
-        case "cash": return "Efectivo"
-        case "card": return "Tarjeta"
-        case "terminal_mercadopago": return "Terminal"
-        case "transfer": return "Transferencia"
-        default: return method ?? ""
-        }
-    }
-}
-
-struct IndividualTip {
-    var percentage: Int = 0
-    var custom: String = ""
-    var showCustom: Bool = false
-}
 
 struct GuestProductItem: Identifiable {
     let id = UUID()

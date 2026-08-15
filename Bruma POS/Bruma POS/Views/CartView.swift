@@ -26,7 +26,12 @@ struct CartView: View {
                 headerButtons
                     .padding(12)
             }
-            
+
+            // Tickets separados de esta mesa — cada uno se cobra por su cuenta.
+            if let tickets = vm.tableTickets, !tickets.isEmpty {
+                splitTicketsBar(tickets)
+            }
+
             // Main content
             mainCartContent
         }
@@ -204,6 +209,38 @@ struct CartView: View {
         }
     }
     
+    /// Barra de tickets separados de la mesa — cada pill es una orden
+    /// independiente (de "dividir en tickets separados"); tocarla la carga
+    /// en el carrito para verla/cobrarla con el flujo normal de pago.
+    @ViewBuilder
+    private func splitTicketsBar(_ tickets: [Order]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(tickets) { ticket in
+                    let isSelected = vm.currentOrderId == ticket.id
+                    let isPaid = ticket.paymentStatus == "paid"
+                    Button {
+                        vm.selectSplitTicket(ticket)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isPaid ? "checkmark.circle.fill" : "circle")
+                                .font(.caption)
+                                .foregroundColor(isPaid ? .green : .white.opacity(0.6))
+                            Text("Ticket #\(ticket.orderNumber)")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                    }
+                    .modifier(GlassPill(isSelected: isSelected, color: isPaid ? .green : .blue))
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .padding(.bottom, 8)
+    }
+
     private var mainCartContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {

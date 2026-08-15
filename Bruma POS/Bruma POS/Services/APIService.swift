@@ -812,4 +812,26 @@ class APIService {
             throw APIError.serverError
         }
     }
+
+    // MARK: - Split Into Tickets
+
+    /// Divide una orden en N órdenes/tickets separados — cada uno se cobra
+    /// después con el flujo normal de pago (un solo método por ticket).
+    /// `groups`: un array por ticket, cada uno con los `orderItemId` (y
+    /// cuántas unidades de esa línea) que le tocan.
+    func createSplitTickets(orderId: String, groups: [[(orderItemId: String, quantity: Int)]]) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/split-into-tickets")!
+        let groupsPayload: [[[String: Any]]] = groups.map { group in
+            group.map { ["orderItemId": $0.orderItemId, "quantity": $0.quantity] }
+        }
+        let body: [String: Any] = ["groups": groupsPayload]
+        let (data, http) = try await requestRaw(url, method: "POST", body: body)
+        if !(200...299).contains(http.statusCode) {
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let message = json["error"] as? String {
+                throw APIError.badRequest(message)
+            }
+            throw APIError.serverError
+        }
+    }
 }

@@ -26,6 +26,10 @@ struct Order: Codable, Identifiable {
     let payments: [OrderPayment]?
     let priority: Int?      // 0=normal, 1=rush
     let onHold: Bool?       // true if order is on hold
+    // Liga tickets hermanos creados por "dividir en tickets separados" —
+    // órdenes distintas que comparten el mismo splitGroupId son la misma
+    // cuenta original, dividida.
+    let splitGroupId: String?
 
     // Pedidos en línea (web + Stripe)
     let customerPhone: String?

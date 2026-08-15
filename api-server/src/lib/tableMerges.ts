@@ -1,5 +1,5 @@
 import { db, schema } from "../db";
-import { eq, or } from "drizzle-orm";
+import { eq, or, and, ne } from "drizzle-orm";
 import { emitTableUnmerged, emitTableLayoutUpdated } from "../sockets/events";
 
 type MergeRow = typeof schema.tableMerges.$inferSelect;
@@ -73,6 +73,21 @@ export async function unmergeByReservationId(reservationId: string): Promise<voi
     .where(eq(schema.tableMerges.reservationId, reservationId))
     .limit(1);
   if (linked[0]) await unmergeByTableId(linked[0].primaryTableId);
+}
+
+/// Una mesa con tickets divididos ("split-into-tickets") puede tener varias
+/// órdenes pendientes al mismo tiempo — no liberar la mesa hasta que se haya
+/// pagado (o cancelado) la última.
+export async function hasOtherUnpaidOrdersAtTable(tableId: string, excludeOrderId: string): Promise<boolean> {
+  const others = await db.query.orders.findMany({
+    where: and(
+      eq(schema.orders.tableId, tableId),
+      ne(schema.orders.id, excludeOrderId),
+      eq(schema.orders.paymentStatus, "pending"),
+      ne(schema.orders.status, "cancelled")
+    ),
+  });
+  return others.length > 0;
 }
 
 export async function findActiveMergeForTable(tableId: string) {

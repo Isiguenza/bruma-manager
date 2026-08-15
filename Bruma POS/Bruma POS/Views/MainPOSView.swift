@@ -161,52 +161,6 @@ struct MainPOSView: View {
                     .padding(.horizontal, 32)
             }
             
-            // MARK: - Split Payment Modal
-            let splitTotalPaid = vm.splitPayments.reduce(0) { $0 + $1.amount }
-            let splitRemaining = max(0, vm.totalWithTip - splitTotalPaid)
-            
-            if vm.showAddSplitPayment {
-                dialogOverlay(onDismiss: { vm.showAddSplitPayment = false }) {
-                    SplitPaymentModal(
-                        vm: vm,
-                        title: "Nuevo Pago",
-                        initialAmount: String(format: "%.2f", splitRemaining),
-                        maxAmount: splitRemaining,
-                        onDismiss: { vm.showAddSplitPayment = false },
-                        onConfirm: { payment in
-                            vm.splitPayments.append(payment)
-                            vm.showAddSplitPayment = false
-                        }
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                }
-            }
-            if let payment = vm.editingSplitPayment {
-                dialogOverlay(onDismiss: { vm.editingSplitPayment = nil }) {
-                    SplitPaymentModal(
-                        vm: vm,
-                        title: "Editar Pago",
-                        initialAmount: String(format: "%.2f", payment.amount),
-                        initialTip: String(format: "%.2f", payment.tip),
-                        initialMethod: payment.paymentMethod,
-                        initialTipMethod: payment.tipPaymentMethod,
-                        maxAmount: splitRemaining + payment.amount,
-                        deleteAction: {
-                            vm.splitPayments.removeAll { $0.id == payment.id }
-                            vm.editingSplitPayment = nil
-                        },
-                        onDismiss: { vm.editingSplitPayment = nil },
-                        onConfirm: { updated in
-                            if let index = vm.splitPayments.firstIndex(where: { $0.id == payment.id }) {
-                                vm.splitPayments[index] = updated
-                            }
-                            vm.editingSplitPayment = nil
-                        }
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                }
-            }
-            
             // MARK: - Toast
             
             if let toast = vm.toastMessage {

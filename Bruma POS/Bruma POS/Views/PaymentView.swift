@@ -21,9 +21,6 @@ struct PaymentView: View {
                 case "done":
                     paymentDone
                         .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
-                case "split-payment":
-                    SplitPaymentView(vm: vm)
-                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
                 case "split-bill-mode":
                     SplitBillModeView(vm: vm)
                         .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
@@ -33,17 +30,8 @@ struct PaymentView: View {
                 case "split-seat-assign":
                     SplitSeatView(vm: vm)
                         .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
-                case "split-overview":
-                    SplitOverviewView(vm: vm)
-                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
-                case "split-pay-person":
-                    SplitPayPersonView(vm: vm)
-                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
-                case "split-confirmation":
-                    splitConfirmationView
-                        .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
-                case "split-bill-confirmation":
-                    splitBillConfirmationView
+                case "split-tickets-confirm":
+                    splitTicketsConfirmView
                         .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95)), removal: .opacity))
                 default:
                     mainPaymentView
@@ -320,14 +308,6 @@ struct PaymentView: View {
 
     private var moreOptionsMenu: some View {
         Menu {
-            Button {
-                vm.paymentStep = "split-payment"
-                vm.splitPayments = []
-                vm.paymentMethod = nil
-            } label: {
-                Label("Pago Dividido", systemImage: "creditcard.arrow.trianglehead.2.clockwise.rotate.90")
-            }
-            
             if vm.guestCount > 1 {
                 Button {
                     vm.currentPersonIndex = 0
@@ -335,7 +315,7 @@ struct PaymentView: View {
                         vm.paymentStep = "split-bill-mode"
                     }
                 } label: {
-                    Label("Dividir Cuenta", systemImage: "person.2.fill")
+                    Label("Dividir en Tickets", systemImage: "person.2.fill")
                 }
             }
         } label: {
@@ -358,14 +338,6 @@ struct PaymentView: View {
     /// para el header compacto.
     private var moreOptionsMenuCompact: some View {
         Menu {
-            Button {
-                vm.paymentStep = "split-payment"
-                vm.splitPayments = []
-                vm.paymentMethod = nil
-            } label: {
-                Label("Pago Dividido", systemImage: "creditcard.arrow.trianglehead.2.clockwise.rotate.90")
-            }
-
             if vm.guestCount > 1 {
                 Button {
                     vm.currentPersonIndex = 0
@@ -373,7 +345,7 @@ struct PaymentView: View {
                         vm.paymentStep = "split-bill-mode"
                     }
                 } label: {
-                    Label("Dividir Cuenta", systemImage: "person.2.fill")
+                    Label("Dividir en Tickets", systemImage: "person.2.fill")
                 }
             }
         } label: {
@@ -404,8 +376,12 @@ struct PaymentView: View {
     }
     
     private func methodButton(method: String, icon: String, label: String, color: Color) -> some View {
+        let isSelected = vm.paymentMethod == method
         Button {
-            vm.paymentMethod = method
+            Haptics.tap()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                vm.paymentMethod = method
+            }
             if method != "cash" {
                 vm.cashReceived = ""
             }
@@ -419,9 +395,10 @@ struct PaymentView: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 44)
+            .scaleEffect(isSelected ? 1.03 : 1.0)
         }
         .buttonStyle(.glassProminent)
-        .tint(vm.paymentMethod == method ? color : Color(.systemGray6))
+        .tint(isSelected ? color : Color(.systemGray6))
     }
     
     private var canProceed: Bool {
@@ -846,11 +823,14 @@ struct PaymentView: View {
                     Text(vm.formatCurrency(vm.totalWithTip))
                         .font(.title2.weight(.bold))
                         .foregroundColor(.white)
+                        .contentTransition(.numericText())
+                        .animation(.snappy, value: vm.totalWithTip)
                 }
 
                 Button {
                     guard vm.paymentMethod != nil else { return }
                     if vm.paymentMethod == "cash" && !canProceed { return }
+                    Haptics.tap()
                     withAnimation(.easeInOut(duration: 0.3)) {
                         vm.paymentStep = "confirmation"
                     }
@@ -861,6 +841,8 @@ struct PaymentView: View {
                             .font(.headline.weight(.semibold))
                         Text(vm.formatCurrency(vm.totalWithTip))
                             .font(.headline.weight(.bold))
+                            .contentTransition(.numericText())
+                            .animation(.snappy, value: vm.totalWithTip)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
@@ -1122,24 +1104,40 @@ struct PaymentView: View {
         }
     }
     
-    // MARK: - Split Confirmation
+    // MARK: - Split Tickets Confirm
 
-    private var splitConfirmationView: some View {
-        VStack(spacing: 0) {
+    /// Vista previa de los tickets a crear a partir de vm.itemAssignments —
+    /// al confirmar, cada asiento con items se vuelve una orden nueva
+    /// independiente que se cobra después con el flujo normal de pago.
+    private var splitTicketsConfirmView: some View {
+        let ticketSeats = (0..<vm.guestCount).filter { !(vm.itemAssignments[$0] ?? [:]).isEmpty }
+
+        func seatTotal(_ idx: Int) -> Double {
+            (vm.itemAssignments[idx] ?? [:]).reduce(0.0) { sum, entry in
+                let (ci, qty) = entry
+                guard ci < vm.cart.count else { return sum }
+                let item = vm.cart[ci]
+                guard item.quantity > 0 else { return sum }
+                let lineTotal = (item.originalPrice ?? item.unitPrice) * Double(item.quantity) - (item.promotionDiscount ?? 0)
+                return sum + (lineTotal / Double(item.quantity)) * Double(qty)
+            }
+        }
+
+        return VStack(spacing: 0) {
             // Header
             HStack {
-                Text("Confirmar Pago Dividido")
+                Text("Confirmar Tickets")
                     .font(.title2.weight(.bold))
                     .foregroundColor(.white)
                 Spacer()
                 Button {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
-                        vm.paymentStep = "split-payment"
+                        vm.paymentStep = vm.splitBillType == "by-seat" ? "split-seat-assign" : "split-assign"
                     }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
-                        Text("Regresar")
+                        Text("Editar")
                     }
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(.white)
@@ -1155,169 +1153,43 @@ struct PaymentView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
-                    // Payments list
-                    ForEach(vm.splitPayments) { payment in
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(payment.displayMethod)
+                    Text("Se crearán \(ticketSeats.count) ticket\(ticketSeats.count == 1 ? "" : "s") separado\(ticketSeats.count == 1 ? "" : "s"). Cada uno se cobra por su cuenta, con el método de pago que elijas.")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    ForEach(ticketSeats, id: \.self) { idx in
+                        let items = vm.itemAssignments[idx] ?? [:]
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Ticket · Asiento \(idx + 1)")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundColor(.white)
-                                if payment.tip > 0 {
-                                    Text("Propina \(vm.formatCurrency(payment.tip))")
-                                        .font(.caption)
-                                        .foregroundColor(.blue)
+                                Spacer()
+                                Text(vm.formatCurrency(seatTotal(idx)))
+                                    .font(.headline.weight(.bold))
+                                    .foregroundColor(.green)
+                            }
+                            ForEach(items.keys.sorted(), id: \.self) { ci in
+                                if ci < vm.cart.count {
+                                    HStack {
+                                        Text("\(items[ci] ?? 0)x \(vm.cart[ci].productName)")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                        Spacer()
+                                    }
                                 }
                             }
-                            Spacer()
-                            Text(vm.formatCurrency(payment.amount))
-                                .font(.headline.weight(.bold))
-                                .foregroundColor(.white)
                         }
                         .padding(14)
                         .modifier(GlassCard())
                     }
 
-                    // Totals
-                    VStack(spacing: 10) {
-                        if (vm.splitPayments.reduce(0) { $0 + $1.tip }) > 0 {
-                            HStack {
-                                Text("Total propinas")
-                                    .font(.subheadline)
-                                    .foregroundColor(.blue)
-                                Spacer()
-                                Text(vm.formatCurrency(vm.splitPayments.reduce(0) { $0 + $1.tip }))
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                        Divider().background(Color.white.opacity(0.1))
-                        HStack {
-                            Text("Total")
-                                .font(.title3.weight(.semibold))
-                                .foregroundColor(.white)
-                            Spacer()
-                            Text(vm.formatCurrency(vm.totalWithTip))
-                                .font(.title2.weight(.bold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                    .padding(16)
-                    .modifier(GlassCard())
-
                     // Slide to confirm
                     SlideToConfirmView {
-                        Task {
-                            vm.handlePaySplit()
-                            try? await Task.sleep(nanoseconds: 1_500_000_000)
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                vm.paymentStep = "done"
-                            }
-                        }
+                        vm.handleCreateSplitTickets()
                     }
-                    .disabled(vm.processing)
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
-                }
-                .padding(.horizontal, 24)
-            }
-            .scrollEdgeEffectStyle(.soft, for: .top)
-        }
-    }
-
-    // MARK: - Split Bill Confirmation
-
-    private var splitBillConfirmationView: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("Confirmar Cuenta Dividida")
-                    .font(.title2.weight(.bold))
-                    .foregroundColor(.white)
-                Spacer()
-                Button {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
-                        vm.paymentStep = "split-overview"
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Regresar")
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.glass)
-                .clipShape(Capsule())
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 16)
-
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 14) {
-                    // Seat payments list
-                    let seatCount = vm.guestCount
-                    ForEach(Array(0..<seatCount), id: \.self) { idx in
-                        if let payment = vm.individualPayments[idx], payment.paid {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("Asiento \(idx + 1)")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.white)
-                                    Text(payment.methodDisplay)
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                    if payment.tipAmount > 0 {
-                                        Text("Propina \(vm.formatCurrency(payment.tipAmount))")
-                                            .font(.caption)
-                                            .foregroundColor(.blue)
-                                    }
-                                }
-                                Spacer()
-                                Text(vm.formatCurrency(payment.amount))
-                                    .font(.headline.weight(.bold))
-                                    .foregroundColor(.white)
-                            }
-                            .padding(14)
-                            .modifier(GlassCard())
-                        }
-                    }
-
-                    // Totals
-                    VStack(spacing: 10) {
-                        let totalTip = vm.individualPayments.values.reduce(0.0) { $0 + $1.tipAmount }
-                        if totalTip > 0 {
-                            HStack {
-                                Text("Total propinas")
-                                    .font(.subheadline)
-                                    .foregroundColor(.blue)
-                                Spacer()
-                                Text(vm.formatCurrency(totalTip))
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                        Divider().background(Color.white.opacity(0.1))
-                        HStack {
-                            Text("Total")
-                                .font(.title3.weight(.semibold))
-                                .foregroundColor(.white)
-                            Spacer()
-                            Text(vm.formatCurrency(vm.cartTotal))
-                                .font(.title2.weight(.bold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                    .padding(16)
-                    .modifier(GlassCard())
-
-                    // Slide to confirm
-                    SlideToConfirmView {
-                        vm.handleFinalizeSplitBill()
-                    }
-                    .disabled(vm.confirmingOrder)
+                    .disabled(vm.confirmingOrder || ticketSeats.isEmpty)
                     .padding(.top, 8)
                     .padding(.bottom, 24)
                 }
@@ -1440,9 +1312,11 @@ struct SlideToConfirmView: View {
                             if offset > (trackWidth - thumbSize) * 0.8 {
                                 withAnimation(.spring()) { offset = trackWidth - thumbSize }
                                 confirmed = true
+                                Haptics.success()
                                 onConfirm()
                             } else {
                                 withAnimation(.spring()) { offset = 0 }
+                                Haptics.tap()
                             }
                         }
                 )
@@ -1456,17 +1330,24 @@ struct SlideToConfirmView: View {
 
 private struct AnimatedCheckmark: View {
     @State private var showCheck = false
+    @State private var pulse = false
 
     var body: some View {
         Image(systemName: "checkmark")
             .font(.system(size: 44, weight: .bold))
             .foregroundColor(.green)
             .opacity(showCheck ? 1 : 0)
-            .scaleEffect(showCheck ? 1.0 : 0.3)
+            .scaleEffect(showCheck ? (pulse ? 1.12 : 1.0) : 0.3)
             .animation(.spring(response: 0.5, dampingFraction: 0.6), value: showCheck)
+            .animation(.spring(response: 0.25, dampingFraction: 0.5), value: pulse)
             .task {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 showCheck = true
+                Haptics.success()
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                pulse = true
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                pulse = false
             }
     }
 }

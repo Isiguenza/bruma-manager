@@ -319,6 +319,10 @@ export const orders = pgTable("orders", {
   onHold: boolean("on_hold").default(false),
   holdStartedAt: timestamp("hold_started_at"),
   holdAccumulatedSeconds: integer("hold_accumulated_seconds").default(0),
+  // Liga órdenes hermanas creadas por "dividir en tickets separados" — sin
+  // FK, es solo un tag compartido (el id de la orden original) para
+  // mostrarlas agrupadas en el POS.
+  splitGroupId: uuid("split_group_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

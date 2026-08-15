@@ -13,7 +13,7 @@ import {
 } from "../sockets/events";
 import { sendAppleWalletPush } from "../lib/apple-push";
 import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
-import { unmergeByOrderId, unmergeByTableId } from "../lib/tableMerges";
+import { unmergeByOrderId, unmergeByTableId, hasOtherUnpaidOrdersAtTable } from "../lib/tableMerges";
 import { refundStripePayment } from "./online-orders";
 import { notifyOrderReady, notifyOrderOutForDelivery } from "../lib/whatsapp";
 
@@ -510,16 +510,20 @@ router.delete("/orders/:id", async (req, res) => {
     // created before this order existed (so it isn't linked by orderId).
     if (cancelledOrder.tableId) await unmergeByTableId(cancelledOrder.tableId);
 
-    // Free the table if this dine-in order was occupying it.
+    // Free the table if this dine-in order was occupying it — pero no si
+    // quedan otros tickets (split-into-tickets) sin pagar en esa misma mesa.
     if (cancelledOrder.tableId) {
-      await db
-        .update(schema.tables)
-        .set({ status: "available" })
-        .where(eq(schema.tables.id, cancelledOrder.tableId));
-      const freedTable = await db.query.tables.findFirst({
-        where: eq(schema.tables.id, cancelledOrder.tableId),
-      });
-      if (freedTable) emitTableUpdated(freedTable);
+      const stillOccupied = await hasOtherUnpaidOrdersAtTable(cancelledOrder.tableId, id);
+      if (!stillOccupied) {
+        await db
+          .update(schema.tables)
+          .set({ status: "available" })
+          .where(eq(schema.tables.id, cancelledOrder.tableId));
+        const freedTable = await db.query.tables.findFirst({
+          where: eq(schema.tables.id, cancelledOrder.tableId),
+        });
+        if (freedTable) emitTableUpdated(freedTable);
+      }
     }
 
     emitOrderUpdated({ ...cancelledOrder, cancelled: true });
@@ -602,17 +606,20 @@ router.post("/orders/:id/refund", async (req, res) => {
       });
     }
 
-    // Liberar mesa si aplica.
+    // Liberar mesa si aplica — pero no si quedan otros tickets sin pagar.
     if (refundedOrder.tableId) {
-      await db
-        .update(schema.tables)
-        .set({ status: "available" })
-        .where(eq(schema.tables.id, refundedOrder.tableId));
-      const freedTable = await db.query.tables.findFirst({
-        where: eq(schema.tables.id, refundedOrder.tableId),
-      });
-      if (freedTable) emitTableUpdated(freedTable);
-      await unmergeByTableId(refundedOrder.tableId);
+      const stillOccupied = await hasOtherUnpaidOrdersAtTable(refundedOrder.tableId, id);
+      if (!stillOccupied) {
+        await db
+          .update(schema.tables)
+          .set({ status: "available" })
+          .where(eq(schema.tables.id, refundedOrder.tableId));
+        const freedTable = await db.query.tables.findFirst({
+          where: eq(schema.tables.id, refundedOrder.tableId),
+        });
+        if (freedTable) emitTableUpdated(freedTable);
+        await unmergeByTableId(refundedOrder.tableId);
+      }
     }
     await unmergeByOrderId(id);
 
@@ -828,20 +835,23 @@ router.post("/orders/:id/pay", async (req, res) => {
       },
     });
 
-    // Free table if dine-in
+    // Free table if dine-in — pero no si quedan otros tickets sin pagar.
     if (order.tableId) {
-      await db
-        .update(schema.tables)
-        .set({ status: "available" })
-        .where(eq(schema.tables.id, order.tableId));
+      const stillOccupied = await hasOtherUnpaidOrdersAtTable(order.tableId, id);
+      if (!stillOccupied) {
+        await db
+          .update(schema.tables)
+          .set({ status: "available" })
+          .where(eq(schema.tables.id, order.tableId));
 
-      const updatedTable = await db.query.tables.findFirst({
-        where: eq(schema.tables.id, order.tableId),
-      });
-      if (updatedTable) {
-        emitTableUpdated(updatedTable);
+        const updatedTable = await db.query.tables.findFirst({
+          where: eq(schema.tables.id, order.tableId),
+        });
+        if (updatedTable) {
+          emitTableUpdated(updatedTable);
+        }
+        await unmergeByTableId(order.tableId);
       }
-      await unmergeByTableId(order.tableId);
     }
     await unmergeByOrderId(id);
 
@@ -1021,20 +1031,23 @@ router.post("/orders/:id/pay-split", async (req, res) => {
       with: { items: true },
     });
 
-    // Free table if dine-in
+    // Free table if dine-in — pero no si quedan otros tickets sin pagar.
     if (order.tableId) {
-      await db
-        .update(schema.tables)
-        .set({ status: "available" })
-        .where(eq(schema.tables.id, order.tableId));
+      const stillOccupied = await hasOtherUnpaidOrdersAtTable(order.tableId, id);
+      if (!stillOccupied) {
+        await db
+          .update(schema.tables)
+          .set({ status: "available" })
+          .where(eq(schema.tables.id, order.tableId));
 
-      const updatedTable = await db.query.tables.findFirst({
-        where: eq(schema.tables.id, order.tableId),
-      });
-      if (updatedTable) {
-        emitTableUpdated(updatedTable);
+        const updatedTable = await db.query.tables.findFirst({
+          where: eq(schema.tables.id, order.tableId),
+        });
+        if (updatedTable) {
+          emitTableUpdated(updatedTable);
+        }
+        await unmergeByTableId(order.tableId);
       }
-      await unmergeByTableId(order.tableId);
     }
     await unmergeByOrderId(id);
 
@@ -1043,6 +1056,211 @@ router.post("/orders/:id/pay-split", async (req, res) => {
   } catch (error) {
     console.error("[pay-split] Error processing split payment:", error);
     res.status(500).json({ error: "Error al procesar pago dividido" });
+  }
+});
+
+// POST /api/orders/:id/split-into-tickets
+// Divide una orden en N órdenes/tickets separados — cada uno se cobra después
+// con el flujo normal de pago de una sola orden (un solo método por ticket).
+// Reemplaza al viejo "split-payment" (una orden, N métodos de pago mezclados).
+// Body: { groups: { orderItemId: string; quantity: number }[][] }
+// Cada array interno es un ticket nuevo; un mismo orderItemId puede repartirse
+// entre varios grupos y/o dejar parte sin asignar (se queda en la orden padre).
+router.post("/orders/:id/split-into-tickets", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { groups } = req.body as { groups: { orderItemId: string; quantity: number }[][] };
+
+    if (!Array.isArray(groups) || groups.length === 0 || !groups.some((g) => g.length > 0)) {
+      return res.status(400).json({ error: "groups es requerido" });
+    }
+
+    const order = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, id),
+      with: { items: true },
+    });
+    if (!order) return res.status(404).json({ error: "Orden no encontrada" });
+    if (order.paymentStatus === "paid") {
+      return res.status(409).json({ error: "La orden ya está pagada", code: "ALREADY_PAID" });
+    }
+
+    const itemsById = new Map(order.items.filter((i) => !i.voided).map((i) => [i.id, i]));
+
+    // Validar: cada item existe en esta orden, cantidades son enteros
+    // positivos, y no se pide más de lo que hay.
+    const requestedByItem = new Map<string, number>();
+    const destinationsByItem = new Map<string, number>();
+    for (const group of groups) {
+      for (const { orderItemId, quantity } of group) {
+        if (!itemsById.has(orderItemId)) {
+          return res.status(400).json({ error: `Item no encontrado en esta orden: ${orderItemId}` });
+        }
+        if (!Number.isInteger(quantity) || quantity <= 0) {
+          return res.status(400).json({ error: "Cantidad inválida en split-into-tickets" });
+        }
+        requestedByItem.set(orderItemId, (requestedByItem.get(orderItemId) || 0) + quantity);
+        destinationsByItem.set(orderItemId, (destinationsByItem.get(orderItemId) || 0) + 1);
+      }
+    }
+    for (const [itemId, requested] of requestedByItem) {
+      const item = itemsById.get(itemId)!;
+      if (requested > item.quantity) {
+        return res.status(400).json({
+          error: `Se pidieron ${requested} de "${item.productName}" pero la orden solo tiene ${item.quantity}`,
+        });
+      }
+    }
+
+    const splitGroupId = order.splitGroupId || order.id;
+
+    const maxOrderResult = await db
+      .select({ max: sql<number>`COALESCE(MAX(${schema.orders.orderNumber}), 0)` })
+      .from(schema.orders);
+    let nextOrderNumber = (maxOrderResult[0]?.max ?? 0) + 1;
+
+    // Cuánto se le quitó a cada item original vía clonado (no vía el camino
+    // barato de reasignar la fila completa) — se usa después para reducir la
+    // fila original que se queda en la orden padre.
+    const clonedSubtotalByItem = new Map<string, number>();
+    const clonedQuantityByItem = new Map<string, number>();
+
+    const tickets: any[] = [];
+
+    for (const group of groups) {
+      if (group.length === 0) continue;
+
+      const [newOrder] = await db
+        .insert(schema.orders)
+        .values({
+          orderNumber: nextOrderNumber++,
+          tableId: order.tableId,
+          customerName: order.customerName,
+          cashRegisterId: order.cashRegisterId,
+          userId: order.userId,
+          guestCount: 1,
+          status: order.status,
+          paymentStatus: "pending",
+          subtotal: "0",
+          total: "0",
+          tip: "0",
+          source: order.source,
+          splitGroupId,
+        })
+        .returning();
+
+      let ticketSubtotal = 0;
+
+      for (const { orderItemId, quantity } of group) {
+        const item = itemsById.get(orderItemId)!;
+        const isWholeItemSingleDestination =
+          destinationsByItem.get(orderItemId) === 1 && quantity === item.quantity;
+
+        if (isWholeItemSingleDestination) {
+          // Camino barato: se mueve toda la fila a un solo ticket — sin
+          // clonar, conserva el mismo id.
+          await db
+            .update(schema.orderItems)
+            .set({ orderId: newOrder.id })
+            .where(eq(schema.orderItems.id, orderItemId));
+          ticketSubtotal += parseFloat(item.subtotal);
+        } else {
+          // Se reparte entre varios tickets y/o se queda una parte en el
+          // padre: clonar una fila nueva con la cantidad pedida, subtotal
+          // proporcional al original (para no arrastrar error de redondeo
+          // entre los distintos pedazos).
+          const perUnitSubtotal = parseFloat(item.subtotal) / item.quantity;
+          const cloneSubtotal = Math.round(perUnitSubtotal * quantity * 100) / 100;
+          await db.insert(schema.orderItems).values({
+            orderId: newOrder.id,
+            productId: item.productId,
+            productName: item.productName,
+            quantity,
+            unitPrice: item.unitPrice,
+            subtotal: cloneSubtotal.toString(),
+            notes: item.notes,
+            frostingId: item.frostingId,
+            frostingName: item.frostingName,
+            dryToppingId: item.dryToppingId,
+            dryToppingName: item.dryToppingName,
+            extraId: item.extraId,
+            extraName: item.extraName,
+            customModifiers: item.customModifiers,
+            seat: item.seat,
+            course: item.course,
+            deliveredToTable: item.deliveredToTable,
+            isGuest: item.isGuest,
+            promotionId: item.promotionId,
+            promotionName: item.promotionName,
+            originalPrice: item.originalPrice,
+            promotionDiscount: item.promotionDiscount,
+          });
+          ticketSubtotal += cloneSubtotal;
+          clonedSubtotalByItem.set(orderItemId, (clonedSubtotalByItem.get(orderItemId) || 0) + cloneSubtotal);
+          clonedQuantityByItem.set(orderItemId, (clonedQuantityByItem.get(orderItemId) || 0) + quantity);
+        }
+      }
+
+      await db
+        .update(schema.orders)
+        .set({ subtotal: ticketSubtotal.toFixed(2), total: ticketSubtotal.toFixed(2) })
+        .where(eq(schema.orders.id, newOrder.id));
+
+      const completeTicket = await db.query.orders.findFirst({
+        where: eq(schema.orders.id, newOrder.id),
+        with: { items: true },
+      });
+      tickets.push(completeTicket);
+      emitOrderNew(completeTicket);
+    }
+
+    // Reducir (o borrar si se consumió por completo) las filas originales que
+    // se repartieron por clonado. Resta directa contra el subtotal original
+    // — no recálculo por precio unitario — para que cuadre exacto centavo a
+    // centavo contra lo que se les dio a los clones.
+    for (const [itemId, clonedQty] of clonedQuantityByItem) {
+      const item = itemsById.get(itemId)!;
+      const remainingQty = item.quantity - clonedQty;
+      if (remainingQty <= 0) {
+        await db.delete(schema.orderItems).where(eq(schema.orderItems.id, itemId));
+      } else {
+        const clonedSubtotal = clonedSubtotalByItem.get(itemId) || 0;
+        const remainingSubtotal = Math.max(0, parseFloat(item.subtotal) - clonedSubtotal);
+        await db
+          .update(schema.orderItems)
+          .set({ quantity: remainingQty, subtotal: remainingSubtotal.toFixed(2) })
+          .where(eq(schema.orderItems.id, itemId));
+      }
+    }
+
+    // Recalcular la orden padre desde sus items restantes (fuente de verdad),
+    // en vez de arrastrar aritmética incremental.
+    const parentRemainingItems = await db.query.orderItems.findMany({
+      where: and(eq(schema.orderItems.orderId, id), eq(schema.orderItems.voided, false)),
+    });
+    const parentRemainingSubtotal = parentRemainingItems.reduce((s, i) => s + parseFloat(i.subtotal), 0);
+
+    const parentUpdates: any = {
+      subtotal: parentRemainingSubtotal.toFixed(2),
+      total: parentRemainingSubtotal.toFixed(2),
+      updatedAt: new Date(),
+    };
+    if (parentRemainingItems.length === 0) {
+      parentUpdates.status = "cancelled";
+    } else {
+      parentUpdates.splitGroupId = splitGroupId;
+    }
+    await db.update(schema.orders).set(parentUpdates).where(eq(schema.orders.id, id));
+
+    const completeParent = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, id),
+      with: { items: true },
+    });
+    emitOrderUpdated(completeParent);
+
+    res.json({ parent: completeParent, tickets });
+  } catch (error) {
+    console.error("[split-into-tickets] Error:", error);
+    res.status(500).json({ error: "Error al dividir la orden en tickets" });
   }
 });
 
