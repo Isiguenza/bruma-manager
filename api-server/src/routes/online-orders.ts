@@ -325,6 +325,11 @@ router.get("/public/online-orders/eta", async (req, res) => {
   try {
     const type = (req.query.type as string) || "pickup";
     const BASE = 35;
+    // Reusa el mismo cálculo que /intent usa para rechazar (CLOSED/DISABLED),
+    // pero aquí se expone de forma consultable ANTES de que el cliente
+    // intente pagar, para poder bloquear "Continuar al pago" de forma
+    // proactiva en vez de solo enterarse por un error del servidor.
+    const settings = await getSettings();
 
     const active = await db.query.orders.findMany({
       where: sql`${schema.orders.status} IN ('pending','preparing','ready')`,
@@ -340,9 +345,15 @@ router.get("/public/online-orders/eta", async (req, res) => {
     const deliveryBuffer = type === "delivery" ? 10 : 0;
     const etaMinutes = BASE + load + deliveryBuffer;
 
-    res.json({ etaMinutes, activeOrders, seatedGuests });
+    res.json({
+      etaMinutes,
+      activeOrders,
+      seatedGuests,
+      isOpen: isOpenNow(settings.serviceHours),
+      onlineOrderingEnabled: settings.onlineOrderingEnabled,
+    });
   } catch (error) {
-    res.json({ etaMinutes: 35 });
+    res.json({ etaMinutes: 35, isOpen: true, onlineOrderingEnabled: true });
   }
 });
 
