@@ -12,10 +12,62 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
   apiVersion: "2024-06-20" as any,
 });
 
+// Guard contra el incidente real que ya pasó: una key de TEST corriendo en
+// producción deja "pasar" pedidos que nunca se cobraron de verdad. Esto no
+// arregla el pago, pero hace imposible no notar el modo equivocado en los
+// logs de arranque, y truena el arranque si además sabemos que este proceso
+// es de producción (NODE_ENV=production).
+const stripeKeyMode = process.env.STRIPE_SECRET_KEY?.startsWith("sk_live_")
+  ? "LIVE"
+  : process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_")
+  ? "TEST"
+  : "UNKNOWN";
+console.log(`[stripe] modo detectado: ${stripeKeyMode} (${process.env.STRIPE_SECRET_KEY?.slice(0, 12) ?? "sin key"}…)`);
+if (process.env.NODE_ENV === "production" && stripeKeyMode !== "LIVE") {
+  throw new Error(
+    `[stripe] STRIPE_SECRET_KEY está en modo ${stripeKeyMode} pero NODE_ENV=production — esto es ` +
+    `exactamente lo que causó el incidente donde se crearon pedidos "pagados" sin cobrar nada real. ` +
+    `Corrige la key antes de arrancar.`
+  );
+}
+
 const DEFAULT_TIERS: DeliveryTier[] = [
   { maxMeters: 600, fee: 25 },
   { maxMeters: 1200, fee: 40 },
 ];
+
+// Pedidos web "pending" cuyo PaymentIntent nunca se resolvió — ni succeeded,
+// ni failed, ni canceled llegó nunca (el cliente cerró la pestaña a medio
+// checkout, o nunca llegó a intentar pagar) — se marcan como fallidos tras
+// este tiempo en vez de quedarse en limbo para siempre.
+const ABANDONED_ORDER_MINUTES = 30;
+
+/** Barre pedidos web abandonados a medio pago. Se corre periódicamente desde
+ * index.ts (no hay infra de cron en este proyecto — un setInterval basta). */
+export async function cleanupAbandonedOnlineOrders() {
+  try {
+    const cutoff = new Date(Date.now() - ABANDONED_ORDER_MINUTES * 60 * 1000);
+    const abandoned = await db
+      .update(schema.orders)
+      .set({ paymentStatus: "failed", status: "cancelled", updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.orders.source, "web"),
+          eq(schema.orders.paymentStatus, "pending"),
+          sql`${schema.orders.createdAt} < ${cutoff}`
+        )
+      )
+      .returning({ id: schema.orders.id, orderNumber: schema.orders.orderNumber });
+    if (abandoned.length > 0) {
+      console.log(
+        `[cleanup] ${abandoned.length} pedido(s) web abandonados marcados como fallidos: ` +
+        abandoned.map((o) => `#${o.orderNumber}`).join(", ")
+      );
+    }
+  } catch (error) {
+    console.error("[cleanup] error limpiando pedidos abandonados:", error);
+  }
+}
 
 /** Reembolsa un pago de Stripe por su PaymentIntent. Reusable desde otras rutas. */
 export async function refundStripePayment(paymentIntentId: string) {
@@ -520,6 +572,24 @@ export async function stripeWebhookHandler(req: Request, res: Response) {
       // todavía — eso pasa al aceptar (accept-online).
       emitOnlineOrder(complete);
       if (paid) notifyOrderReceived(paid).catch(() => {});
+    }
+  } else if (event.type === "payment_intent.payment_failed" || event.type === "payment_intent.canceled") {
+    // El pago nunca se completó (tarjeta rechazada, PaymentIntent abandonado,
+    // etc.) — la orden ya existe como "pending" desde /intent; márcala como
+    // fallida y cancelada explícitamente en vez de dejarla en un limbo
+    // "pending" para siempre. El guard de paymentStatus="pending" evita
+    // pisar una orden que ya se marcó pagada por otro evento.
+    const pi = event.data.object as Stripe.PaymentIntent;
+    const orderId = pi.metadata?.orderId;
+    if (orderId) {
+      await db
+        .update(schema.orders)
+        .set({
+          paymentStatus: "failed",
+          status: "cancelled",
+          updatedAt: new Date(),
+        })
+        .where(and(eq(schema.orders.id, orderId), eq(schema.orders.paymentStatus, "pending")));
     }
   }
 

@@ -391,7 +391,6 @@ class POSViewModel: ObservableObject {
     @Published var excludedPromoItemIds: Set<UUID> = []
     @Published var availableDiscounts: [Discount] = []
     @Published var selectedDiscount: Discount?
-    @Published var showFlexibleDiscountDialog = false
     @Published var flexibleDiscountType = "percentage"
     @Published var flexibleDiscountValue: Double = 10
     @Published var customFlexibleAmount = ""
@@ -407,6 +406,7 @@ class POSViewModel: ObservableObject {
     @Published var loyaltyStampsToAdd: Int = 1
     @Published var loyaltyEmailInput: String = ""
     @Published var showLoyaltyEmailDialog: Bool = false
+    @Published var showLoyaltyStampsDialog: Bool = false
     @Published var showLoyaltyRewardDialog: Bool = false
     @Published var loyaltyRewardMode: String = ""
     @Published var loyaltyRewardDiscountPct: String = ""
@@ -2008,11 +2008,16 @@ class POSViewModel: ObservableObject {
         tempNotes = ""
         showNotesDialog = true
     }
-    
+
     func handleAddVariant(_ variantName: String, price: String, platformPrice: String?) {
         guard let product = selectedProductForVariant else { return }
-        showVariantDialog = false
-        
+        // No cerramos `showVariantDialog` todavía: si lo hacemos aquí, el
+        // bottom sheet se cierra de golpe y vuelve a abrirse cuando
+        // `showNotesDialog` se prende más abajo (después del await) — un
+        // parpadeo cierra/abre en vez del efecto "tray" (mismo contenedor,
+        // solo cambia el contenido). Se cierra más abajo, en el mismo tick
+        // que se decide el siguiente paso.
+
         let isPlatform = customerName.hasPrefix("Uber") || customerName.hasPrefix("Rappi") || customerName.hasPrefix("Didi")
         let variantPrice: Double
         if isPlatform, let pp = platformPrice, let ppVal = Double(pp) {
@@ -2034,6 +2039,9 @@ class POSViewModel: ObservableObject {
             
             if let flow = flow, !flow.useDefaultFlow, !flow.steps.isEmpty {
                 print("   ✅ Using flow with \(flow.steps.count) steps")
+                // Aquí sí es un cierre real: el flujo personalizado vive en
+                // ProductGridView, no en este sheet.
+                showVariantDialog = false
                 categoryFlow = flow
                 selectedProduct = product
                 currentStepIndex = 0
@@ -2063,10 +2071,14 @@ class POSViewModel: ObservableObject {
             )
             pendingCartItem = newItem
             tempNotes = ""
+            // Mismo tick: apaga variantes y prende notas juntos, así el
+            // contenedor del sheet nunca pasa por "cerrado" — solo cambia
+            // el contenido (el `mode` de `ProductAddDialog` hace el resto).
+            showVariantDialog = false
             showNotesDialog = true
         }
     }
-    
+
     // MARK: - Modifier Flow
     
     func handleStepSelection(_ selection: Any?) {
@@ -2259,15 +2271,15 @@ class POSViewModel: ObservableObject {
         tempNotes = productNotes
         showNotesDialog = true
     }
-    
+
     func finishFlowAndAddToCart() {
         guard let item = buildFlowCartItem() else { return }
         addToCart(item)
         resetFlow()
     }
-    
+
     // MARK: - Notes
-    
+
     func handleConfirmNotes() {
         guard var item = pendingCartItem else { return }
         let labels = quickNotes.filter { selectedQuickNoteIds.contains($0.id) }.map { $0.label }
@@ -2295,7 +2307,13 @@ class POSViewModel: ObservableObject {
             showFreeTextNotes = false
         }
     }
-    
+
+    /// Cierra el diálogo de variantes — usar en vez de asignar
+    /// `showVariantDialog = false` directo, por claridad de intención.
+    func dismissVariantDialog() {
+        showVariantDialog = false
+    }
+
     // MARK: - Cart Operations
     
     private func addToCart(_ item: CartItem) {

@@ -54,18 +54,3 @@ struct GlassPill: ViewModifier {
     }
 }
 
-struct GlassTrack: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            content
-                .background(
-                    Capsule()
-                        .fill(Color(white: 0.1))
-                        .overlay(Capsule().stroke(Color(white: 0.2), lineWidth: 1))
-                )
-        }
-    }
-}

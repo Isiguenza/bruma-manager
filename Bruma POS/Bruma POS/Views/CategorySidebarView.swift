@@ -25,7 +25,11 @@ struct CategorySidebarView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .glassEffect(.regular.interactive(), in: .capsule)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+            )
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
             
@@ -86,11 +90,11 @@ struct CategoryButton: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 18)
+            .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: 15)
+                Capsule()
                     .fill(isSelected ? Color(uiColor: .systemGray6).opacity(0.7) : Color(uiColor: .systemGray6).opacity(0.4))
-                   
+                    .overlay(Capsule().stroke(isSelected ? categoryColor.opacity(0.4) : Color.clear, lineWidth: 1))
             )
         }
         .buttonStyle(.plain)

@@ -156,9 +156,8 @@ struct CashRegisterView: View {
             }
             .foregroundColor(.white)
             .frame(width: 80, height: 80)
-            .background(.clear)
-            .glassEffect(.clear)
         }
+        .buttonStyle(.flatCircleNeutral)
         .disabled(text.isEmpty && systemImage == nil)
         .opacity(text.isEmpty && systemImage == nil ? 0 : 1)
     }
@@ -186,12 +185,10 @@ struct CashRegisterView: View {
                     Text("Abrir Caja")
                         .font(.headline)
                 }
-                .foregroundColor(.white)
                 .padding(.horizontal, 32)
-                .padding(.vertical, 16)
-                .background(Color.blue)
-                .cornerRadius(12)
+                .frame(height: 54)
             }
+            .buttonStyle(.flatCapsule(.blue))
         }
         .padding(40)
         .sheet(isPresented: $vm.showOpenDialog) {
@@ -219,15 +216,14 @@ struct CashRegisterView: View {
                         .foregroundColor(.white)
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(8)
+                .frame(height: 30)
+                .background(Capsule().fill(Color.white.opacity(0.1)))
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
 
             // Dos columnas: órdenes (izq, ancha) + ventas y acciones (der, angosta)
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
 
                 // Izquierda: barras por método de pago (arriba) + lista de órdenes
                 ScrollView {
@@ -235,9 +231,13 @@ struct CashRegisterView: View {
                         paymentMethodBars
                         ordersSection
                     }
-                    .padding(.bottom, 40)
+                    .padding(16)
+                    .padding(.bottom, 24)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(uiColor: .systemGray6).opacity(0.4))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
                 .refreshable {
                     await vm.loadData()
                     await corteVM.loadCorte(registerId: register.id)
@@ -255,13 +255,17 @@ struct CashRegisterView: View {
                         actionButtonsGrid
                         transactionsSection
                     }
-                    .padding(.bottom, 40)
+                    .padding(16)
+                    .padding(.bottom, 24)
                 }
                 .frame(width: 380)
                 .frame(maxHeight: .infinity)
+                .background(Color(uiColor: .systemGray6).opacity(0.4))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 8)
+            .padding(.bottom, 20)
         }
         .task(id: register.id) {
             await corteVM.loadCorte(registerId: register.id)
@@ -368,12 +372,7 @@ struct CashRegisterView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
         .padding(16)
-        .background(Color(white: 0.08))
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(white: 0.15), lineWidth: 1)
-        )
+        .modifier(FlatCard())
     }
     
     // Acciones de caja — grid de 3 columnas para el panel derecho.
@@ -440,12 +439,7 @@ struct CashRegisterView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
-            .background(Color(white: 0.08))
-            .cornerRadius(16)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color(white: 0.15), lineWidth: 1)
-            )
+            .modifier(FlatCard())
         }
         .buttonStyle(.plain)
     }
@@ -484,8 +478,8 @@ struct CashRegisterView: View {
         .background(
             LinearGradient(colors: [Color.green.opacity(0.22), Color(white: 0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
         )
-        .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.green.opacity(0.25), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.green.opacity(0.25), lineWidth: 1))
     }
 
     // MARK: - Corte Cards
@@ -697,14 +691,9 @@ struct CashRegisterView: View {
             }
         }
         .padding(16)
-        .background(Color(white: 0.06))
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(white: 0.12), lineWidth: 1)
-        )
+        .modifier(FlatCard())
     }
-    
+
     private func transactionRow(_ tx: CashRegisterTransaction) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -760,15 +749,14 @@ struct CashRegisterView: View {
                     TextField("Buscar orden...", text: $vm.orderSearchQuery)
                         .foregroundColor(.white)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color(white: 0.08))
-                .cornerRadius(10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color(white: 0.15), lineWidth: 1)
+                .padding(.horizontal, 14)
+                .frame(height: 42)
+                .background(
+                    Capsule()
+                        .fill(Color.white.opacity(0.06))
+                        .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
                 )
-                
+
                 Menu {
                     ForEach(PaymentMethodFilter.allCases, id: \.self) { filter in
                         Button {
@@ -789,16 +777,10 @@ struct CashRegisterView: View {
                         Image(systemName: "chevron.down")
                             .font(.caption)
                     }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color(white: 0.08))
-                    .cornerRadius(10)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(Color(white: 0.15), lineWidth: 1)
-                    )
+                    .padding(.horizontal, 14)
+                    .frame(height: 42)
                 }
+                .buttonStyle(.flatCapsuleNeutral)
             }
             
             if vm.loadingOrders {
@@ -862,18 +844,16 @@ struct CashRegisterView: View {
                         Text("Dividida")
                             .font(.caption2.bold())
                             .foregroundColor(.orange)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.15))
-                            .cornerRadius(4)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.orange.opacity(0.15)))
                     } else if let method = order.paymentMethod {
                         Text(paymentMethodText(method))
                             .font(.caption2.bold())
                             .foregroundColor(.white.opacity(0.6))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(4)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.white.opacity(0.1)))
                     }
                 }
                 
@@ -918,19 +898,12 @@ struct CashRegisterView: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.headline)
-                    .foregroundColor(.gray)
-                    .frame(width: 32, height: 32)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(8)
+                    .frame(width: 34, height: 34)
             }
+            .buttonStyle(.flatCircleNeutral)
         }
         .padding(12)
-        .background(Color(white: 0.08))
-        .cornerRadius(10)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color(white: 0.12), lineWidth: 1)
-        )
+        .modifier(FlatCard())
         .contentShape(Rectangle())
         .onTapGesture {
             vm.selectedOrder = order
@@ -960,17 +933,15 @@ struct CashRegisterView: View {
                             Text("Dividida")
                                 .font(.caption.bold())
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(Color.orange.opacity(0.2))
+                                .padding(.vertical, 5)
                                 .foregroundColor(.orange)
-                                .cornerRadius(6)
+                                .background(Capsule().fill(Color.orange.opacity(0.2)))
                         } else {
                             Text(paymentMethodText(order.paymentMethod ?? ""))
                                 .font(.caption.bold())
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(Color.blue.opacity(0.2))
-                                .cornerRadius(6)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.blue.opacity(0.2)))
                         }
                     }
                     

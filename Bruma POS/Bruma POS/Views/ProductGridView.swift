@@ -52,8 +52,7 @@ struct ProductGridView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                     }
-                    .buttonStyle(.glass)
-                    .clipShape(Capsule())
+                    .buttonStyle(.flatCapsuleNeutral)
                 }
             }
             .padding(16)
@@ -304,8 +303,7 @@ struct ProductGridView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                 }
-                .buttonStyle(.glassProminent)
-                .tint(.blue)
+                .buttonStyle(.flatCapsule(.blue))
                 .padding(20)
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
             }
@@ -428,16 +426,20 @@ struct ProductCardView: View {
                 
                 Spacer()
                 
-                // Price
-                HStack(spacing: 4) {
-                    Text(vm.formatCurrency(displayPrice))
-                        .font(.title3.weight(.bold))
-                        .foregroundColor(.white)
-                    
-                    if isPlatform && product.platformPrice != nil {
-                        Image(systemName: "motorcycle")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
+                // Price — los productos con variantes no tienen precio base
+                // propio (cada variante trae el suyo), así que no mostramos
+                // "$0.00" aquí.
+                if !product.hasVariants || displayPrice > 0 {
+                    HStack(spacing: 4) {
+                        Text(vm.formatCurrency(displayPrice))
+                            .font(.title3.weight(.bold))
+                            .foregroundColor(.white)
+
+                        if isPlatform && product.platformPrice != nil {
+                            Image(systemName: "motorcycle")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
                     }
                 }
                 

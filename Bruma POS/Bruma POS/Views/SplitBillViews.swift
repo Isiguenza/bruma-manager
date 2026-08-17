@@ -40,11 +40,10 @@ struct SplitBillModeView: View {
                     }
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .frame(height: 42)
                 }
-                .buttonStyle(.glass)
-                .clipShape(Capsule())
+                .buttonStyle(.flatCapsuleNeutral)
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
@@ -71,77 +70,33 @@ struct SplitBillModeView: View {
                             .foregroundColor(.white)
                     }
                     .padding(16)
-                    .modifier(GlassCard())
+                    .modifier(FlatCard())
 
                     // Por Asiento
-                    Button {
+                    splitModeRow(
+                        title: "Por Asiento",
+                        subtitle: "Agrupa lo que ya está marcado A1, A2… — solo confirmas el centro",
+                        icon: "person.crop.rectangle.stack.fill",
+                        color: .blue
+                    ) {
                         vm.initSplitBySeat()
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
                             vm.paymentStep = "split-seat-assign"
                         }
-                    } label: {
-                        HStack(spacing: 16) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.blue.opacity(0.15))
-                                    .frame(width: 56, height: 56)
-                                Image(systemName: "person.crop.rectangle.stack.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.blue)
-                            }
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Por Asiento")
-                                    .font(.headline.weight(.semibold))
-                                    .foregroundColor(.white)
-                                Text("Items asignados automáticamente por asiento. Los del centro se asignan manualmente.")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                                    .lineLimit(2)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(.gray)
-                        }
-                        .padding(18)
                     }
-                    .modifier(GlassCardTinted(color: .blue))
 
                     // Personalizado
-                    Button {
+                    splitModeRow(
+                        title: "Personalizado",
+                        subtitle: "Tú eliges qué va a cada asiento, item por item (y cuántos si hay varios)",
+                        icon: "hand.tap.fill",
+                        color: .purple
+                    ) {
                         vm.initSplitCustom()
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
                             vm.paymentStep = "split-assign"
                         }
-                    } label: {
-                        HStack(spacing: 16) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.purple.opacity(0.15))
-                                    .frame(width: 56, height: 56)
-                                Image(systemName: "hand.tap.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.purple)
-                            }
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Personalizado")
-                                    .font(.headline.weight(.semibold))
-                                    .foregroundColor(.white)
-                                Text("Elige manualmente qué items (y cuántos, si hay varios) le tocan a cada asiento.")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                                    .lineLimit(2)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(.gray)
-                        }
-                        .padding(18)
                     }
-                    .modifier(GlassCardTinted(color: .purple))
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 8)
@@ -150,6 +105,41 @@ struct SplitBillModeView: View {
             }
             .scrollEdgeEffectStyle(.soft, for: .top)
         }
+    }
+
+    /// Fila compacta de una línea (icono + título + subtítulo + chevron) en
+    /// vez de la tarjeta grande con círculo de color de 56px que había antes.
+    @ViewBuilder
+    private func splitModeRow(title: String, subtitle: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(color)
+                    .frame(width: 34, height: 34)
+                    .background(Circle().fill(color.opacity(0.16)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(Color(white: 0.4))
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 15)
+        }
+        .buttonStyle(.flatCapsuleNeutral)
     }
 }
 
@@ -309,11 +299,10 @@ struct SplitSeatView: View {
                     }
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .frame(height: 42)
                 }
-                .buttonStyle(.glass)
-                .clipShape(Capsule())
+                .buttonStyle(.flatCapsuleNeutral)
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
@@ -339,9 +328,9 @@ struct SplitSeatView: View {
                             }
                             .foregroundStyle(.white)
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
+                            .padding(.vertical, 11)
                         }
-                        .modifier(GlassPill(isSelected: isSelected, color: .blue))
+                        .modifier(FlatPill(isSelected: isSelected, color: .blue))
                     }
                 }
                 .padding(.horizontal, 24)
@@ -394,13 +383,13 @@ struct SplitSeatView: View {
                                 }
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 40)
+                                .frame(height: 46)
                             }
-                            .buttonStyle(.glass)
+                            .buttonStyle(.flatCapsuleNeutral)
                         }
                     }
                     .padding(16)
-                    .modifier(GlassCard())
+                    .modifier(FlatCard())
 
                     // Centro — items con cantidad sin repartir
                     if !centroItemsWithRemaining.isEmpty {
@@ -418,7 +407,7 @@ struct SplitSeatView: View {
                             }
                         }
                         .padding(16)
-                        .modifier(GlassCardTinted(color: .orange))
+                        .modifier(FlatCardTinted(color: .orange))
                     }
                 }
                 .padding(.horizontal, 24)
@@ -453,10 +442,8 @@ struct SplitSeatView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
-                    .foregroundStyle(.white)
                 }
-                .buttonStyle(.glassProminent)
-                .tint(.green)
+                .buttonStyle(.flatCapsule(.green))
                 .disabled(allAssignedCartIndices.isEmpty)
             }
             .padding(.horizontal, 24)
@@ -568,11 +555,10 @@ struct SplitAssignView: View {
                     }
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .frame(height: 42)
                 }
-                .buttonStyle(.glass)
-                .clipShape(Capsule())
+                .buttonStyle(.flatCapsuleNeutral)
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
@@ -598,9 +584,9 @@ struct SplitAssignView: View {
                             }
                             .foregroundStyle(.white)
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
+                            .padding(.vertical, 11)
                         }
-                        .modifier(GlassPill(isSelected: isSelected, color: .purple))
+                        .modifier(FlatPill(isSelected: isSelected, color: .purple))
                     }
                 }
                 .padding(.horizontal, 24)
@@ -639,13 +625,13 @@ struct SplitAssignView: View {
                                 }
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 40)
+                                .frame(height: 46)
                             }
-                            .buttonStyle(.glass)
+                            .buttonStyle(.flatCapsuleNeutral)
                         }
                     }
                     .padding(16)
-                    .modifier(GlassCard())
+                    .modifier(FlatCard())
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 8)
@@ -682,10 +668,8 @@ struct SplitAssignView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
-                    .foregroundStyle(.white)
                 }
-                .buttonStyle(.glassProminent)
-                .tint(.purple)
+                .buttonStyle(.flatCapsule(.purple))
                 .disabled(allAssignedCartIndices.isEmpty)
             }
             .padding(.horizontal, 24)

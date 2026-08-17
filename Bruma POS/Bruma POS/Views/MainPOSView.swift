@@ -18,7 +18,7 @@ struct MainPOSView: View {
                         .frame(maxWidth: .infinity)
                         .background(Color(uiColor: .systemGray6).opacity(0.4))
                         .clipShape(RoundedRectangle(cornerRadius: 16))
-                     
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
                         .padding(.trailing, 12)
                         .padding(.vertical, 12)
                 } else {
@@ -28,17 +28,38 @@ struct MainPOSView: View {
                             .frame(width: 220)
                             .background(Color(uiColor: .systemGray6).opacity(0.4))
                             .clipShape(RoundedRectangle(cornerRadius: 16))
-                          
-                        
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
+
                         // Product area card
                         ProductGridView(vm: vm)
                             .frame(maxWidth: .infinity)
                             .background(Color(uiColor: .systemGray6).opacity(0.4))
                             .clipShape(RoundedRectangle(cornerRadius: 16))
-                       
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
                             .padding(.trailing, 12)
                     }
                     .padding(.vertical, 12)
+                    // Variantes/notas de producto: hoja inferior anclada a esta
+                    // sección (categorías + productos) — no a toda la pantalla,
+                    // igual que el panel de pago.
+                    .bottomSheet(
+                        isPresented: vm.showVariantDialog || vm.showNotesDialog,
+                        onDismiss: {
+                            if vm.showNotesDialog {
+                                vm.handleCancelNotes()
+                            } else {
+                                vm.dismissVariantDialog()
+                            }
+                        }
+                    ) {
+                        // Sin `.id()` a propósito: mantenerlo siempre montado
+                        // (misma identidad) es lo que permite que el slide-up
+                        // se vea igual de bien la primera vez que se abre
+                        // para un producto que las siguientes — un `.id()`
+                        // que cambia por producto fuerza un remount, que no
+                        // anima (por eso "la primera vez" siempre fadeaba).
+                        ProductAddDialog(vm: vm)
+                    }
                 }
             }
             
@@ -82,13 +103,6 @@ struct MainPOSView: View {
 
             // MARK: - Dialog Overlays
 
-            if vm.showVariantDialog || vm.showNotesDialog {
-                dialogOverlay {
-                    ProductAddDialog(vm: vm)
-                        .id(vm.selectedProductForVariant?.id ?? vm.pendingCartItem?.id.uuidString ?? "")
-                }
-            }
-            
             if vm.showGuestCountDialog {
                 dialogOverlay(onDismiss: { vm.showGuestCountDialog = false }) {
                     GuestCountDialog(vm: vm, isInitial: false)
@@ -118,6 +132,12 @@ struct MainPOSView: View {
                     LoyaltyEmailDialog(vm: vm)
                 }
             }
+
+            if vm.showLoyaltyStampsDialog {
+                dialogOverlay(onDismiss: { vm.showLoyaltyStampsDialog = false }) {
+                    LoyaltyStampsDialog(vm: vm)
+                }
+            }
             
             if vm.showLoyaltyRewardDialog {
                 dialogOverlay(onDismiss: {
@@ -132,10 +152,6 @@ struct MainPOSView: View {
                         LoyaltyRewardDialog(vm: vm)
                     }
                 }
-            }
-            
-            if vm.showFlexibleDiscountDialog {
-                dialogOverlay { FlexibleDiscountDialog(vm: vm) }
             }
             
             if vm.showAdminMenu {

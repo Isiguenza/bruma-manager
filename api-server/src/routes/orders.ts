@@ -28,6 +28,14 @@ router.get("/orders", async (req, res) => {
 
     if (paymentStatus) {
       whereConditions.push(eq(schema.orders.paymentStatus, paymentStatus as any));
+    } else {
+      // Sin filtro explícito de pago: nunca devolver pedidos web cuyo pago
+      // no se haya confirmado como exitoso (Stripe falló, se quedó a medias,
+      // o nunca se completó) — si no, quedan visibles en el POS como si
+      // fueran una orden real en curso aunque nadie haya cobrado nada.
+      whereConditions.push(
+        sql`(${schema.orders.source} != 'web' OR ${schema.orders.source} IS NULL OR ${schema.orders.paymentStatus} = 'paid')`
+      );
     }
 
     if (status) {

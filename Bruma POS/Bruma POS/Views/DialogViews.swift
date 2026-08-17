@@ -2,19 +2,16 @@ import SwiftUI
 
 // MARK: - Guest Count Dialog
 
+/// Mismo fondo plano y sólido que las hojas del panel de pago
+/// (`BottomSheetCard`) — sin material glass — para que todos los modales
+/// del POS compartan el mismo color.
 private struct DialogBackground: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
-        } else {
-            content
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color(white: 0.1))
-                        .shadow(color: .black.opacity(0.5), radius: 20)
-                )
-        }
+        content
+            .background(Color(white: 0.09))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            .shadow(color: .black.opacity(0.5), radius: 20)
     }
 }
 
@@ -231,29 +228,53 @@ struct ProductAddDialog: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
-            Text(productName)
-                .font(.title2.bold())
-                .foregroundColor(.white)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
+        BottomSheetCard(onDismiss: {
+            if vm.showNotesDialog {
+                vm.handleCancelNotes()
+            } else {
+                vm.dismissVariantDialog()
+            }
+        }) {
+            VStack(spacing: 20) {
+                Text(productName)
+                    .font(.title2.bold())
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
 
-            ZStack {
-                variantsSection
-                    .opacity(mode == .variants ? 1 : 0)
-                notesSection
-                    .opacity(mode == .notes ? 1 : 0)
+                Group {
+                    if mode == .variants {
+                        variantsSection
+                    } else {
+                        notesSection
+                    }
+                }
+                // Asimétrico: el paso viejo sube y se desvanece mientras el
+                // nuevo entra desde abajo con un pop sutil de escala — nada
+                // de esto se ve si además hay un `.animation(value:)` compitiendo
+                // con el `withAnimation` de abajo (por eso NO se declara aquí:
+                // el spring vive únicamente en el `withAnimation` del onChange).
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .top)),
+                    removal: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .bottom))
+                ))
             }
         }
-        .padding(24)
-        .frame(maxWidth: mode == .notes ? 480 : 400)
-        .modifier(DialogBackground())
-        .animation(.spring(response: 0.4, dampingFraction: 0.82), value: mode)
         .onChange(of: vm.showNotesDialog) { _, newValue in
             if newValue {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
                     mode = .notes
                 }
+            }
+        }
+        // Sin `.id()` en el sitio donde se monta este diálogo (ver
+        // MainPOSView) — se queda montado siempre, así que `mode` tiene que
+        // resetearse aquí cada vez que se abre un diálogo de variantes
+        // nuevo, en vez de depender del `init` (que con la vista ya montada
+        // solo corre una vez, la primerísima).
+        .onChange(of: vm.showVariantDialog) { _, newValue in
+            if newValue {
+                mode = .variants
             }
         }
     }
@@ -267,42 +288,48 @@ struct ProductAddDialog: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if let product = vm.selectedProductForVariant {
-                ForEach(product.parsedVariants) { variant in
-                    let isPlatform = vm.isPlatformDelivery
-                    let price = isPlatform ? variant.numericPlatformPrice : variant.numericPrice
+                let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(product.parsedVariants) { variant in
+                        let isPlatform = vm.isPlatformDelivery
+                        let price = isPlatform ? variant.numericPlatformPrice : variant.numericPrice
 
-                    Button {
-                        vm.handleAddVariant(variant.name, price: variant.price, platformPrice: variant.platformPrice)
-                    } label: {
-                        HStack {
-                            Text(variant.name)
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            Spacer()
-                            HStack(spacing: 4) {
-                                Text(vm.formatCurrency(price))
-                                    .font(.title3.bold())
+                        Button {
+                            vm.handleAddVariant(variant.name, price: variant.price, platformPrice: variant.platformPrice)
+                        } label: {
+                            VStack(spacing: 8) {
+                                Text(variant.name)
+                                    .font(.subheadline.weight(.semibold))
                                     .foregroundColor(.white)
-                                if isPlatform && variant.platformPrice != nil {
-                                    Image(systemName: "motorcycle")
-                                        .font(.caption)
-                                        .foregroundColor(.orange)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2)
+                                HStack(spacing: 4) {
+                                    Text(vm.formatCurrency(price))
+                                        .font(.headline.weight(.bold))
+                                        .foregroundColor(.white)
+                                    if isPlatform && variant.platformPrice != nil {
+                                        Image(systemName: "motorcycle")
+                                            .font(.caption2)
+                                            .foregroundColor(.orange)
+                                    }
                                 }
                             }
+                            .padding(.horizontal, 10)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 96)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.white.opacity(0.05))
+                                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                            )
                         }
-                        .padding(16)
-                        .background(
-                            Capsule()
-                                .fill(Color(white: 0.12))
-                                .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
-                        )
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
 
             Button {
-                vm.showVariantDialog = false
+                vm.dismissVariantDialog()
             } label: {
                 Text("Cancelar")
                     .font(.headline)
@@ -834,128 +861,6 @@ struct ManualStampDialog: View {
         }
         .padding(24)
         .frame(maxWidth: 400)
-        .modifier(DialogBackground())
-    }
-}
-
-// MARK: - Flexible Discount Dialog
-
-struct FlexibleDiscountDialog: View {
-    @ObservedObject var vm: POSViewModel
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            Text("Seleccionar Descuento")
-                .font(.title2.bold())
-                .foregroundColor(.white)
-            
-            // Type toggle
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Tipo de Descuento")
-                    .font(.subheadline.bold())
-                    .foregroundColor(.white)
-                
-                HStack(spacing: 8) {
-                    Button {
-                        vm.flexibleDiscountType = "percentage"
-                        vm.flexibleDiscountValue = 10
-                    } label: {
-                        Text("Porcentaje")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .background(vm.flexibleDiscountType == "percentage" ? Color.blue : Color(white: 0.12))
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
-                    }
-                    
-                    Button {
-                        vm.flexibleDiscountType = "fixed"
-                        vm.customFlexibleAmount = ""
-                    } label: {
-                        Text("Monto Fijo")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .background(vm.flexibleDiscountType == "fixed" ? Color.blue : Color(white: 0.12))
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
-                    }
-                }
-            }
-            
-            if vm.flexibleDiscountType == "percentage" {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                    ForEach([10, 20, 30, 50, 60], id: \.self) { pct in
-                        Button {
-                            vm.flexibleDiscountValue = Double(pct)
-                        } label: {
-                            Text("\(pct)%")
-                                .font(.title3.bold())
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 48)
-                                .background(vm.flexibleDiscountValue == Double(pct) ? Color.blue : Color(white: 0.12))
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
-                        }
-                    }
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Monto en Pesos")
-                        .font(.subheadline.bold())
-                        .foregroundColor(.white)
-                    
-                    TextField("Ingresa el monto", text: $vm.customFlexibleAmount)
-                        .keyboardType(.decimalPad)
-                        .font(.title3.bold())
-                        .foregroundColor(.white)
-                        .padding(12)
-                        .modifier(NotesTextFieldBackground())
-                }
-            }
-            
-            // Preview
-            HStack {
-                Image(systemName: "info.circle.fill")
-                    .foregroundColor(.blue)
-                Text(vm.flexibleDiscountType == "percentage"
-                     ? "Descuento del \(Int(vm.flexibleDiscountValue))% sobre el subtotal"
-                     : "Descuento de $\(vm.customFlexibleAmount.isEmpty ? "0" : vm.customFlexibleAmount) en pesos")
-                    .font(.subheadline)
-                    .foregroundColor(.blue.opacity(0.8))
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.blue.opacity(0.08))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.blue.opacity(0.2)))
-            )
-            
-            HStack(spacing: 12) {
-                Button("Cancelar") {
-                    vm.showFlexibleDiscountDialog = false
-                    vm.selectedDiscount = nil
-                }
-                .font(.headline)
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(Capsule().fill(Color.white.opacity(0.08)))
-                
-                Button("Aplicar Descuento") {
-                    vm.showFlexibleDiscountDialog = false
-                }
-                .font(.headline)
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(Capsule().fill(Color.blue))
-            }
-        }
-        .padding(24)
-        .frame(maxWidth: 420)
         .modifier(DialogBackground())
     }
 }
@@ -2219,6 +2124,130 @@ struct LoyaltyEmailDialog: View {
         }
         .padding(24)
         .frame(maxWidth: 400)
+        .modifier(DialogBackground())
+    }
+}
+
+// MARK: - Loyalty Stamps Dialog
+
+/// Se abre desde el botón condensado "Acumular Sellos Lealtad" del sheet de
+/// confirmar cobro cuando ya hay una tarjeta leída — progreso, stepper de
+/// sellos a agregar y acceso al premio si hay uno disponible.
+struct LoyaltyStampsDialog: View {
+    @ObservedObject var vm: POSViewModel
+
+    var body: some View {
+        VStack(spacing: 20) {
+            if let card = vm.loyaltyCard {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(card.displayName)
+                            .font(.title3.weight(.bold))
+                            .foregroundColor(.white)
+                        Text("\(card.stamps)/\(card.stampsPerReward) sellos")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    Spacer()
+                    Button {
+                        vm.loyaltyCard = nil
+                        vm.loyaltyStampsToAdd = 1
+                        vm.showLoyaltyStampsDialog = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color.white.opacity(0.08))
+                            .frame(height: 10)
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color.yellow)
+                            .frame(width: geo.size.width * CGFloat(card.stamps) / CGFloat(card.stampsPerReward), height: 10)
+                    }
+                }
+                .frame(height: 10)
+
+                HStack(spacing: 16) {
+                    Text("Sellos a agregar")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Button {
+                        vm.loyaltyStampsToAdd = max(1, vm.loyaltyStampsToAdd - 1)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    Text("\(vm.loyaltyStampsToAdd)")
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.white)
+                        .frame(minWidth: 32)
+                    Button {
+                        vm.loyaltyStampsToAdd += 1
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                }
+
+                if card.rewardsAvailable > 0 {
+                    Button {
+                        vm.showLoyaltyStampsDialog = false
+                        vm.showLoyaltyRewardDialog = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "gift.fill")
+                                .foregroundColor(.yellow)
+                            Text("Premio disponible: Canjear")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                        .foregroundColor(.white)
+                        .padding(12)
+                        .background(
+                            Capsule()
+                                .fill(Color.yellow.opacity(0.12))
+                                .overlay(Capsule().stroke(Color.yellow.opacity(0.3), lineWidth: 1))
+                        )
+                    }
+                }
+
+                HStack(spacing: 12) {
+                    Button("Cerrar") {
+                        vm.showLoyaltyStampsDialog = false
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+
+                    Button {
+                        vm.addLoyaltyStamps()
+                        vm.showLoyaltyStampsDialog = false
+                    } label: {
+                        Text("Agregar Sellos")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(Capsule().fill(Color.blue))
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: 420)
         .modifier(DialogBackground())
     }
 }

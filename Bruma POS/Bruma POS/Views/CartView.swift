@@ -1,21 +1,5 @@
 import SwiftUI
 
-private struct TablePillBackground: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            content
-                .background(
-                    Capsule()
-                        .fill(Color.white.opacity(0.06))
-                        .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
-                )
-        }
-    }
-}
-
 struct CartView: View {
     @ObservedObject var vm: POSViewModel
     
@@ -37,6 +21,7 @@ struct CartView: View {
         }
         .background(Color(uiColor: .systemGray6).opacity(0.4))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 1))
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .alert("Liberar Mesa", isPresented: $vm.showingReleaseConfirmation) {
@@ -59,152 +44,76 @@ struct CartView: View {
     }
     
     private var headerButtons: some View {
-        Group {
-            if #available(iOS 26.0, *) {
-                GlassEffectContainer(spacing: 8) {
-                    HStack(spacing: 8) {
-                        Button {
-                            vm.emitCustomerDisplayState(mode: "idle", force: true)
-                            vm.handleBackToTables()
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .padding(8)
-                        }
-                        .buttonStyle(.glass)
-                        .clipShape(Circle())
-                        
-                        Menu {
-                            contactMenuSection
-                            if vm.selectedTable != nil {
-                                Button(role: .destructive) { vm.handleReleaseTable() } label: {
-                                    Label("Liberar Mesa", systemImage: "door.left.hand.open")
-                                }
-                                Divider()
-                            } else {
-                                Button(role: .destructive) { vm.handleReleaseTable() } label: {
-                                    Label("Liberar Orden", systemImage: "trash")
-                                }
-                                Divider()
-                            }
-                            Button { vm.handleChangeTable() } label: {
-                                Label("Cambiar Mesa", systemImage: "arrow.left.arrow.right")
-                            }
+        HStack(spacing: 8) {
+            Button {
+                vm.emitCustomerDisplayState(mode: "idle", force: true)
+                vm.handleBackToTables()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 42, height: 42)
+            }
+            .buttonStyle(.flatCircleNeutral)
 
-                            Button {
-                                vm.showAdminMenu = true
-                            } label: {
-                                Label("Menú Admin", systemImage: "gearshape.fill")
-                            }
-                            Divider()
-                            
-                            Button { vm.toggleRush() } label: {
-                                Label(vm.isCurrentOrderRush ? "Quitar Rush" : "Rush Orden", systemImage: "flame.fill")
-                            }
-                            .tint(.orange)
-                            
-                            Button { vm.toggleHold() } label: {
-                                Label(vm.isCurrentOrderOnHold ? "Reanudar Orden" : "Pausar Orden", systemImage: vm.isCurrentOrderOnHold ? "play.fill" : "hand.raised.fill")
-                            }
-                            .tint(.red)
-                        } label: {
-                            tableInfoPill
-                        }
-                        .buttonStyle(.glass)
-                        
-                        if vm.currentOrderAddress != nil {
-                            Button {
-                                vm.showLocationModal = true
-                            } label: {
-                            Image(systemName: "mappin.and.ellipse")
-                                    .padding(8)
-                                    .foregroundStyle(.blue)
-                                    .font(.footnote)
-                            }
-                            .buttonStyle(.glass)
-                        } else {
-                            Button {
-                                vm.tempGuestCount = vm.guestCount
-                                vm.showGuestCountDialog = true
-                            } label: {
-                                Label("\(vm.guestCount)", systemImage: "person.2.fill")
-                                    .padding(8)
-                                    .foregroundStyle(.blue)
-                                    .font(.footnote)
-                            }
-                            .buttonStyle(.glass)
-                        }
+            Menu {
+                contactMenuSection
+                if vm.selectedTable != nil {
+                    Button(role: .destructive) { vm.handleReleaseTable() } label: {
+                        Label("Liberar Mesa", systemImage: "door.left.hand.open")
                     }
+                    Divider()
+                } else {
+                    Button(role: .destructive) { vm.handleReleaseTable() } label: {
+                        Label("Liberar Orden", systemImage: "trash")
+                    }
+                    Divider()
                 }
+                Button { vm.handleChangeTable() } label: {
+                    Label("Cambiar Mesa", systemImage: "arrow.left.arrow.right")
+                }
+
+                Button {
+                    vm.showAdminMenu = true
+                } label: {
+                    Label("Menú Admin", systemImage: "gearshape.fill")
+                }
+                Divider()
+
+                Button { vm.toggleRush() } label: {
+                    Label(vm.isCurrentOrderRush ? "Quitar Rush" : "Rush Orden", systemImage: "flame.fill")
+                }
+                .tint(.orange)
+
+                Button { vm.toggleHold() } label: {
+                    Label(vm.isCurrentOrderOnHold ? "Reanudar Orden" : "Pausar Orden", systemImage: vm.isCurrentOrderOnHold ? "play.fill" : "hand.raised.fill")
+                }
+                .tint(.red)
+            } label: {
+                tableInfoPill
+            }
+            .buttonStyle(.flatCapsuleNeutral)
+
+            if vm.currentOrderAddress != nil {
+                Button {
+                    vm.showLocationModal = true
+                } label: {
+                    Image(systemName: "mappin.and.ellipse")
+                        .foregroundStyle(.blue)
+                        .font(.footnote)
+                        .frame(width: 42, height: 42)
+                }
+                .buttonStyle(.flatCapsuleNeutral)
             } else {
-                HStack(spacing: 8) {
-                    GlassCircleButton(
-                        systemImage: "chevron.left",
-                        action: {
-                            vm.emitCustomerDisplayState(mode: "idle", force: true)
-                            vm.handleBackToTables()
-                        },
-                        isActive: false,
-                        activeColor: .blue
-                    )
-                    
-                    Menu {
-                        contactMenuSection
-                        if vm.selectedTable != nil {
-                            Button(role: .destructive) { vm.handleReleaseTable() } label: {
-                                Label("Liberar Mesa", systemImage: "door.open")
-                            }
-                            Divider()
-                        } else {
-                            Button(role: .destructive) { vm.handleReleaseTable() } label: {
-                                Label("Liberar Orden", systemImage: "trash")
-                            }
-                            Divider()
-                        }
-                        Button { vm.handleChangeTable() } label: {
-                            Label("Cambiar Mesa", systemImage: "arrow.left.arrow.right")
-                        }
-                        Button { vm.toggleRush() } label: {
-                            Label(vm.isCurrentOrderRush ? "Quitar Rush" : "Rush Orden", systemImage: "flame.fill")
-                        }
-                        Button { vm.toggleHold() } label: {
-                            Label(vm.isCurrentOrderOnHold ? "Reanudar Orden" : "Pausar Orden", systemImage: "pause.fill")
-                        }
-                        Button {
-                            vm.showAdminMenu = true
-                        } label: {
-                            Label("Menú Admin", systemImage: "gearshape.fill")
-                        }
-                        Button {
-                            vm.tempGuestCount = vm.guestCount
-                            vm.showGuestCountDialog = true
-                        } label: {
-                            Label("Cambiar Comensales", systemImage: "person.2")
-                        }
-                    } label: {
-                        tableInfoPill
-                    }
-                    
-                    if vm.currentOrderAddress != nil {
-                        GlassPillButton(
-                            label: "Ubicación",
-                            systemImage: "mappin.and.ellipse",
-                            action: { vm.showLocationModal = true },
-                            isActive: true,
-                            activeColor: .blue
-                        )
-                    } else {
-                        GlassPillButton(
-                            label: "\(vm.guestCount)",
-                            systemImage: "person.2.fill",
-                            action: {
-                                vm.tempGuestCount = vm.guestCount
-                                vm.showGuestCountDialog = true
-                            },
-                            isActive: true,
-                            activeColor: .blue
-                        )
-                    }
+                Button {
+                    vm.tempGuestCount = vm.guestCount
+                    vm.showGuestCountDialog = true
+                } label: {
+                    Label("\(vm.guestCount)", systemImage: "person.2.fill")
+                        .foregroundStyle(.blue)
+                        .font(.footnote)
+                        .padding(.horizontal, 10)
+                        .frame(height: 42)
                 }
+                .buttonStyle(.flatCapsuleNeutral)
             }
         }
     }
@@ -233,7 +142,7 @@ struct CartView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                     }
-                    .modifier(GlassPill(isSelected: isSelected, color: isPaid ? .green : .blue))
+                    .modifier(FlatPill(isSelected: isSelected, color: isPaid ? .green : .blue))
                 }
             }
             .padding(.horizontal, 12)
@@ -523,9 +432,10 @@ struct CartView: View {
             }
             
         }
-        .padding(.vertical, 8)
+        .frame(height: 42)
         .frame(maxWidth: .infinity)
-        
+        .padding(.horizontal)
+
     }
 
     private var cartFooter: some View {
@@ -601,14 +511,12 @@ struct CartView: View {
                     Image(systemName: "printer.fill")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
-                        .padding(8)
-                        
+                        .frame(width: 52, height: 52)
                 } primaryAction: {
                     Task { await vm.handlePrint() }
                 }
                 .disabled(vm.cart.isEmpty)
-                .opacity(vm.cart.isEmpty ? 0.3 : 1)
-                .buttonStyle(.glass)
+                .buttonStyle(.flatCircleNeutral)
 
                 // Morphing button: Kitchen Send / Pay / Marcar listo / Marcar en camino / Finalize
                 let hasUnsentItems = !vm.cart.isEmpty && vm.cart.contains(where: { !$0.sentToKitchen })
@@ -645,13 +553,10 @@ struct CartView: View {
                             .font(.callout.weight(.semibold))
                             .contentTransition(.numericText())
                     }
-                    .foregroundStyle(vm.cart.isEmpty ? Color(white: 0.4) : .white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical,8)
+                    .frame(height: 52)
                 }
-
-                .buttonStyle(.glassProminent)
-                .tint(hasUnsentItems ? Color.orange : needsReadyStep ? Color.blue : needsDeliveringStep ? Color.purple : (isPaidTakeout ? Color.green : Color.blue))
+                .buttonStyle(.flatCapsule(hasUnsentItems ? Color.orange : needsReadyStep ? Color.blue : needsDeliveringStep ? Color.purple : (isPaidTakeout ? Color.green : Color.blue)))
                 .disabled(vm.cart.isEmpty)
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasUnsentItems || isPaidTakeout || needsReadyStep || needsDeliveringStep)
             }

@@ -41,7 +41,7 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 }));
 // Stripe webhook: se monta con body RAW ANTES de express.json (para verificar firma).
-import onlineOrdersRouter, { stripeWebhookHandler } from "./routes/online-orders";
+import onlineOrdersRouter, { stripeWebhookHandler, cleanupAbandonedOnlineOrders } from "./routes/online-orders";
 app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookHandler);
 
 app.use(express.json({ limit: "10mb" }));
@@ -136,4 +136,9 @@ httpServer.listen(PORT, () => {
   console.log(`🚀 API Server running on port ${PORT}`);
   console.log(`📡 WebSocket server ready`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+
+  // Pedidos web que se quedaron "pending" a medio pago (sin succeeded, sin
+  // failed, sin canceled) — se barren cada 10 min.
+  cleanupAbandonedOnlineOrders();
+  setInterval(cleanupAbandonedOnlineOrders, 10 * 60 * 1000);
 });
