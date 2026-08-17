@@ -24,11 +24,23 @@ const stripeKeyMode = process.env.STRIPE_SECRET_KEY?.startsWith("sk_live_")
   : "UNKNOWN";
 console.log(`[stripe] modo detectado: ${stripeKeyMode} (${process.env.STRIPE_SECRET_KEY?.slice(0, 12) ?? "sin key"}…)`);
 if (process.env.NODE_ENV === "production" && stripeKeyMode !== "LIVE") {
-  throw new Error(
-    `[stripe] STRIPE_SECRET_KEY está en modo ${stripeKeyMode} pero NODE_ENV=production — esto es ` +
-    `exactamente lo que causó el incidente donde se crearon pedidos "pagados" sin cobrar nada real. ` +
-    `Corrige la key antes de arrancar.`
-  );
+  // Escape hatch explícito: solo si alguien puso esta variable A PROPÓSITO
+  // (no por accidente, como pasó la vez pasada) se permite arrancar en modo
+  // test en producción — igual queda un warning imposible de ignorar.
+  if (process.env.ALLOW_TEST_STRIPE_IN_PRODUCTION === "true") {
+    console.warn(
+      `⚠️⚠️⚠️ [stripe] ATENCIÓN: corriendo en modo ${stripeKeyMode} con NODE_ENV=production ` +
+      `porque ALLOW_TEST_STRIPE_IN_PRODUCTION=true está puesto a propósito. Cualquier cliente real ` +
+      `que intente pagar en el sitio en vivo va a fallar/crear pedidos sin cobrar — quita esta ` +
+      `variable en cuanto termines de probar. ⚠️⚠️⚠️`
+    );
+  } else {
+    throw new Error(
+      `[stripe] STRIPE_SECRET_KEY está en modo ${stripeKeyMode} pero NODE_ENV=production — esto es ` +
+      `exactamente lo que causó el incidente donde se crearon pedidos "pagados" sin cobrar nada real. ` +
+      `Corrige la key, o si es a propósito pon ALLOW_TEST_STRIPE_IN_PRODUCTION=true.`
+    );
+  }
 }
 
 const DEFAULT_TIERS: DeliveryTier[] = [
