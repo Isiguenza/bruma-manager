@@ -86,6 +86,17 @@ export async function refundStripePayment(paymentIntentId: string) {
   return stripe.refunds.create({ payment_intent: paymentIntentId });
 }
 
+/** Captura (cobra de verdad) una autorización pendiente. Reusable desde otras rutas. */
+export async function captureStripePayment(paymentIntentId: string) {
+  return stripe.paymentIntents.capture(paymentIntentId);
+}
+
+/** Cancela una autorización que nunca se capturó — libera el hold sin cobrar
+ * ni reembolsar nada (no hubo cargo real). Reusable desde otras rutas. */
+export async function cancelStripePaymentIntent(paymentIntentId: string) {
+  return stripe.paymentIntents.cancel(paymentIntentId);
+}
+
 async function getSettings() {
   const s: any = await db.query.restaurantSettings.findFirst();
   return {
@@ -290,10 +301,16 @@ router.post("/public/online-orders/intent", async (req: Request, res: Response) 
     }
 
     // PaymentIntent (MXN, en centavos). metadata.orderId enlaza el webhook.
+    // capture_method:"manual" → esto solo AUTORIZA la tarjeta (hold), no cobra
+    // todavía. El cobro real se dispara después, cuando el POS marca el pedido
+    // "ready" (recoger: al estar listo; domicilio: antes de marcarlo enviado)
+    // — así, si el pedido se rechaza antes de eso, basta con liberar el hold
+    // sin necesidad de emitir un reembolso (nunca se cobró nada).
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(total * 100),
       currency: "mxn",
       automatic_payment_methods: { enabled: true },
+      capture_method: "manual",
       ...(stripeCustomerId ? { customer: stripeCustomerId } : {}),
       metadata: { orderId: order.id },
       description: `Pedido #${order.orderNumber} — ${customerName}`,
@@ -464,13 +481,16 @@ router.get("/public/profile/orders", async (req, res) => {
       await db
         .update(schema.orders)
         .set({ clerkUserId })
-        .where(sql`${schema.orders.customerEmail} = ${email} AND ${schema.orders.clerkUserId} IS NULL AND ${schema.orders.paymentStatus} = 'paid'`);
+        .where(sql`${schema.orders.customerEmail} = ${email} AND ${schema.orders.clerkUserId} IS NULL AND ${schema.orders.paymentStatus} IN ('authorized', 'paid')`);
 
-      // Solo pedidos pagados — un carrito abandonado no debe aparecer como
-      // "pedido" en el historial, aunque haya quedado ligado por clerkUserId.
+      // Pedidos con pago autorizado o ya capturado — un carrito abandonado
+      // (nunca autorizado) no debe aparecer como "pedido" en el historial,
+      // aunque haya quedado ligado por clerkUserId. Incluye "authorized" para
+      // que el cliente vea su pedido en curso aunque el cobro real (captura)
+      // todavía no haya pasado al marcarse "ready".
       const ordersList = await db.query.orders.findMany({
         where: and(
-          eq(schema.orders.paymentStatus, "paid"),
+          sql`${schema.orders.paymentStatus} IN ('authorized', 'paid')`,
           or(eq(schema.orders.clerkUserId, clerkUserId), eq(schema.orders.customerEmail, email))
         ),
         with: { items: true },
@@ -495,8 +515,11 @@ router.post("/orders/:id/accept-online", async (req, res) => {
     const { estimatedReadyMinutes } = req.body;
     const order = await db.query.orders.findFirst({ where: eq(schema.orders.id, id) });
     if (!order) return res.status(404).json({ error: "Orden no encontrada" });
-    if (order.paymentStatus !== "paid") {
-      return res.status(400).json({ error: "El pedido aún no está pagado" });
+    // Con captura manual, al aceptar el pedido normalmente está "authorized"
+    // (tarjeta retenida, aún no cobrada) — el cobro real pasa después, al
+    // marcar "ready". También se acepta "paid" por si ya se capturó.
+    if (order.paymentStatus !== "authorized" && order.paymentStatus !== "paid") {
+      return res.status(400).json({ error: "El pedido aún no tiene un pago autorizado" });
     }
     const minutes = Number.isFinite(estimatedReadyMinutes) ? Math.round(estimatedReadyMinutes) : null;
     const [updated] = await db
@@ -523,7 +546,12 @@ router.post("/orders/:id/accept-online", async (req, res) => {
   }
 });
 
-// POS: rechazar pedido online → reembolso Stripe + cancelado.
+// POS: rechazar pedido online.
+// Con captura manual, la mayoría de los rechazos pasan ANTES de cobrar nada
+// (paymentStatus="authorized") — ahí solo se libera el hold de la tarjeta
+// (cancel), nunca se cobró así que no hay nada que reembolsar. Si por algún
+// motivo el pedido ya se había capturado ("paid"), sí se emite un reembolso
+// real. En cualquier otro caso no hay nada que hacer en Stripe.
 router.post("/orders/:id/reject-online", async (req, res) => {
   try {
     const { id } = req.params;
@@ -531,15 +559,38 @@ router.post("/orders/:id/reject-online", async (req, res) => {
     const order = await db.query.orders.findFirst({ where: eq(schema.orders.id, id) });
     if (!order) return res.status(404).json({ error: "Orden no encontrada" });
 
-    if (order.stripePaymentIntentId && order.paymentStatus === "paid") {
-      await stripe.refunds.create({ payment_intent: order.stripePaymentIntentId });
+    let newPaymentStatus: string = order.paymentStatus;
+    let message = "Pedido rechazado.";
+
+    try {
+      if (order.stripePaymentIntentId && order.paymentStatus === "authorized") {
+        await stripe.paymentIntents.cancel(order.stripePaymentIntentId);
+        newPaymentStatus = "canceled";
+        message = "Pedido rechazado. No se cobró nada al cliente — solo se liberó la retención de su tarjeta.";
+      } else if (order.stripePaymentIntentId && order.paymentStatus === "paid") {
+        await stripe.refunds.create({ payment_intent: order.stripePaymentIntentId });
+        newPaymentStatus = "refunded";
+        message = "Pedido rechazado y reembolsado. El monto cobrado se devolverá al cliente en 5–10 días hábiles.";
+      } else {
+        message = "Pedido rechazado. No se había realizado ningún cobro.";
+      }
+    } catch (stripeError: any) {
+      console.error("[reject-online] error de Stripe al rechazar:", stripeError);
+      return res.status(502).json({
+        error:
+          order.paymentStatus === "paid"
+            ? "No se pudo procesar el reembolso en Stripe. Intenta de nuevo o contacta soporte."
+            : "No se pudo liberar la retención de la tarjeta en Stripe. Intenta de nuevo.",
+        code: "STRIPE_ERROR",
+        detail: stripeError?.message,
+      });
     }
 
     const [updated] = await db
       .update(schema.orders)
       .set({
         status: "cancelled",
-        paymentStatus: "refunded",
+        paymentStatus: newPaymentStatus as any,
         notes: reason ? `Rechazado: ${reason}` : order.notes,
         updatedAt: new Date(),
       })
@@ -547,7 +598,7 @@ router.post("/orders/:id/reject-online", async (req, res) => {
       .returning();
     emitOrderUpdated({ ...updated, rejected: true });
     notifyOrderCancelled(updated).catch(() => {});
-    res.json({ success: true });
+    res.json({ success: true, message, paymentStatus: newPaymentStatus });
   } catch (error) {
     console.error("[reject-online] error:", error);
     res.status(500).json({ error: "Error al rechazar" });
@@ -569,7 +620,37 @@ export async function stripeWebhookHandler(req: Request, res: Response) {
     return res.status(400).send(`Webhook Error`);
   }
 
-  if (event.type === "payment_intent.succeeded") {
+  if (event.type === "payment_intent.amount_capturable_updated") {
+    // Con captura manual, ESTE es el evento equivalente al "succeeded" de
+    // antes: la tarjeta quedó autorizada (retenida) con éxito — todavía no se
+    // cobró nada. Aquí es cuando el pedido debe caer a la PANTALLA VERDE del
+    // POS (aceptar/rechazar). El cobro real ocurre después, al marcar "ready".
+    const pi = event.data.object as Stripe.PaymentIntent;
+    const orderId = pi.metadata?.orderId;
+    if (orderId) {
+      const [authorized] = await db
+        .update(schema.orders)
+        .set({
+          paymentStatus: "authorized",
+          updatedAt: new Date(),
+        } as any)
+        .where(and(eq(schema.orders.id, orderId), eq(schema.orders.paymentStatus, "pending")))
+        .returning();
+      if (authorized) {
+        const complete = await db.query.orders.findFirst({
+          where: eq(schema.orders.id, orderId),
+          with: { items: true },
+        });
+        emitOnlineOrder(complete);
+        notifyOrderReceived(authorized).catch(() => {});
+      }
+    }
+  } else if (event.type === "payment_intent.succeeded") {
+    // Con captura manual, esto ya NO dispara al pagar en el checkout — dispara
+    // hasta que el POS realmente captura el cobro (ver PATCH /orders/:id/status
+    // en orders.ts, al marcar "ready"). Es decir: aquí es cuando el dinero de
+    // verdad se cobra. La orden ya está en cocina desde accept-online; esto
+    // solo formaliza el pago para el corte de caja.
     const pi = event.data.object as Stripe.PaymentIntent;
     const orderId = pi.metadata?.orderId;
     if (orderId) {
@@ -587,21 +668,18 @@ export async function stripeWebhookHandler(req: Request, res: Response) {
         } as any)
         .where(eq(schema.orders.id, orderId))
         .returning();
-      const complete = await db.query.orders.findFirst({
-        where: eq(schema.orders.id, orderId),
-        with: { items: true },
-      });
-      // Solo cae a la PANTALLA VERDE del POS (aceptar/rechazar). NO va a cocina
-      // todavía — eso pasa al aceptar (accept-online).
-      emitOnlineOrder(complete);
-      if (paid) notifyOrderReceived(paid).catch(() => {});
+      if (paid) {
+        const complete = await db.query.orders.findFirst({
+          where: eq(schema.orders.id, orderId),
+          with: { items: true },
+        });
+        emitOrderUpdated(complete);
+      }
     }
-  } else if (event.type === "payment_intent.payment_failed" || event.type === "payment_intent.canceled") {
-    // El pago nunca se completó (tarjeta rechazada, PaymentIntent abandonado,
-    // etc.) — la orden ya existe como "pending" desde /intent; márcala como
-    // fallida y cancelada explícitamente en vez de dejarla en un limbo
-    // "pending" para siempre. El guard de paymentStatus="pending" evita
-    // pisar una orden que ya se marcó pagada por otro evento.
+  } else if (event.type === "payment_intent.payment_failed") {
+    // La autorización nunca se completó (tarjeta rechazada, etc.) — la orden
+    // ya existe como "pending" desde /intent; márcala como fallida y
+    // cancelada en vez de dejarla en un limbo "pending" para siempre.
     const pi = event.data.object as Stripe.PaymentIntent;
     const orderId = pi.metadata?.orderId;
     if (orderId) {
@@ -613,6 +691,31 @@ export async function stripeWebhookHandler(req: Request, res: Response) {
           updatedAt: new Date(),
         })
         .where(and(eq(schema.orders.id, orderId), eq(schema.orders.paymentStatus, "pending")));
+    }
+  } else if (event.type === "payment_intent.canceled") {
+    // Puede llegar por dos caminos: (1) Stripe cancela solo una autorización
+    // que nunca se resolvió, o (2) NOSOTROS cancelamos explícitamente al
+    // rechazar un pedido desde el POS (reject-online) — en ese caso la BD ya
+    // se actualizó ahí mismo de forma síncrona, este evento solo llega después
+    // y no debe pisar nada más reciente. El guard cubre "pending" (autorización
+    // abandonada) y "authorized" (por si este evento gana la carrera al update
+    // síncrono de reject-online — deja el mismo resultado final).
+    const pi = event.data.object as Stripe.PaymentIntent;
+    const orderId = pi.metadata?.orderId;
+    if (orderId) {
+      await db
+        .update(schema.orders)
+        .set({
+          paymentStatus: "canceled",
+          status: "cancelled",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.orders.id, orderId),
+            sql`${schema.orders.paymentStatus} IN ('pending', 'authorized')`
+          )
+        );
     }
   }
 

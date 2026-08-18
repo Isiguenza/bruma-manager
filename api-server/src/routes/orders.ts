@@ -14,7 +14,7 @@ import {
 import { sendAppleWalletPush } from "../lib/apple-push";
 import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
 import { unmergeByOrderId, unmergeByTableId, hasOtherUnpaidOrdersAtTable } from "../lib/tableMerges";
-import { refundStripePayment } from "./online-orders";
+import { refundStripePayment, captureStripePayment, cancelStripePaymentIntent } from "./online-orders";
 import { notifyOrderReady, notifyOrderOutForDelivery } from "../lib/whatsapp";
 
 const router = Router();
@@ -33,8 +33,12 @@ router.get("/orders", async (req, res) => {
       // no se haya confirmado como exitoso (Stripe falló, se quedó a medias,
       // o nunca se completó) — si no, quedan visibles en el POS como si
       // fueran una orden real en curso aunque nadie haya cobrado nada.
+      // "authorized" cuenta como confirmado: con captura manual, la tarjeta
+      // ya quedó retenida con éxito (el cobro real llega después, al marcar
+      // "ready") — un pedido aceptado y en cocina debe seguir visible aunque
+      // todavía no se le haya hecho el cargo final.
       whereConditions.push(
-        sql`(${schema.orders.source} != 'web' OR ${schema.orders.source} IS NULL OR ${schema.orders.paymentStatus} = 'paid')`
+        sql`(${schema.orders.source} != 'web' OR ${schema.orders.source} IS NULL OR ${schema.orders.paymentStatus} IN ('authorized', 'paid'))`
       );
     }
 
@@ -451,6 +455,40 @@ router.patch("/orders/:id/status", async (req, res) => {
       return res.status(400).json({ error: "status es requerido" });
     }
 
+    const existingOrder = await db.query.orders.findFirst({ where: eq(schema.orders.id, id) });
+    if (!existingOrder) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
+
+    // Pedidos web con captura manual: el cobro real se hace justo aquí, al
+    // marcar "ready" — para recoger es cuando ya está listo, para domicilio
+    // es antes de marcarlo "delivered" (enviado), que llega en un paso
+    // aparte más adelante. Si Stripe rechaza la captura (la tarjeta ya no
+    // pasa, la autorización expiró, etc.) NO se marca "ready" — el staff
+    // necesita saberlo y resolverlo (cobro alterno en persona) en vez de que
+    // la cocina entregue algo que nunca se llegó a cobrar de verdad.
+    if (
+      status === "ready" &&
+      existingOrder.source === "web" &&
+      existingOrder.paymentStatus === "authorized" &&
+      existingOrder.stripePaymentIntentId
+    ) {
+      try {
+        await captureStripePayment(existingOrder.stripePaymentIntentId);
+      } catch (captureError: any) {
+        console.error("[orders/:id/status] error al capturar el cobro:", captureError);
+        return res.status(402).json({
+          error:
+            "No se pudo cobrar el pedido — la tarjeta del cliente fue rechazada al intentar capturar el pago. El pedido NO se marcó como listo.",
+          code: "CAPTURE_FAILED",
+          detail: captureError?.message,
+        });
+      }
+      // El webhook payment_intent.succeeded marca paymentStatus="paid" (y
+      // engancha la caja abierta) al llegar — no se duplica aquí para evitar
+      // carreras entre este request y el webhook.
+    }
+
     const [updatedOrder] = await db
       .update(schema.orders)
       .set({ status })
@@ -507,9 +545,25 @@ router.delete("/orders/:id", async (req, res) => {
       });
     }
 
+    // Pedido con tarjeta retenida pero aún sin cobrar (captura manual): libera
+    // el hold en vez de bloquear — nunca se cobró nada, así que no hace falta
+    // ningún reembolso.
+    if (order.paymentStatus === "authorized" && order.stripePaymentIntentId) {
+      try {
+        await cancelStripePaymentIntent(order.stripePaymentIntentId);
+      } catch (e) {
+        console.error("[orders/:id DELETE] error al liberar la retención en Stripe:", e);
+        return res.status(502).json({ error: "No se pudo liberar la retención de la tarjeta en Stripe" });
+      }
+    }
+
     const [cancelledOrder] = await db
       .update(schema.orders)
-      .set({ status: "cancelled", updatedAt: new Date() })
+      .set({
+        status: "cancelled",
+        ...(order.paymentStatus === "authorized" ? { paymentStatus: "canceled" as any } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(schema.orders.id, id))
       .returning();
 
@@ -580,23 +634,41 @@ router.post("/orders/:id/refund", async (req, res) => {
     if (!order) {
       return res.status(404).json({ error: "Orden no encontrada" });
     }
-    if (order.paymentStatus !== "paid") {
-      return res.status(400).json({ error: "Solo se pueden reembolsar órdenes pagadas" });
+    // Con captura manual, un pedido puede llegar aquí como "authorized"
+    // (tarjeta retenida, nunca cobrada) — ahí no hace falta reembolso, solo
+    // liberar el hold. Solo "paid" (ya capturado) necesita un reembolso real.
+    if (order.paymentStatus !== "paid" && order.paymentStatus !== "authorized") {
+      return res.status(400).json({ error: "Solo se pueden reembolsar órdenes pagadas o con pago autorizado" });
     }
 
-    // Pedido online (Stripe): devolver el dinero por Stripe antes de marcar refunded.
+    const isAuthorizedOnly = order.paymentStatus === "authorized";
+
+    // Pedido online (Stripe): devolver el dinero (si ya se cobró) o liberar la
+    // retención (si solo estaba autorizado) antes de actualizar la orden.
     if (order.paymentMethod === "online" && order.stripePaymentIntentId) {
       try {
-        await refundStripePayment(order.stripePaymentIntentId);
+        if (isAuthorizedOnly) {
+          await cancelStripePaymentIntent(order.stripePaymentIntentId);
+        } else {
+          await refundStripePayment(order.stripePaymentIntentId);
+        }
       } catch (e) {
-        console.error("[refund] Stripe refund falló:", e);
-        return res.status(502).json({ error: "No se pudo emitir el reembolso en Stripe" });
+        console.error("[refund] Stripe falló:", e);
+        return res.status(502).json({
+          error: isAuthorizedOnly
+            ? "No se pudo liberar la retención de la tarjeta en Stripe"
+            : "No se pudo emitir el reembolso en Stripe",
+        });
       }
     }
 
     const [refundedOrder] = await db
       .update(schema.orders)
-      .set({ paymentStatus: "refunded", status: "cancelled", updatedAt: new Date() })
+      .set({
+        paymentStatus: (isAuthorizedOnly ? "canceled" : "refunded") as any,
+        status: "cancelled",
+        updatedAt: new Date(),
+      })
       .where(eq(schema.orders.id, id))
       .returning();
 
@@ -632,7 +704,13 @@ router.post("/orders/:id/refund", async (req, res) => {
     await unmergeByOrderId(id);
 
     emitOrderUpdated({ ...refundedOrder, refunded: true });
-    res.json({ success: true, message: "Orden reembolsada", order: refundedOrder });
+    res.json({
+      success: true,
+      message: isAuthorizedOnly
+        ? "Orden cancelada. No se cobró nada al cliente — solo se liberó la retención de su tarjeta."
+        : "Orden reembolsada. El monto cobrado se devolverá al cliente en 5–10 días hábiles.",
+      order: refundedOrder,
+    });
   } catch (error) {
     console.error("Error refunding order:", error);
     res.status(500).json({ error: "Error al reembolsar orden" });
