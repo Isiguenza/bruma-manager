@@ -14,7 +14,44 @@ class TablesViewModel: ObservableObject {
     // Guest count for the table
     @Published var guestCount: Int = 2
     @Published var showGuestCountDialog: Bool = false
-    
+
+    // Poll de respaldo (mismo patrón que Bruma POS: el socket es la vía
+    // principal, esto es solo red de seguridad si se cae momentáneamente).
+    private var backupPollTimer: Timer?
+
+    func startBackupPolling() {
+        stopBackupPolling()
+        backupPollTimer = Timer.scheduledTimer(withTimeInterval: 50, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.fetchTables()
+                await self?.fetchDeliveryOrders()
+            }
+        }
+    }
+
+    func stopBackupPolling() {
+        backupPollTimer?.invalidate()
+        backupPollTimer = nil
+    }
+
+    /// Refresca una sola mesa desde el servidor (llamado desde el socket) —
+    /// autoritativo: reemplaza la mesa completa en vez de parchar campos
+    /// sueltos, así nunca queda una mesa a medias entre dos formas de leerla.
+    func refreshTable(tableId: String) async {
+        guard let index = tables.firstIndex(where: { $0.id == tableId }) else {
+            // Mesa nueva que no teníamos en la lista (p.ej. layout cambió) —
+            // mejor refrescar todo en vez de insertarla a ciegas.
+            await fetchTables()
+            return
+        }
+        do {
+            let updated = try await APIService.shared.fetchTableDetail(tableId: tableId)
+            tables[index] = updated
+        } catch {
+            print("Error refreshing table:", error)
+        }
+    }
+
     func fetchTables() async {
         loading = true
         do {

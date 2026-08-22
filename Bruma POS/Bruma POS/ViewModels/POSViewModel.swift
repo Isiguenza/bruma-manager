@@ -742,7 +742,15 @@ class POSViewModel: ObservableObject {
                             self.tables[index] = table
                             print("🪑 [Socket] Updated table #\(table.number) activeOrder.status to \(status)")
                         } else {
-                            print("⚠️ [Socket] table.activeOrder is nil")
+                            // La mesa se ve libre localmente (activeOrder nil)
+                            // pero acaba de llegar una orden para ella — pasa
+                            // sobre todo con órdenes NUEVAS creadas desde otro
+                            // dispositivo (p.ej. Waitress). Sin este refetch,
+                            // la mesa se queda viendose libre en el plano
+                            // hasta el siguiente poll de respaldo (60s) y el
+                            // staff termina recapturando todo a mano.
+                            print("⚠️ [Socket] table.activeOrder era nil — refrescando mesa \(tableId) del servidor")
+                            await self.refreshTable(tableId: tableId)
                         }
                     } else {
                         print("⚠️ [Socket] Table not found for tableId=\(tableId)")
@@ -750,7 +758,7 @@ class POSViewModel: ObservableObject {
                 } else {
                     print("⚠️ [Socket] Missing tableId or status in dict")
                 }
-                
+
                 await self?.refreshOrderFromSocket()
                 await self?.refreshReadyItemsAndDelivery()
             }

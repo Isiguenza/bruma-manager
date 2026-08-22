@@ -34,7 +34,34 @@ struct CartView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
                 .padding(.bottom, 8)
-                
+
+                // Aviso no bloqueante (p.ej. la mesa no se pudo marcar como
+                // ocupada) — la orden ya se mandó bien, solo avisa que algo
+                // más pudo haber fallado.
+                if let warning = cartVM.nonBlockingWarning {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                        Text(warning)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                        Spacer()
+                        Button {
+                            cartVM.nonBlockingWarning = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption2.weight(.bold))
+                                .foregroundColor(.orange.opacity(0.7))
+                        }
+                    }
+                    .padding(10)
+                    .background(Color.orange.opacity(0.12))
+                    .cornerRadius(10)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+                }
+
                 // Seat selector
                 SeatPicker(
                     seats: cartVM.seatLabels,

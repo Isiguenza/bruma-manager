@@ -66,10 +66,15 @@ class APIService {
         return try JSONDecoder().decode(Table.self, from: data)
     }
     
+    // El backend solo registra PATCH /api/tables/:id (nunca PUT) — mandar PUT
+    // aquí hacía 404 en silencio (esta llamada se envolvía en `try?` desde
+    // CartViewModel) y por eso la mesa nunca se marcaba "occupied" cuando se
+    // comandaba desde esta app: el POS decide si una mesa se ve libre/ocupada
+    // leyendo justo esta columna `status`, no si existe una orden.
     func updateTableStatus(tableId: String, table: Table, status: String) async throws {
         let url = URL(string: "\(baseURL)/api/tables/\(tableId)")!
         var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
+        request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "id": table.id,
@@ -78,20 +83,20 @@ class APIService {
             "status": status,
             "active": table.active,
         ] as [String: Any])
-        
+
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw APIError.serverError
         }
     }
-    
+
     func updateTable(tableId: String, body: [String: Any]) async throws -> Table {
         let url = URL(string: "\(baseURL)/api/tables/\(tableId)")!
         var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
+        request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw APIError.serverError
@@ -206,7 +211,24 @@ class APIService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["items": items])
-        
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 || http.statusCode == 201 else {
+            throw APIError.serverError
+        }
+    }
+
+    // POST /api/orders/:id/items solo resetea status a "preparing" si el
+    // estado previo era "ready" — al agregar items a una orden que ya estaba
+    // "preparing"/otro estado, hace falta este llamado explícito (igual que
+    // hace Bruma POS) para forzar el estado y disparar los eventos de socket
+    // que otros clientes usan para refrescarse.
+    func sendToKitchen(orderId: String) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/send-to-kitchen")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 || http.statusCode == 201 else {
             throw APIError.serverError

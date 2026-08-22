@@ -16,6 +16,7 @@ import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
 import { unmergeByOrderId, unmergeByTableId, hasOtherUnpaidOrdersAtTable } from "../lib/tableMerges";
 import { refundStripePayment, captureStripePayment, cancelStripePaymentIntent } from "./online-orders";
 import { notifyOrderReady, notifyOrderOutForDelivery } from "../lib/whatsapp";
+import { printKitchenComanda } from "../lib/kitchenPrint";
 
 const router = Router();
 
@@ -296,6 +297,7 @@ router.post("/orders", async (req, res) => {
     });
 
     // Update table status if dine-in
+    let tableNumber: string | null = null;
     if (tableId) {
       await db
         .update(schema.tables)
@@ -306,12 +308,39 @@ router.post("/orders", async (req, res) => {
         where: eq(schema.tables.id, tableId),
       });
       if (updatedTable) {
+        tableNumber = updatedTable.number;
         emitTableUpdated(updatedTable);
       }
     }
 
     emitOrderNew(completeOrder);
     res.json(completeOrder);
+
+    // Imprimir la comanda DESPUÉS de responder — el pedido ya quedó guardado
+    // bien independientemente de que esto tenga éxito o no (con reintentos,
+    // ver lib/kitchenPrint.ts). Solo para órdenes que van directo a cocina
+    // (status "preparing" con items) — drafts/split-tickets no imprimen aquí.
+    if (status === "preparing" && items && items.length > 0 && completeOrder) {
+      printKitchenComanda({
+        orderNumber: completeOrder.orderNumber,
+        tableNumber,
+        customerName: customerName || null,
+        guestCount: req.body.guestCount || null,
+        isDelivery: !tableId,
+        items: items.map((item: any) => ({
+          productId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity,
+          seat: item.seat,
+          course: item.course,
+          notes: item.notes,
+          frostingName: item.frostingName,
+          dryToppingName: item.dryToppingName,
+          extraName: item.extraName,
+          customModifiers: item.customModifiers,
+        })),
+      }).catch((e) => console.error("[kitchenPrint] error imprimiendo orden nueva:", e));
+    }
   } catch (error) {
     console.error("🛎️ [POST /api/orders] ERROR:", error);
     console.error("🛎️ [POST /api/orders] ERROR stack:", (error as Error).stack);
@@ -408,6 +437,33 @@ router.post("/orders/:id/items", async (req, res) => {
 
     emitOrderUpdated(updatedOrder);
     res.json(updatedOrder);
+
+    // Imprimir SOLO los items recién agregados (no toda la orden de nuevo) —
+    // después de responder, con reintentos server-side (ver lib/kitchenPrint.ts).
+    let tableNumber: string | null = null;
+    if (order.tableId) {
+      const table = await db.query.tables.findFirst({ where: eq(schema.tables.id, order.tableId) });
+      tableNumber = table?.number ?? null;
+    }
+    printKitchenComanda({
+      orderNumber: order.orderNumber,
+      tableNumber,
+      customerName: order.customerName,
+      guestCount: order.guestCount,
+      isDelivery: !order.tableId,
+      items: items.map((item: any) => ({
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        seat: item.seat,
+        course: item.course,
+        notes: item.notes,
+        frostingName: item.frostingName,
+        dryToppingName: item.dryToppingName,
+        extraName: item.extraName,
+        customModifiers: item.customModifiers,
+      })),
+    }).catch((e) => console.error("[kitchenPrint] error imprimiendo items agregados:", e));
   } catch (error) {
     console.error("Error adding items to order:", error);
     res.status(500).json({ error: "Error al agregar items" });
@@ -813,6 +869,62 @@ router.post("/orders/:id/send-to-kitchen", async (req, res) => {
   } catch (error) {
     console.error("Error sending to kitchen:", error);
     res.status(500).json({ error: "Error al enviar a cocina" });
+  }
+});
+
+// POST /api/orders/:id/reprint-comanda
+// Reintento manual: por si el print-server/túnel estuvo caído cuando se
+// disparó la impresión automática (al crear la orden / agregar items). No
+// crea ni modifica nada, solo vuelve a mandar TODOS los items activos de la
+// orden a imprimir. A diferencia de la impresión automática, aquí SÍ se
+// espera el resultado — el staff quiere saber al toque si funcionó.
+router.post("/orders/:id/reprint-comanda", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, id),
+      with: { items: true },
+    });
+    if (!order) return res.status(404).json({ error: "Orden no encontrada" });
+
+    const activeItems = (order.items || []).filter((i: any) => !i.voided && !i.isGuest);
+    if (activeItems.length === 0) {
+      return res.status(400).json({ error: "La orden no tiene items para imprimir" });
+    }
+
+    let tableNumber: string | null = null;
+    if (order.tableId) {
+      const table = await db.query.tables.findFirst({ where: eq(schema.tables.id, order.tableId) });
+      tableNumber = table?.number ?? null;
+    }
+
+    const success = await printKitchenComanda({
+      orderNumber: order.orderNumber,
+      tableNumber,
+      customerName: order.customerName,
+      guestCount: order.guestCount,
+      isDelivery: !order.tableId,
+      items: activeItems.map((item: any) => ({
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        seat: item.seat,
+        course: item.course,
+        notes: item.notes,
+        frostingName: item.frostingName,
+        dryToppingName: item.dryToppingName,
+        extraName: item.extraName,
+        customModifiers: item.customModifiers,
+      })),
+    });
+
+    if (!success) {
+      return res.status(502).json({ error: "No se pudo imprimir — revisa la impresora/conexión e intenta de nuevo" });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error reimprimiendo comanda:", error);
+    res.status(500).json({ error: "Error al reimprimir" });
   }
 });
 

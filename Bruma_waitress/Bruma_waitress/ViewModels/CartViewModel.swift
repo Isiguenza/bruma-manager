@@ -10,7 +10,14 @@ class CartViewModel: ObservableObject {
     @Published var guestCount: Int = 2
     @Published var sending: Bool = false
     @Published var currentOrderId: String?
+    // Número de orden humano (#47), para imprimir en tickets — nunca el UUID
+    // interno (currentOrderId), que no significa nada para cocina/clientes.
+    @Published var currentOrderNumber: Int?
     @Published var showKitchenConfirmation: Bool = false
+    // Aviso no bloqueante si algo falló silenciosamente antes (p.ej. no se
+    // pudo marcar la mesa como ocupada) — la orden en sí ya se mandó bien,
+    // esto es solo para que el problema no vuelva a pasar inadvertido.
+    @Published var nonBlockingWarning: String?
     
     // Table / Para Llevar context
     var selectedTable: Table?
@@ -115,6 +122,11 @@ class CartViewModel: ObservableObject {
             if let orderId = currentOrderId {
                 // Add to existing order
                 try await APIService.shared.addItemsToOrder(orderId: orderId, items: itemsData)
+                // POST /items solo reactiva "preparing" si el estado previo
+                // era "ready" — este llamado lo fuerza siempre y dispara los
+                // eventos de socket que otros clientes usan para refrescarse
+                // (igual que hace Bruma POS después de addItemsToOrder).
+                try await APIService.shared.sendToKitchen(orderId: orderId)
             } else {
                 // Create new order
                 let order = try await APIService.shared.createOrder(
@@ -124,15 +136,24 @@ class CartViewModel: ObservableObject {
                     guestCount: guestCount
                 )
                 currentOrderId = order.id
+                currentOrderNumber = order.orderNumber
             }
-            
+
             // Mark table as occupied
             if let table = selectedTable {
-                try? await APIService.shared.updateTableStatus(
-                    tableId: table.id,
-                    table: table,
-                    status: "occupied"
-                )
+                do {
+                    try await APIService.shared.updateTableStatus(
+                        tableId: table.id,
+                        table: table,
+                        status: "occupied"
+                    )
+                } catch {
+                    // No perder la orden por esto — ya se creó/actualizó bien
+                    // arriba — pero antes esto fallaba en silencio (try?) y
+                    // dejaba la mesa viendose libre en el POS.
+                    print("⚠️ No se pudo marcar la mesa como ocupada:", error)
+                    nonBlockingWarning = "La orden se envió, pero no se pudo actualizar el estado de la mesa. Avisa si la mesa no aparece ocupada en el POS."
+                }
             }
             
             // Mark items as sent
@@ -192,7 +213,7 @@ class CartViewModel: ObservableObject {
             }
             await APIService.shared.printComanda(
                 tableNumber: selectedTable?.number,
-                orderNumber: currentOrderId?.prefix(8).description ?? "",
+                orderNumber: currentOrderNumber.map { String($0) } ?? "",
                 customerName: selectedTable == nil ? customerName : nil,
                 items: printItems,
                 guestCount: guestCount
@@ -213,20 +234,22 @@ class CartViewModel: ObservableObject {
         activeSeat = "A1"
         activeCourse = 1
         currentOrderId = nil
+        currentOrderNumber = nil
         selectedTable = nil
         customerName = nil
     }
-    
+
     func setupForTable(_ table: Table?, customerName: String?, guestCount: Int) {
         self.selectedTable = table
         self.customerName = customerName
-        
+
         // Default to first seat (A1) instead of "C" (Todos)
         activeSeat = "A1"
-        
+
         // If table has existing order, load its items and guestCount
         if let order = table?.activeOrder {
             currentOrderId = order.id
+            currentOrderNumber = order.orderNumber
             loadOrderItems(order)
             self.guestCount = order.guestCount ?? guestCount
         } else if table == nil, let name = customerName, !name.isEmpty {
@@ -278,6 +301,7 @@ class CartViewModel: ObservableObject {
             // Find first order matching customer name
             if let order = orders.first(where: { $0.customerName == customerName }) {
                 currentOrderId = order.id
+                currentOrderNumber = order.orderNumber
                 loadOrderItems(order)
                 guestCount = order.guestCount ?? 1
             }

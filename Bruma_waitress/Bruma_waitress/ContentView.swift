@@ -4,7 +4,8 @@ struct ContentView: View {
     @StateObject private var authVM = AuthViewModel()
     @StateObject private var tablesVM = TablesViewModel()
     @StateObject private var ordersVM = OrdersViewModel()
-    
+    private let socketService = SocketService.shared
+
     @State private var selectedTab: AppTab = .tables
     @State private var activeTableContext: TableContext?
     
@@ -74,6 +75,51 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear { setupSocketCallbacks() }
+        .onChange(of: authVM.isAuthenticated) { _, isAuthenticated in
+            if isAuthenticated {
+                socketService.connect()
+                tablesVM.startBackupPolling()
+            } else {
+                socketService.disconnect()
+                tablesVM.stopBackupPolling()
+            }
+        }
+    }
+
+    // MARK: - Socket wiring
+
+    /// El socket es la vía principal para refrescar mesas/órdenes en tiempo
+    /// real; el poll de respaldo (tablesVM.startBackupPolling / ordersVM
+    /// startPolling en su propia vista) es solo red de seguridad si se cae.
+    private func setupSocketCallbacks() {
+        socketService.onTableUpdated = { tableId in
+            Task { @MainActor in await tablesVM.refreshTable(tableId: tableId) }
+        }
+        socketService.onTableLayoutUpdated = {
+            Task { @MainActor in await tablesVM.fetchTables() }
+        }
+        socketService.onTableMerged = {
+            Task { @MainActor in await tablesVM.fetchTables() }
+        }
+        socketService.onTableUnmerged = {
+            Task { @MainActor in await tablesVM.fetchTables() }
+        }
+        socketService.onOrderUpdated = { tableId in
+            Task { @MainActor in
+                if let tableId {
+                    await tablesVM.refreshTable(tableId: tableId)
+                } else {
+                    // Pedido para llevar (sin mesa) — refresca la lista de
+                    // "Para Llevar" en vez de una mesa específica.
+                    await tablesVM.fetchDeliveryOrders()
+                }
+                ordersVM.fetchOrders()
+            }
+        }
+        socketService.onOrderItemsReady = {
+            Task { @MainActor in ordersVM.fetchOrders() }
+        }
     }
     
     // MARK: - Top Bar

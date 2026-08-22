@@ -5,6 +5,7 @@ import { eq, and, or, desc, sql } from "drizzle-orm";
 import { emitOrderNew, emitOnlineOrder, emitOrderUpdated } from "../sockets/events";
 import { haversineMeters, resolveDeliveryFee, type DeliveryTier } from "../lib/distance";
 import { notifyOrderReceived, notifyOrderConfirmed, notifyOrderCancelled } from "../lib/whatsapp";
+import { printKitchenComanda } from "../lib/kitchenPrint";
 
 const router = Router();
 
@@ -540,6 +541,32 @@ router.post("/orders/:id/accept-online", async (req, res) => {
     emitOrderUpdated(complete);
     notifyOrderConfirmed(updated).catch(() => {});
     res.json({ success: true, order: updated });
+
+    // Imprimir la comanda — antes esto solo pasaba si el dispositivo del POS
+    // que aceptó el pedido tenía wifi hasta el print-server en ese momento.
+    if (complete?.items?.length) {
+      printKitchenComanda({
+        orderNumber: complete.orderNumber,
+        tableNumber: null,
+        customerName: complete.customerName,
+        guestCount: 1,
+        isDelivery: complete.deliveryType === "delivery",
+        items: complete.items
+          .filter((i: any) => !i.voided)
+          .map((item: any) => ({
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            seat: item.seat,
+            course: item.course,
+            notes: item.notes,
+            frostingName: item.frostingName,
+            dryToppingName: item.dryToppingName,
+            extraName: item.extraName,
+            customModifiers: item.customModifiers,
+          })),
+      }).catch((e) => console.error("[kitchenPrint] error imprimiendo pedido en línea:", e));
+    }
   } catch (error) {
     console.error("[accept-online] error:", error);
     res.status(500).json({ error: "Error al aceptar" });

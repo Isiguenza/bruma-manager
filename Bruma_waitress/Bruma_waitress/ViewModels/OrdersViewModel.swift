@@ -10,6 +10,8 @@ class OrdersViewModel: ObservableObject {
     
     func startPolling() {
         fetchOrders()
+        // 10s: red de seguridad — el socket (order:updated/order:items_ready)
+        // es la vía principal para que esto se sienta instantáneo.
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.fetchOrders() }
         }
