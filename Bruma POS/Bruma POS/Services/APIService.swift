@@ -284,17 +284,31 @@ class APIService {
         return (json?["etaMinutes"] as? Int) ?? 35
     }
 
-    /// Rechaza un pedido en línea → reembolso automático por Stripe.
-    func rejectOnlineOrder(orderId: String, reason: String) async throws {
+    /// Rechaza un pedido en línea. Con captura manual, la mayoría de los
+    /// rechazos pasan ANTES de cobrar nada (solo se libera la retención de la
+    /// tarjeta) — el backend distingue ese caso de un reembolso real y manda
+    /// el mensaje correcto en `message`; lo regresamos para que el POS no
+    /// muestre "reembolso emitido" cuando en realidad no se cobró nada.
+    @discardableResult
+    func rejectOnlineOrder(orderId: String, reason: String) async throws -> String {
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)/reject-online")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["reason": reason])
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            if let errJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let errMsg = errJson["error"] as? String {
+                throw APIError.badRequest(errMsg)
+            }
             throw APIError.serverError
         }
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let message = json["message"] as? String {
+            return message
+        }
+        return "Pedido rechazado."
     }
 
     /// Reembolsa una orden ya pagada. Requiere PIN de gerente (rol admin).
@@ -532,7 +546,18 @@ class APIService {
             throw APIError.offlineQueued
         }
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)/status")!
-        let (_, _) = try await requestRaw(url, method: "PATCH", body: ["status": status])
+        let (data, http) = try await requestRaw(url, method: "PATCH", body: ["status": status])
+        // Importante: con captura manual de Stripe, marcar "ready" puede fallar
+        // a propósito si la tarjeta del cliente se rechaza al capturar el cobro
+        // (el backend responde 402 y NO cambia el estado) — hay que propagar
+        // ese mensaje en vez de tratarlo como éxito silencioso.
+        guard (200...299).contains(http.statusCode) else {
+            if let errJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let errMsg = errJson["error"] as? String {
+                throw APIError.badRequest(errMsg)
+            }
+            throw APIError.serverError
+        }
     }
     
     func payOrder(orderId: String, body: [String: Any]) async throws {

@@ -154,6 +154,9 @@ class POSViewModel: ObservableObject {
     @Published var activeCourse = 1
     @Published var guestCount = 1
     @Published var currentOrderId: String?
+    // Número de orden humano (#47), para imprimir en tickets — nunca el UUID
+    // interno (currentOrderId), que no significa nada para staff/clientes.
+    @Published var currentOrderNumber: Int?
     @Published var currentOrderPaymentStatus: String?
     // Tickets separados de la mesa actual (de "dividir en tickets separados")
     // — cuando no es nil, la mesa tiene varias órdenes que se cobran cada
@@ -1227,6 +1230,7 @@ class POSViewModel: ObservableObject {
             
             if let mainOrder = activeOrders.first {
                 currentOrderId = mainOrder.id
+                currentOrderNumber = mainOrder.orderNumber
                 var allItems: [CartItem] = []
                 for order in activeOrders {
                     if let items = order.items {
@@ -1624,6 +1628,7 @@ class POSViewModel: ObservableObject {
                 selectedTable = table
                 cart = [] // Clear cart to avoid stale data from previous table
                 currentOrderId = nil
+                currentOrderNumber = nil
                 currentOrderPaymentStatus = nil
                 guestCount = table.guestCount ?? 1
                 activeSeat = guestCount > 0 ? "A1" : "C"
@@ -1647,12 +1652,14 @@ class POSViewModel: ObservableObject {
                     if activeOrders.count > 1, activeOrders.contains(where: { $0.splitGroupId != nil }) {
                         tableTickets = activeOrders.sorted { $0.orderNumber < $1.orderNumber }
                         currentOrderId = nil
+                        currentOrderNumber = nil
                         cart = []
                         guestCount = table.guestCount ?? 1
                         print("🎟️ Mesa con \(activeOrders.count) tickets separados")
                     } else if let mainOrder = activeOrders.first {
                         tableTickets = nil
                         currentOrderId = mainOrder.id
+                        currentOrderNumber = mainOrder.orderNumber
                         print("🎯 currentOrderId establecido: \(mainOrder.id)")
 
                         // Merge items from all active orders
@@ -1698,6 +1705,7 @@ class POSViewModel: ObservableObject {
             // Clear cart and reset state for reserved table
             cart = []
             currentOrderId = nil
+            currentOrderNumber = nil
             activeCourse = 1
             activeSeat = guestCount > 0 ? "A1" : "C"
             
@@ -1717,6 +1725,7 @@ class POSViewModel: ObservableObject {
     /// cobra con el flujo normal de pago de una sola orden.
     func selectSplitTicket(_ order: Order) {
         currentOrderId = order.id
+        currentOrderNumber = order.orderNumber
         currentOrderPaymentStatus = order.paymentStatus
         cart = (order.items ?? [])
             .filter { !($0.voided ?? false) }
@@ -1738,8 +1747,9 @@ class POSViewModel: ObservableObject {
         // Clear cart and reset state for new empty table
         cart = []
         currentOrderId = nil
+        currentOrderNumber = nil
         activeCourse = 1
-        
+
         print("✅ Navegando a POS con selectedTable=\(selectedTable?.id ?? "nil")")
         currentScreen = .pos
         
@@ -1809,6 +1819,7 @@ class POSViewModel: ObservableObject {
                 if let existingOrder = activeOrders.first {
                     print("📦 [handleSelectEmployee] Loaded order: \(existingOrder.id), items: \(existingOrder.items?.count ?? 0)")
                     currentOrderId = existingOrder.id
+                    currentOrderNumber = existingOrder.orderNumber
                     var items: [CartItem] = []
                     if let orderItems = existingOrder.items {
                         for item in orderItems where !(item.voided ?? false) {
@@ -1823,11 +1834,13 @@ class POSViewModel: ObservableObject {
                 } else {
                     print("📦 [handleSelectEmployee] No active order found for employee: \(employee.id)")
                     currentOrderId = nil
+                    currentOrderNumber = nil
                     cart = []
                 }
             } catch {
                 print("❌ [handleSelectEmployee] Error loading employee order: \(error)")
                 currentOrderId = nil
+                currentOrderNumber = nil
                 cart = []
             }
             currentScreen = .pos
@@ -1860,12 +1873,13 @@ class POSViewModel: ObservableObject {
         isEmployeeOrder = false
         cart = []
         currentOrderId = nil
+        currentOrderNumber = nil
         activeCourse = 1
         activeSeat = "C"
         guestCount = 1
         showCustomerNameDialog = true
     }
-    
+
     func handleNewPlatformDeliveryOrder() {
         resetPaymentState()
         isCreatingPlatformDelivery = true
@@ -1877,12 +1891,13 @@ class POSViewModel: ObservableObject {
         selectedTable = nil
         cart = []
         currentOrderId = nil
+        currentOrderNumber = nil
         activeCourse = 1
         activeSeat = "C"
         guestCount = 1
         showCustomerNameDialog = true
     }
-    
+
     func handleConfirmCustomerName() {
         if isPlatformDelivery {
             guard !deliveryPlatform.isEmpty, !platformOrderDigits.isEmpty else {
@@ -1902,11 +1917,12 @@ class POSViewModel: ObservableObject {
         selectedTable = nil
         cart = []
         currentOrderId = nil
+        currentOrderNumber = nil
         activeSeat = "C"
         activeCourse = 1
         currentScreen = .pos
     }
-    
+
     func handleSelectDeliveryOrder(_ order: Order) {
         lastActivity = Date()
         
@@ -1924,6 +1940,7 @@ class POSViewModel: ObservableObject {
         }
         selectedTable = nil
         currentOrderId = order.id
+        currentOrderNumber = order.orderNumber
         currentOrderPaymentStatus = order.paymentStatus
         currentOrderPhone = order.customerPhone
         currentOrderAddress = order.deliveryAddress
@@ -2678,6 +2695,7 @@ class POSViewModel: ObservableObject {
             
             if let mainOrder = activeOrders.first {
                 currentOrderId = mainOrder.id
+                currentOrderNumber = mainOrder.orderNumber
                 // Merge items from all active orders
                 var allItems: [CartItem] = []
                 for order in activeOrders {
@@ -2696,6 +2714,7 @@ class POSViewModel: ObservableObject {
                 // No active orders, clear cart
                 cart = []
                 currentOrderId = nil
+                currentOrderNumber = nil
             }
         } catch {
             print("Error refreshing order: \(error)")
@@ -2767,7 +2786,7 @@ class POSViewModel: ObservableObject {
     private func printOnlineComanda(_ order: Order) async {
         let comandaItems: [[String: Any]] = (order.items ?? []).map { item in
             var dict: [String: Any] = [
-                "name": item.productName,
+                "name": comandaItemName(item.productName),
                 "qty": item.quantity,
                 "seat": item.seat ?? "C",
                 "course": item.course ?? 1,
@@ -2796,7 +2815,7 @@ class POSViewModel: ObservableObject {
 
         await PrintService.shared.printComanda(
             tableNumber: nil,
-            orderNumber: String(order.id.prefix(8)),
+            orderNumber: String(order.orderNumber),
             customerName: order.customerName,
             items: comandaItems,
             isDelivery: order.deliveryType == "delivery",
@@ -2808,10 +2827,14 @@ class POSViewModel: ObservableObject {
         guard let order = incomingOnlineOrder else { return }
         Task {
             do {
-                try await APIService.shared.rejectOnlineOrder(orderId: order.id, reason: reason)
-                showToast("Pedido rechazado — reembolso emitido")
+                // El backend distingue "no se cobró nada" (caso normal, cuando
+                // se rechaza antes de capturar el pago) de "se reembolsó" (si
+                // ya se había cobrado) — mostramos exactamente lo que dice.
+                let message = try await APIService.shared.rejectOnlineOrder(orderId: order.id, reason: reason)
+                showToast(message)
             } catch {
-                showToast("Error al rechazar el pedido", isError: true)
+                let message = (error as? APIError)?.errorDescription ?? "Error al rechazar el pedido"
+                showToast(message, isError: true)
             }
             dismissOnlineOrder()
         }
@@ -2888,7 +2911,8 @@ class POSViewModel: ObservableObject {
                     
                     let order = try await APIService.shared.createOrder(body: body)
                     currentOrderId = order.id
-                    
+                    currentOrderNumber = order.orderNumber
+
                     if let table = selectedTable {
                         try? await APIService.shared.updateTableStatus(tableId: table.id, status: "occupied")
                     }
@@ -2940,7 +2964,7 @@ class POSViewModel: ObservableObject {
         var payload: [String: Any] = [
             "mode": mode,
             "customerName": customerName,
-            "orderNumber": currentOrderId.map { String($0.prefix(8)) } ?? "",
+            "orderNumber": currentOrderNumber.map { String($0) } ?? "",
             "orderType": orderTypeLabel,
             "items": items,
             "subtotal": cartTotalWithDiscount,
@@ -3019,12 +3043,23 @@ class POSViewModel: ObservableObject {
         return mods
     }
 
+    /// Solo para la comanda de cocina: invierte "Producto - Variante" a
+    /// "Variante - Producto" (p.ej. "Pescaditos fritos - Orden" → "Orden -
+    /// Pescaditos fritos") — en cocina se lee primero el tamaño/variante, no
+    /// el nombre del platillo. El ticket de cuenta y el pre-ticket NO usan
+    /// esto, mantienen el orden normal "Producto - Variante".
+    private func comandaItemName(_ productName: String) -> String {
+        let components = productName.split(separator: " - ", maxSplits: 1)
+        guard components.count == 2 else { return productName }
+        return "\(components[1]) - \(components[0])"
+    }
+
     private func printComanda(items: [CartItem], orderId: String) async {
         print("🖨️ printComanda called — orderId=\(orderId) items=\(items.count) printServerURL=\(APIService.shared.printServerURL)")
         // Group items for comanda (ad-hoc "cuenta general" charges aren't kitchen items)
         let comandaItems: [[String: Any]] = items.filter { $0.productId != POSConstants.customModifierProductId }.map { item in
             var dict: [String: Any] = [
-                "name": item.productName,
+                "name": comandaItemName(item.productName),
                 "qty": item.quantity,
                 "seat": item.seat,
                 "course": item.course
@@ -3062,7 +3097,7 @@ class POSViewModel: ObservableObject {
         
         await PrintService.shared.printComanda(
             tableNumber: selectedTable?.number,
-            orderNumber: String(orderId.prefix(8)),
+            orderNumber: currentOrderNumber.map { String($0) } ?? String(orderId.prefix(8)),
             customerName: customerName.isEmpty ? nil : customerName,
             items: comandaItems,
             isDelivery: selectedTable == nil,
@@ -3134,7 +3169,8 @@ class POSViewModel: ObservableObject {
                 
                 let order = try await APIService.shared.createOrder(body: body)
                 currentOrderId = order.id
-                
+                currentOrderNumber = order.orderNumber
+
                 if let table = selectedTable {
                     try? await APIService.shared.updateTableStatus(tableId: table.id, status: "occupied")
                 }
@@ -3341,15 +3377,30 @@ class POSViewModel: ObservableObject {
 
     /// Marca el pedido web actual como "ready" o "delivered" (en camino). El
     /// api-server manda el WhatsApp correspondiente al recibir el cambio.
+    ///
+    /// Con captura manual de Stripe, "ready" es el momento en que el backend
+    /// cobra la tarjeta de verdad (recoger: ya está listo; domicilio: antes
+    /// de "en camino") — justo ahí se imprime el mismo ticket de pago que se
+    /// imprime al completar el pago de una orden normal. Si el backend
+    /// rechaza la captura (tarjeta declinada, autorización expirada, etc.)
+    /// responde con error y el pedido NO se marca listo — no hay que tratar
+    /// eso como éxito.
     func handleMarkWebOrderStatus(_ status: String) {
         guard let orderId = currentOrderId else { return }
         Task {
             do {
                 try await APIService.shared.updateOrderStatus(orderId: orderId, status: status)
                 currentOrderStatus = status
-                showToast(status == "ready" ? "Pedido marcado como listo" : "Pedido marcado en camino")
+                if status == "ready" {
+                    currentOrderPaymentStatus = "paid"
+                    await handlePrint(paymentMethod: "online")
+                    showToast("Pedido marcado como listo — cobro capturado")
+                } else {
+                    showToast("Pedido marcado en camino")
+                }
             } catch {
-                showToast("Error al actualizar el pedido", isError: true)
+                let message = (error as? APIError)?.errorDescription ?? "Error al actualizar el pedido"
+                showToast(message, isError: true)
             }
         }
     }
@@ -3365,6 +3416,7 @@ class POSViewModel: ObservableObject {
                 showToast("Orden finalizada")
                 cart = []
                 currentOrderId = nil
+                currentOrderNumber = nil
                 currentOrderPaymentStatus = nil
                 selectedTable = nil
                 currentScreen = .tableSelection
@@ -3451,7 +3503,7 @@ class POSViewModel: ObservableObject {
 
         await PrintService.shared.printTicket(
             customerName: customerName,
-            orderNumber: String((sentItems.first?.orderId ?? "N/A").prefix(8)),
+            orderNumber: currentOrderNumber.map { String($0) } ?? String((sentItems.first?.orderId ?? "N/A").prefix(8)),
             items: itemsBySeat,
             subtotal: Int(subtotal),
             tip: Int(tipPlusDelivery),
@@ -3463,10 +3515,12 @@ class POSViewModel: ObservableObject {
             tipPaymentMethod: tipPaymentMethod,
             splitPayments: nil,
             deliveryFee: Int(deliveryFeeAmount),
-            openDrawer: openDrawer
+            openDrawer: openDrawer,
+            customerPhone: currentOrderPhone,
+            deliveryAddress: currentOrderAddress
         )
     }
-    
+
     func handlePrintPreTicket() async {
         // Imprimir todos los items del carrito (incluso los no enviados a cocina)
         guard !cart.isEmpty else { return }
@@ -3506,10 +3560,12 @@ class POSViewModel: ObservableObject {
             isDelivery: selectedTable == nil,
             discount: nil,
             paymentMethod: nil,
-            deliveryFee: Int(deliveryFeeAmount)
+            deliveryFee: Int(deliveryFeeAmount),
+            customerPhone: currentOrderPhone,
+            deliveryAddress: currentOrderAddress
         )
     }
-    
+
     func handlePrintPreTicketPDF() async {
         // Generar PDF y compartir
         guard !cart.isEmpty else { return }
@@ -3722,7 +3778,28 @@ class POSViewModel: ObservableObject {
                 yPosition += 18
             }
             yPosition += 7
-            
+
+            // Datos de contacto (pedidos en línea) — nombre, teléfono y, si es
+            // a domicilio, la dirección de entrega, hasta el fondo del ticket.
+            if currentOrderPhone != nil || currentOrderAddress != nil {
+                let contactAttributes: [NSAttributedString.Key: Any] = [.font: bodyFont]
+                if !customerName.isEmpty {
+                    "Cliente: \(customerName)".draw(at: CGPoint(x: margin, y: yPosition), withAttributes: contactAttributes)
+                    yPosition += 16
+                }
+                if let phone = currentOrderPhone {
+                    "Tel: \(phone)".draw(at: CGPoint(x: margin, y: yPosition), withAttributes: contactAttributes)
+                    yPosition += 16
+                }
+                if let address = currentOrderAddress {
+                    let addressText = "Dirección: \(address)"
+                    let addressRect = CGRect(x: margin, y: yPosition, width: pageWidth - margin * 2, height: 40)
+                    addressText.draw(in: addressRect, withAttributes: contactAttributes)
+                    yPosition += 32
+                }
+                yPosition += 6
+            }
+
             // Footer
             let footerAttributes: [NSAttributedString.Key: Any] = [.font: smallFont, .foregroundColor: UIColor.gray]
             let footer = "Este es un pre-ticket."
@@ -3771,7 +3848,7 @@ class POSViewModel: ObservableObject {
 
         await PrintService.shared.printSeatBill(
             tableNumber: selectedTable?.number,
-            orderNumber: currentOrderId?.prefix(8).description ?? "",
+            orderNumber: currentOrderNumber.map { String($0) } ?? "",
             seatLabel: "Asiento \(seatIndex + 1)",
             items: ticketItems,
             subtotal: subtotal,
@@ -3800,6 +3877,7 @@ class POSViewModel: ObservableObject {
         paymentMethod = "cash"
         cashReceived = ""
         currentOrderId = nil
+        currentOrderNumber = nil
         currentOrderPaymentStatus = nil
         paymentCompleted = false
         selectedTable = nil
@@ -3964,6 +4042,7 @@ class POSViewModel: ObservableObject {
                 activeSeat = "C"
                 customerName = ""
                 currentOrderId = nil
+                currentOrderNumber = nil
                 guestCount = 1
                 
                 // 4. Recargar mesas
@@ -4145,7 +4224,7 @@ class POSViewModel: ObservableObject {
                 
                 await PrintService.shared.printGuestTicket(
                     items: guestProductCart.map { ["name": $0.name, "qty": $0.qty] },
-                    orderNumber: String(order.id.prefix(8))
+                    orderNumber: String(order.orderNumber)
                 )
                 
                 showToast("Cortesía registrada (\(guestProductCart.count) productos)")

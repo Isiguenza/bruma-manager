@@ -60,6 +60,10 @@ const commands = {
   feed: ESC + "d" + "\x03",
   feedLine: "\n",
   textSizeNormal: GS + "!" + "\x00",
+  // Solo doble alto (mismo ancho/columnas que normal) — para hacer más
+  // grandes los renglones de producto en la comanda sin romper el cálculo de
+  // columnas de 48 caracteres que sí se usa en otros tickets.
+  textSizeTall: GS + "!" + "\x01",
   textSizeDouble: GS + "!" + "\x11",
   textSizeLarge: GS + "!" + "\x22",
   drawerPulse: ESC + "p" + "\x00" + "\x19" + "\xFA",
@@ -209,18 +213,20 @@ app.post('/open-drawer', async (req, res) => {
 // Endpoint de impresión
 app.post('/print', async (req, res) => {
   try {
-    const { 
-      customerName, 
-      orderNumber, 
-      items, 
-      subtotal, 
-      tip, 
-      total, 
+    const {
+      customerName,
+      orderNumber,
+      items,
+      subtotal,
+      tip,
+      total,
       tableNumber,
       isDelivery,
       paymentMethod,
       discount,
-      openDrawer
+      openDrawer,
+      customerPhone,
+      deliveryAddress
     } = req.body;
 
     let content = "";
@@ -471,6 +477,19 @@ app.post('/print', async (req, res) => {
       }
     }
     
+    // Datos de contacto (pedidos en línea) — nombre, teléfono y, si es a
+    // domicilio, la dirección de entrega, hasta el fondo del ticket.
+    if (customerPhone || deliveryAddress) {
+      content += commands.feedLine;
+      content += "------------------------------------------------\n";
+      content += commands.feedLine;
+      content += commands.alignLeft;
+      if (customerName) content += `Cliente: ${customerName}\n`;
+      if (customerPhone) content += `Tel: ${customerPhone}\n`;
+      if (deliveryAddress) content += `Direccion: ${deliveryAddress}\n`;
+      content += commands.feedLine;
+    }
+
     // Footer
     content += commands.feedLine;
     content += commands.feedLine;
@@ -478,12 +497,12 @@ app.post('/print', async (req, res) => {
     content += commands.feedLine;
     content += commands.alignCenter;
     content += "Gracias por su preferencia\n";
-    
+
     // Espacio final antes de cortar
     content += commands.feedLine;
     content += commands.feedLine;
     content += commands.feedLine;
-    
+
     // Cortar papel
     content += commands.feed;
     content += commands.cut;
@@ -1175,13 +1194,19 @@ app.post('/print-comanda', async (req, res) => {
     // 1. BEBIDAS PRIMERO
     if (beverages.length > 0) {
       content += commands.bold;
+      content += commands.textSizeTall;
       content += "BEBIDAS\n";
+      content += commands.textSizeNormal;
       content += commands.boldOff;
       content += "------------------------------\n";
       
       for (const item of beverages) {
+        content += commands.bold;
+        content += commands.textSizeTall;
         content += `${item.qty}x ${item.name}\n`;
-        
+        content += commands.textSizeNormal;
+        content += commands.boldOff;
+
         // Modifiers for beverages (flowSteps, etc.)
         if (item.flowSteps && item.flowSteps.length > 0) {
           for (const step of item.flowSteps) {
@@ -1228,7 +1253,9 @@ app.post('/print-comanda', async (req, res) => {
         
         // Header de asiento
         content += commands.bold;
+        content += commands.textSizeTall;
         content += seat === 'C' ? 'COMPARTIDO\n' : `ASIENTO ${seat}\n`;
+        content += commands.textSizeNormal;
         content += commands.boldOff;
         content += "------------------------------\n";
         
@@ -1255,8 +1282,12 @@ app.post('/print-comanda', async (req, res) => {
           
           // Items
           for (const item of courseItems) {
+            content += commands.bold;
+            content += commands.textSizeTall;
             content += `${item.qty}x ${item.name}\n`;
-            
+            content += commands.textSizeNormal;
+            content += commands.boldOff;
+
             // Modifiers (frosting, topping, extra, flowSteps)
             if (item.frosting) {
               content += commands.bold;

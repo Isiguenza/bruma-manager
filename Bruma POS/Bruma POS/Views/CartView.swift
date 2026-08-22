@@ -520,7 +520,13 @@ struct CartView: View {
 
                 // Morphing button: Kitchen Send / Pay / Marcar listo / Marcar en camino / Finalize
                 let hasUnsentItems = !vm.cart.isEmpty && vm.cart.contains(where: { !$0.sentToKitchen })
-                let isPaidTakeout = vm.selectedTable == nil && vm.currentOrderPaymentStatus == "paid"
+                // "authorized" = pedido web con captura manual de Stripe, ya
+                // aceptado y en cocina, tarjeta retenida pero aún sin cobrar
+                // (el cobro real pasa hasta "Marcar listo") — cuenta igual que
+                // "paid" para efectos de este botón, si no se quedaría
+                // mostrando "Pagar" en vez de avanzar el pedido.
+                let isPaidTakeout = vm.selectedTable == nil
+                    && (vm.currentOrderPaymentStatus == "paid" || vm.currentOrderPaymentStatus == "authorized")
                 let isWebOrder = vm.currentOrderSource == "web"
                 let isDeliveryOrder = vm.currentOrderAddress != nil
                 let webStatus = vm.currentOrderStatus ?? "preparing"

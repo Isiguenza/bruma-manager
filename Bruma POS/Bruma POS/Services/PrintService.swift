@@ -63,7 +63,9 @@ class PrintService {
         tipPaymentMethod: String? = nil,
         splitPayments: [[String: Any]]? = nil,
         deliveryFee: Int = 0,
-        openDrawer: Bool = false
+        openDrawer: Bool = false,
+        customerPhone: String? = nil,
+        deliveryAddress: String? = nil
     ) async {
         guard let url = URL(string: "\(printServerURL)/print") else {
             print("❌ PrintService: invalid print URL: \(printServerURL)")
@@ -73,7 +75,7 @@ class PrintService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 5
-        
+
         var body: [String: Any] = [
             "customerName": customerName,
             "orderNumber": orderNumber,
@@ -90,6 +92,8 @@ class PrintService {
         if let sp = splitPayments { body["splitPayments"] = sp }
         if deliveryFee > 0 { body["deliveryFee"] = deliveryFee }
         if openDrawer { body["openDrawer"] = true }
+        if let phone = customerPhone, !phone.isEmpty { body["customerPhone"] = phone }
+        if let addr = deliveryAddress, !addr.isEmpty { body["deliveryAddress"] = addr }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {
@@ -204,7 +208,9 @@ class PrintService {
             paymentMethod: paymentMethodToShow,
             tipPaymentMethod: order.tipPaymentMethod,
             splitPayments: splitPaymentsData,
-            deliveryFee: 0
+            deliveryFee: 0,
+            customerPhone: order.customerPhone,
+            deliveryAddress: order.deliveryAddress
         )
     }
     
