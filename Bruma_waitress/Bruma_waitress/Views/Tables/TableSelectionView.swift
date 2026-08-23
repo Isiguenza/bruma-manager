@@ -37,7 +37,7 @@ struct TableSelectionView: View {
                         Button(action: { tablesVM.selectParaLlevar() }) {
                             VStack(spacing: 8) {
                                 Image(systemName: "bag.fill")
-                                    .font(.system(size: 28))
+                                    .font(.system(size: 26))
                                     .foregroundColor(.blue)
                                 Text("Para Llevar")
                                     .font(.subheadline.weight(.semibold))
@@ -47,17 +47,11 @@ struct TableSelectionView: View {
                                     .foregroundColor(.blue.opacity(0.8))
                             }
                             .frame(maxWidth: .infinity)
-                            .frame(height: 120)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.blue.opacity(0.12))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 14)
-                                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                                    )
-                            )
+                            .frame(height: 115)
+                            .flatCardTinted(.blue, cornerRadius: 12)
                         }
-                        
+                        .buttonStyle(.plain)
+
                         // Active Para Llevar orders
                         ForEach(tablesVM.deliveryOrders) { order in
                             Button(action: {
@@ -74,7 +68,7 @@ struct TableSelectionView: View {
                                             .lineLimit(1)
                                         Spacer()
                                     }
-                                    
+
                                     HStack {
                                         Text("#\(order.orderNumber)")
                                             .font(.caption2)
@@ -86,33 +80,32 @@ struct TableSelectionView: View {
                                                 .foregroundColor(.green.opacity(0.8))
                                         }
                                     }
-                                    
+
                                     Spacer()
-                                    
+
                                     HStack(spacing: 4) {
                                         Circle()
                                             .fill(Color.green)
                                             .frame(width: 6, height: 6)
                                         Text("Activa")
-                                            .font(.caption2.weight(.medium))
-                                            .foregroundColor(.green)
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundColor(.white)
                                     }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.green.opacity(0.85))
+                                    .clipShape(Capsule())
                                 }
                                 .padding(12)
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 120)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .fill(Color.green.opacity(0.08))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 14)
-                                                .stroke(Color.green.opacity(0.3), lineWidth: 1)
-                                        )
-                                )
+                                .frame(height: 115)
+                                .flatCardTinted(.green, cornerRadius: 12)
                             }
+                            .buttonStyle(.plain)
                         }
-                        
-                        // Table cards
+
+                        // Table cards — mismo lenguaje visual que TableCardView de Bruma POS
+                        // (colores/estado, borde según status, número grande .rounded).
                         ForEach(tablesVM.tables) { table in
                             Button(action: {
                                 handleTableTap(table)
@@ -121,17 +114,31 @@ struct TableSelectionView: View {
                                     if loadingTableId == table.id {
                                         ProgressView()
                                             .tint(.white)
-                                            .frame(height: 38)
+                                            .frame(height: 34)
                                     } else {
                                         Text(table.number)
-                                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                                            .font(.system(size: 28, weight: .bold, design: .rounded))
                                             .foregroundColor(.white)
                                     }
-                                    
-                                    Text("Mesa")
-                                        .font(.caption2)
-                                        .foregroundColor(.gray)
-                                    
+
+                                    if let activeOrder = table.activeOrder {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "person.fill")
+                                                .font(.caption2)
+                                            Text("\(activeOrder.guestCount ?? 1)")
+                                                .font(.caption2.weight(.semibold))
+                                        }
+                                        .foregroundColor(.white.opacity(0.85))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Color.white.opacity(0.12))
+                                        .clipShape(Capsule())
+                                    } else {
+                                        Text("Mesa")
+                                            .font(.caption2)
+                                            .foregroundColor(.gray)
+                                    }
+
                                     HStack(spacing: 4) {
                                         Circle()
                                             .fill(tableStatusColor(table))
@@ -142,17 +149,18 @@ struct TableSelectionView: View {
                                     }
                                 }
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 120)
+                                .frame(height: 115)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 14)
+                                    RoundedRectangle(cornerRadius: 12)
                                         .fill(tableBackgroundColor(table))
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 14)
+                                            RoundedRectangle(cornerRadius: 12)
                                                 .stroke(tableBorderColor(table), lineWidth: 1)
                                         )
                                 )
                                 .opacity(table.isReserved ? 0.5 : 1)
                             }
+                            .buttonStyle(.plain)
                             .disabled(table.isReserved || loadingTableId != nil)
                         }
                     }
@@ -232,15 +240,17 @@ struct TableSelectionView: View {
     
     // MARK: - Helpers
     
+    // Mismos valores exactos que Table.swift de Bruma POS (naranja #FF7300
+    // para ocupada, no el .orange plano del sistema).
     private func tableStatusColor(_ table: Table) -> Color {
         switch table.status {
-        case "available": return .green
-        case "occupied": return .orange
-        case "reserved": return .purple
+        case "available": return BrumaColors.available
+        case "occupied": return BrumaColors.occupied
+        case "reserved": return BrumaColors.reserved
         default: return .gray
         }
     }
-    
+
     private func tableStatusLabel(_ table: Table) -> String {
         switch table.status {
         case "available": return "Libre"
@@ -249,19 +259,19 @@ struct TableSelectionView: View {
         default: return table.status
         }
     }
-    
+
     private func tableBackgroundColor(_ table: Table) -> Color {
         switch table.status {
-        case "occupied": return Color.orange.opacity(0.08)
-        case "reserved": return Color.purple.opacity(0.08)
+        case "occupied": return BrumaColors.occupied.opacity(0.08)
+        case "reserved": return BrumaColors.reserved.opacity(0.08)
         default: return Color.white.opacity(0.05)
         }
     }
-    
+
     private func tableBorderColor(_ table: Table) -> Color {
         switch table.status {
-        case "occupied": return Color.orange.opacity(0.3)
-        case "reserved": return Color.purple.opacity(0.3)
+        case "occupied": return BrumaColors.occupied.opacity(0.4)
+        case "reserved": return BrumaColors.reserved.opacity(0.3)
         default: return Color.white.opacity(0.1)
         }
     }

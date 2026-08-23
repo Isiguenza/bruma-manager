@@ -115,6 +115,32 @@ async function imageToEscPosBitmap(imagePath, maxWidth = 384) {
   }
 }
 
+// Ancho de impresión en puntos (dots) de la térmica de 80mm — confirmado por
+// el self-test de la impresora de tickets (80-VIII, "Print width: 576dots/line").
+// Se asume el mismo modelo/ancho para la de cocina; si algún día resulta
+// distinta, ajustar aquí.
+const PRINTER_DOTS_WIDTH = 576;
+
+/** Línea horizontal SÓLIDA de verdad (barra negra continua), en vez de
+ * aproximarla con caracteres de texto ("====" / "----") que dependen de la
+ * fuente y casi siempre dejan micro-espacios entre glifos. Se dibuja como
+ * imagen raster (mismo comando GS v0 que usa el logo) — no depende de
+ * ninguna fuente ni code page, así que se ve igual de sólida sin importar
+ * el tamaño de texto activo en ese momento. No necesita sharp/archivo: son
+ * puros bytes 0xFF (negro) generados en memoria.
+ * `heightDots`: qué tan gruesa se ve la línea (2-3 = delgada, 6-8 = gruesa).
+ */
+function solidLine(heightDots = 3) {
+  const bytesPerLine = Math.ceil(PRINTER_DOTS_WIDTH / 8);
+  const xL = bytesPerLine & 0xFF;
+  const xH = (bytesPerLine >> 8) & 0xFF;
+  const yL = heightDots & 0xFF;
+  const yH = (heightDots >> 8) & 0xFF;
+  const row = "\xFF".repeat(bytesPerLine); // todo negro
+  const bitmap = row.repeat(heightDots);
+  return GS + "v0" + String.fromCharCode(0, xL, xH, yL, yH) + bitmap;
+}
+
 // Función para enviar a la impresora con fallback USB
 function sendToPrinter(content) {
   return new Promise((resolve, reject) => {
@@ -325,7 +351,7 @@ app.post('/print', async (req, res) => {
     
     // Línea separadora continua (80mm)
     content += commands.alignLeft;
-    content += "------------------------------------------------\n";
+    content += solidLine() + commands.feedLine;
     content += commands.feedLine;
     
     // Items todos juntos (más compacto, sin separar por asientos)
@@ -362,7 +388,7 @@ app.post('/print', async (req, res) => {
     content += commands.feedLine;
     
     // Línea separadora continua (80mm)
-    content += "------------------------------------------------\n";
+    content += solidLine() + commands.feedLine;
     content += commands.feedLine;
     
     // Subtotal
@@ -481,7 +507,7 @@ app.post('/print', async (req, res) => {
     // domicilio, la dirección de entrega, hasta el fondo del ticket.
     if (customerPhone || deliveryAddress) {
       content += commands.feedLine;
-      content += "------------------------------------------------\n";
+      content += solidLine() + commands.feedLine;
       content += commands.feedLine;
       content += commands.alignLeft;
       if (customerName) content += `Cliente: ${customerName}\n`;
@@ -572,7 +598,7 @@ app.post('/print-summary', async (req, res) => {
     
     // Línea separadora
     content += commands.alignLeft;
-    content += "------------------------------------------------\n";
+    content += solidLine() + commands.feedLine;
     content += commands.feedLine;
     
     // Conteo de órdenes (sin dinero — los montos van en el Corte)
@@ -597,7 +623,7 @@ app.post('/print-summary', async (req, res) => {
     
     // Productos vendidos
     if (products && products.length > 0) {
-      content += "------------------------------------------------\n";
+      content += solidLine() + commands.feedLine;
       content += commands.feedLine;
       content += commands.bold;
       content += "PRODUCTOS VENDIDOS\n";
@@ -744,7 +770,7 @@ app.post('/print-seat-bill', async (req, res) => {
 
     // Separador
     content += commands.alignLeft;
-    content += "------------------------------------------------\n";
+    content += solidLine() + commands.feedLine;
     content += commands.feedLine;
 
     // Items
@@ -766,7 +792,7 @@ app.post('/print-seat-bill', async (req, res) => {
 
     content += commands.feedLine;
     content += commands.feedLine;
-    content += "------------------------------------------------\n";
+    content += solidLine() + commands.feedLine;
     content += commands.feedLine;
 
     // Subtotal
@@ -821,7 +847,7 @@ app.post('/print-seat-bill', async (req, res) => {
     } else {
       // Pre-cuenta - nota al pie
       content += commands.alignCenter;
-      content += "- - - - - - - - - - - - - - - - - - - - - - - -\n";
+      content += solidLine(2) + commands.feedLine;
       content += commands.feedLine;
       content += "PRE-CUENTA\n";
       content += "No es comprobante de pago\n";
@@ -881,7 +907,7 @@ app.post('/print-split', async (req, res) => {
       content += `Cliente: ${customerName}\n`;
     }
     content += `Orden: ${orderNumber}\n`;
-    content += "================================\n";
+    content += solidLine() + commands.feedLine;
     content += commands.alignLeft;
 
     // Items
@@ -901,7 +927,7 @@ app.post('/print-split', async (req, res) => {
       }
     }
 
-    content += "================================\n";
+    content += solidLine() + commands.feedLine;
     content += commands.alignRight;
     content += `Subtotal:    $${subtotal.toFixed(2)}\n`;
     
@@ -914,7 +940,7 @@ app.post('/print-split', async (req, res) => {
     content += `TOTAL:       $${total.toFixed(2)}\n`;
     content += commands.textSizeNormal;
     content += commands.boldOff;
-    content += "================================\n";
+    content += solidLine() + commands.feedLine;
     
     // Payment method
     if (paymentMethod) {
@@ -1004,7 +1030,7 @@ app.post('/print-guest', async (req, res) => {
     content += commands.boldOff;
     content += `${dateStr} ${timeStr}\n`;
     content += `Orden: ${orderNumber}\n`;
-    content += "================================\n";
+    content += solidLine() + commands.feedLine;
     content += commands.alignLeft;
 
     // Items
@@ -1015,12 +1041,12 @@ app.post('/print-guest', async (req, res) => {
     }
 
     content += "\n";
-    content += "================================\n";
+    content += solidLine() + commands.feedLine;
     content += commands.alignCenter;
     content += commands.bold;
     content += "TOTAL: $0.00\n";
     content += commands.boldOff;
-    content += "================================\n";
+    content += solidLine() + commands.feedLine;
     content += "\n\n\n";
     content += "________________________________\n";
     content += "\n";
@@ -1143,7 +1169,7 @@ app.post('/print-comanda', async (req, res) => {
     content += "COMANDA\n";
     content += commands.textSizeNormal;
     content += commands.boldOff;
-    content += "==============================\n";
+    content += solidLine() + commands.feedLine;
     
     // Mesa y número de orden
     content += commands.alignLeft;
@@ -1184,7 +1210,7 @@ app.post('/print-comanda', async (req, res) => {
     }
     
     content += commands.alignLeft;
-    content += "==============================\n";
+    content += solidLine() + commands.feedLine;
     content += commands.feedLine;
     
     // Separar bebidas y alimentos
@@ -1198,7 +1224,7 @@ app.post('/print-comanda', async (req, res) => {
       content += "BEBIDAS\n";
       content += commands.textSizeNormal;
       content += commands.boldOff;
-      content += "------------------------------\n";
+      content += solidLine() + commands.feedLine;
       
       for (const item of beverages) {
         content += commands.bold;
@@ -1215,17 +1241,20 @@ app.post('/print-comanda', async (req, res) => {
             content += commands.boldOff;
           }
         }
-        
+
         if (item.notes) {
           content += commands.bold;
           content += `   > Nota: ${item.notes}\n`;
           content += commands.boldOff;
         }
+
+        // Separación entre items — que no se vean pegados uno con otro.
+        content += commands.feedLine;
       }
-      
+
       if (food.length > 0) {
         content += commands.feedLine;
-        content += "==============================\n";
+        content += solidLine() + commands.feedLine;
         content += commands.feedLine;
       }
     }
@@ -1257,7 +1286,7 @@ app.post('/print-comanda', async (req, res) => {
         content += seat === 'C' ? 'COMPARTIDO\n' : `ASIENTO ${seat}\n`;
         content += commands.textSizeNormal;
         content += commands.boldOff;
-        content += "------------------------------\n";
+        content += solidLine() + commands.feedLine;
         
         // Agrupar por tiempo dentro del asiento
         const byCourse = {};
@@ -1318,23 +1347,26 @@ app.post('/print-comanda', async (req, res) => {
               content += `   > Nota: ${item.notes}\n`;
               content += commands.boldOff;
             }
+
+            // Separación entre items — que no se vean pegados uno con otro.
+            content += commands.feedLine;
           }
         }
-        
+
         // Separador entre asientos
         if (i < seats.length - 1) {
           content += commands.feedLine;
-          content += "- - - - - - - - - - - - - - -\n";
+          content += solidLine(2) + commands.feedLine;
           content += commands.feedLine;
         }
       }
     }
     
     content += commands.feedLine;
-    content += "==============================\n";
+    content += solidLine() + commands.feedLine;
     content += commands.alignCenter;
     content += timeStr + "\n";
-    content += "==============================\n";
+    content += solidLine() + commands.feedLine;
     
     // Espacio y corte
     content += commands.feedLine;
@@ -1399,7 +1431,7 @@ app.post('/print-corte', async (req, res) => {
     content += commands.bold;
     content += "VENTAS\n";
     content += commands.boldOff;
-    content += "--------------------------------\n";
+    content += solidLine() + commands.feedLine;
     if (sales.cash > 0) content += `Efectivo:      $${Math.round(sales.cash)}\n`;
     if (sales.card > 0) {
       content += `Tarjeta:       $${Math.round(sales.card)}\n`;
@@ -1414,7 +1446,7 @@ app.post('/print-corte', async (req, res) => {
         content += `  Neto real:   $${Math.round(sales.netOnline)}\n`;
       }
     }
-    content += "--------------------------------\n";
+    content += solidLine() + commands.feedLine;
     content += `Total bruto:   $${Math.round(sales.total)}\n`;
     if ((sales.netCard && sales.netCard !== sales.card) || (sales.netOnline && sales.netOnline !== sales.online)) {
       content += `Total neto:    $${Math.round(sales.cash + sales.transfer + (sales.netCard ?? sales.card) + (sales.netOnline ?? sales.online))}\n`;
@@ -1425,7 +1457,7 @@ app.post('/print-corte', async (req, res) => {
     content += commands.bold;
     content += "PROPINAS\n";
     content += commands.boldOff;
-    content += "--------------------------------\n";
+    content += solidLine() + commands.feedLine;
     if (tips.cash > 0) content += `Efectivo:      $${Math.round(tips.cash)}\n`;
     if (tips.card > 0) {
       content += `Tarjeta:       $${Math.round(tips.card)}\n`;
@@ -1440,7 +1472,7 @@ app.post('/print-corte', async (req, res) => {
         content += `  Neto real:   $${Math.round(tips.netOnline)}\n`;
       }
     }
-    content += "--------------------------------\n";
+    content += solidLine() + commands.feedLine;
     content += `Total bruto:   $${Math.round(tips.total)}\n`;
     content += commands.feedLine;
 
@@ -1468,7 +1500,7 @@ app.post('/print-corte', async (req, res) => {
     content += commands.bold;
     content += "MOVIMIENTOS DE CAJA\n";
     content += commands.boldOff;
-    content += "--------------------------------\n";
+    content += solidLine() + commands.feedLine;
     if (movements.deposits.total > 0) {
       content += `Depósitos:     $${Math.round(movements.deposits.total)} (${movements.deposits.count})\n`;
     }
@@ -1481,7 +1513,7 @@ app.post('/print-corte', async (req, res) => {
     content += commands.bold;
     content += "RESUMEN\n";
     content += commands.boldOff;
-    content += "--------------------------------\n";
+    content += solidLine() + commands.feedLine;
     content += `Órdenes:       ${summary.totalOrders}\n`;
     if (summary.splitOrders > 0) content += `Pagos divididos: ${summary.splitOrders}\n`;
     content += `Efectivo esperado: $${Math.round(summary.expectedCash)}\n`;
@@ -1498,7 +1530,7 @@ app.post('/print-corte', async (req, res) => {
     
     // Footer
     content += commands.alignCenter;
-    content += "===============================\n";
+    content += solidLine() + commands.feedLine;
     content += commands.feedLine;
     content += commands.feedLine;
     content += commands.feed;

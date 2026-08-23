@@ -24,7 +24,7 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            Color(red: 0.05, green: 0.05, blue: 0.05)
+            BrumaColors.backdrop
                 .ignoresSafeArea()
             
             if !authVM.isAuthenticated {
@@ -136,16 +136,22 @@ struct ContentView: View {
             }
             
             Spacer()
-            
+
+            // Mismo lenguaje de "headerIconButton" que usa Bruma POS: chip
+            // cuadrado con fondo tenue tintado del color semántico.
             Button(action: { authVM.logout() }) {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.red)
+                    .padding(8)
+                    .background(Color.red.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
             }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color(red: 0.07, green: 0.07, blue: 0.07))
+        .background(Color(white: 0.06))
     }
     
 }

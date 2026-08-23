@@ -5,7 +5,7 @@ struct LoginView: View {
     
     var body: some View {
         ZStack {
-            Color(red: 0.05, green: 0.05, blue: 0.05)
+            Color.black
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
@@ -130,11 +130,12 @@ struct LoginView: View {
                     .foregroundColor(.gray)
             }
             
-            // Dots
+            // Dots — mismo lenguaje que Bruma POS: punto blanco lleno, gris
+            // hueco por llenar (no azul).
             HStack(spacing: 12) {
                 ForEach(0..<maxLength, id: \.self) { i in
                     Circle()
-                        .fill(i < value.count ? Color.blue : Color.gray.opacity(0.3))
+                        .fill(i < value.count ? Color.white : Color(white: 0.3))
                         .frame(width: 16, height: 16)
                         .overlay(
                             Circle()

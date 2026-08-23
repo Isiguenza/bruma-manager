@@ -65,6 +65,19 @@ async function resolveBeverageFlags(productIds: string[]): Promise<Set<string>> 
   return new Set([...categoryBeverageIds, ...flowBeverageIds]);
 }
 
+/** Solo para la comanda de cocina: invierte "Producto - Variante" a
+ * "Variante - Producto" (p.ej. "Coctel Camarón - Grande" → "Grande - Coctel
+ * Camarón") — en cocina se lee primero el tamaño/variante, no el nombre del
+ * platillo. Mismo criterio que ya usa Bruma POS client-side (comandaItemName
+ * en POSViewModel.swift): solo aplica si el nombre trae el separador " - ". */
+function comandaItemName(productName: string): string {
+  const idx = productName.indexOf(" - ");
+  if (idx === -1) return productName;
+  const product = productName.slice(0, idx);
+  const variant = productName.slice(idx + 3);
+  return `${variant} - ${product}`;
+}
+
 /** Convierte el customModifiers (JSON de flujo por categoría/producto) que ya
  * mandan los clientes al formato plano {name} que espera print-server. */
 function buildFlowSteps(customModifiers: string | null | undefined): { name: string }[] {
@@ -122,7 +135,7 @@ export async function printKitchenComanda(opts: PrintKitchenComandaOptions): Pro
   );
 
   const items = opts.items.map((item) => ({
-    name: item.productName,
+    name: comandaItemName(item.productName),
     qty: item.quantity,
     seat: item.seat || "C",
     course: item.course || 1,

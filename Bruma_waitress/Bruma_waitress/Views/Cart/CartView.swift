@@ -3,20 +3,20 @@ import SwiftUI
 struct CartView: View {
     @ObservedObject var cartVM: CartViewModel
     @Binding var isPresented: Bool
-    
+
     var body: some View {
         ZStack {
-            Color(red: 0.06, green: 0.06, blue: 0.06).ignoresSafeArea()
-            
+            BrumaColors.backdrop.ignoresSafeArea()
+
             VStack(spacing: 0) {
                 // Header
                 HStack {
                     Text("Carrito")
                         .font(.title3.weight(.bold))
                         .foregroundColor(.white)
-                    
+
                     Spacer()
-                    
+
                     if let table = cartVM.selectedTable {
                         Text("Mesa \(table.number)")
                             .font(.subheadline.weight(.medium))
@@ -56,8 +56,7 @@ struct CartView: View {
                         }
                     }
                     .padding(10)
-                    .background(Color.orange.opacity(0.12))
-                    .cornerRadius(10)
+                    .flatCardTinted(.orange, cornerRadius: 10)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 8)
                 }
@@ -70,24 +69,24 @@ struct CartView: View {
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
-                
+
                 Divider().background(Color.white.opacity(0.1))
-                
+
                 // Cart items
                 if cartVM.items.isEmpty {
                     Spacer()
                     VStack(spacing: 8) {
                         Image(systemName: "cart")
                             .font(.system(size: 36))
-                            .foregroundColor(.gray)
+                            .foregroundColor(Color(white: 0.35))
                         Text("Carrito vacío")
                             .font(.subheadline)
-                            .foregroundColor(.gray)
+                            .foregroundColor(Color(white: 0.45))
                     }
                     Spacer()
                 } else {
                     ScrollView(showsIndicators: false) {
-                        VStack(spacing: 0) {
+                        VStack(spacing: 8) {
                             // Sent items (non-editable)
                             if !cartVM.sentItems.isEmpty {
                                 SectionHeader(title: "Enviados a cocina", color: .green)
@@ -95,7 +94,7 @@ struct CartView: View {
                                     CartItemRow(item: item, editable: false)
                                 }
                             }
-                            
+
                             // Pending items
                             if !cartVM.pendingItems.isEmpty {
                                 SectionHeader(title: "Pendientes", color: .orange)
@@ -118,13 +117,13 @@ struct CartView: View {
                         .padding(.bottom, 100)
                     }
                 }
-                
+
                 Spacer(minLength: 0)
-                
+
                 // Bottom bar
                 VStack(spacing: 8) {
                     Divider().background(Color.white.opacity(0.1))
-                    
+
                     if cartVM.hasPendingItems {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
@@ -132,62 +131,36 @@ struct CartView: View {
                                     .font(.caption)
                                     .foregroundColor(.gray)
                                 Text("$\(cartVM.totalPending, specifier: "%.0f")")
-                                    .font(.title3.weight(.bold))
+                                    .font(.system(size: 22, weight: .bold, design: .rounded))
                                     .foregroundColor(.white)
                             }
-                            
+
                             Spacer()
-                            
-                            if #available(iOS 26.0, *) {
-                                Button(action: {
-                                    Task { await cartVM.sendToKitchen() }
-                                }) {
-                                    HStack(spacing: 8) {
-                                        if cartVM.sending {
-                                            ProgressView().tint(.white)
-                                        } else {
-                                            Image(systemName: "flame.fill")
-                                                .font(.callout)
-                                            Text("Enviar a Cocina")
-                                                .font(.subheadline.weight(.semibold))
-                                        }
+
+                            Button(action: {
+                                Task { await cartVM.sendToKitchen() }
+                            }) {
+                                HStack(spacing: 8) {
+                                    if cartVM.sending {
+                                        ProgressView().tint(.white)
+                                    } else {
+                                        Image(systemName: "flame.fill")
+                                            .font(.callout)
+                                        Text("Enviar a Cocina")
+                                            .font(.callout.weight(.semibold))
                                     }
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
                                 }
-                                .buttonStyle(.glassProminent)
-                                .tint(.orange)
-                                .disabled(cartVM.sending)
-                            } else {
-                                Button(action: {
-                                    Task { await cartVM.sendToKitchen() }
-                                }) {
-                                    HStack(spacing: 8) {
-                                        if cartVM.sending {
-                                            ProgressView().tint(.white)
-                                        } else {
-                                            Image(systemName: "flame.fill")
-                                                .font(.callout)
-                                            Text("Enviar a Cocina")
-                                                .font(.subheadline.weight(.semibold))
-                                        }
-                                    }
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
-                                    .background(Color.orange)
-                                    .cornerRadius(12)
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(cartVM.sending)
+                                .frame(height: 52)
+                                .padding(.horizontal, 22)
                             }
+                            .buttonStyle(.flatCapsule(.orange))
+                            .disabled(cartVM.sending)
                         }
                         .padding(.horizontal, 20)
                         .padding(.bottom, 8)
                     }
                 }
-                .background(Color(red: 0.06, green: 0.06, blue: 0.06))
+                .background(BrumaColors.backdrop)
             }
         }
     }
@@ -198,7 +171,7 @@ struct CartView: View {
 struct SectionHeader: View {
     let title: String
     let color: Color
-    
+
     var body: some View {
         HStack {
             Circle()
@@ -209,8 +182,8 @@ struct SectionHeader: View {
                 .foregroundColor(color)
             Spacer()
         }
-        .padding(.top, 12)
-        .padding(.bottom, 4)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
     }
 }
 
@@ -224,27 +197,27 @@ struct CartItemRow: View {
     var onRemove: (() -> Void)?
     var cartVM: CartViewModel?
     var index: Int?
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.productName)
                     .font(.subheadline.weight(.medium))
-                    .foregroundColor(item.sentToKitchen ? .gray : .white)
+                    .foregroundColor(item.sentToKitchen ? Color(white: 0.55) : .white)
                     .lineLimit(2)
-                
+
                 if !item.modifierSummary.isEmpty {
                     Text(item.modifierSummary)
                         .font(.caption)
                         .foregroundColor(.blue.opacity(0.7))
                 }
-                
+
                 if !item.notes.isEmpty {
                     Text(item.notes)
                         .font(.caption)
                         .foregroundColor(.orange.opacity(0.8))
                 }
-                
+
                 HStack(spacing: 6) {
                     Text(item.seat == "C" ? "Compartido" : "Asiento \(item.seat)")
                         .font(.caption2)
@@ -256,46 +229,48 @@ struct CartItemRow: View {
                         .foregroundColor(.gray)
                 }
             }
-            
+
             Spacer()
-            
+
             VStack(alignment: .trailing, spacing: 4) {
                 Text("$\(item.total, specifier: "%.0f")")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundColor(item.sentToKitchen ? .gray : .white)
-                
+                    .foregroundColor(item.sentToKitchen ? Color(white: 0.55) : .white)
+
                 if editable {
-                    HStack(spacing: 0) {
+                    HStack(spacing: 6) {
                         Button(action: { onDecrement?() }) {
                             Image(systemName: "minus")
                                 .font(.caption2.weight(.bold))
-                                .foregroundColor(.white)
                                 .frame(width: 28, height: 28)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(6)
                         }
-                        
+                        .buttonStyle(.flatCircleNeutral)
+
                         Text("\(item.quantity)")
                             .font(.subheadline.weight(.semibold))
                             .foregroundColor(.white)
-                            .frame(width: 32)
-                        
+                            .frame(width: 26)
+
                         Button(action: { onIncrement?() }) {
                             Image(systemName: "plus")
                                 .font(.caption2.weight(.bold))
-                                .foregroundColor(.white)
                                 .frame(width: 28, height: 28)
-                                .background(Color.blue)
-                                .cornerRadius(6)
                         }
+                        .buttonStyle(.flatCircle(.blue))
                     }
                 } else {
-                    Text("x\(item.quantity)")
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                    // Mismo lenguaje que Bruma POS: un item ya enviado muestra
+                    // su estado en vez de controles de cantidad.
+                    HStack(spacing: 4) {
+                        Image(systemName: "frying.pan")
+                            .font(.caption2)
+                        Text("En cocina")
+                            .font(.caption2.weight(.semibold))
+                    }
+                    .foregroundColor(.orange)
                 }
             }
-            
+
             if editable {
                 Button(action: { onRemove?() }) {
                     Image(systemName: "trash")
@@ -305,7 +280,8 @@ struct CartItemRow: View {
                 .frame(width: 30)
             }
         }
-        .padding(.vertical, 8)
+        .padding(12)
+        .flatCard(cornerRadius: 10)
         .contextMenu {
             if editable, let vm = cartVM, let idx = index {
                 // Change seat submenu
@@ -337,7 +313,7 @@ struct CartItemRow: View {
                         Label("Cambiar Asiento", systemImage: "person.fill")
                     }
                 }
-                
+
                 // Change course submenu
                 Menu {
                     ForEach(1...4, id: \.self) { courseNum in
@@ -355,9 +331,9 @@ struct CartItemRow: View {
                 } label: {
                     Label("Cambiar Tiempo", systemImage: "clock.fill")
                 }
-                
+
                 Divider()
-                
+
                 Button(role: .destructive) {
                     onRemove?()
                 } label: {
@@ -374,7 +350,7 @@ struct SeatPicker: View {
     let seats: [String]
     @Binding var activeSeat: String
     @Binding var activeCourse: Int
-    
+
     var body: some View {
         VStack(spacing: 8) {
             // Seats
@@ -387,13 +363,13 @@ struct SeatPicker: View {
                                 .foregroundColor(activeSeat == seat ? .white : .gray)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(activeSeat == seat ? Color.blue : Color.white.opacity(0.06))
-                                .cornerRadius(16)
+                                .flatPill(isSelected: activeSeat == seat, color: .blue)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
-            
+
             // Courses (tiempos)
             HStack(spacing: 6) {
                 ForEach(1...4, id: \.self) { course in
@@ -403,9 +379,9 @@ struct SeatPicker: View {
                             .foregroundColor(activeCourse == course ? .white : .gray)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(activeCourse == course ? Color.orange.opacity(0.7) : Color.white.opacity(0.04))
-                            .cornerRadius(12)
+                            .flatPill(isSelected: activeCourse == course, color: .orange.opacity(0.85))
                     }
+                    .buttonStyle(.plain)
                 }
                 Spacer()
             }

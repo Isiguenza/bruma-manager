@@ -87,6 +87,16 @@ class CartViewModel: ObservableObject {
         items[index].course = newCourse
     }
     
+    /// Solo para la comanda de cocina: invierte "Producto - Variante" a
+    /// "Variante - Producto" (p.ej. "Coctel Camarón - Grande" → "Grande -
+    /// Coctel Camarón") — en cocina se lee primero el tamaño/variante, no el
+    /// nombre del platillo. Mismo criterio que usa Bruma POS.
+    private func comandaItemName(_ productName: String) -> String {
+        let components = productName.split(separator: " - ", maxSplits: 1)
+        guard components.count == 2 else { return productName }
+        return "\(components[1]) - \(components[0])"
+    }
+
     func sendToKitchen() async {
         let pending = pendingItems
         guard !pending.isEmpty else { return }
@@ -167,7 +177,7 @@ class CartViewModel: ObservableObject {
             // Print comanda (fire and forget)
             let printItems: [[String: Any]] = pending.map { item in
                 var dict: [String: Any] = [
-                    "name": item.productName,
+                    "name": comandaItemName(item.productName),
                     "qty": item.quantity,
                     "seat": item.seat,
                     "course": item.course,

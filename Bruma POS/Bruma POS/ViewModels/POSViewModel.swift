@@ -3105,7 +3105,10 @@ class POSViewModel: ObservableObject {
         
         await PrintService.shared.printComanda(
             tableNumber: selectedTable?.number,
-            orderNumber: currentOrderNumber.map { String($0) } ?? String(orderId.prefix(8)),
+            // "?" en vez de un fragmento de UUID si currentOrderNumber
+            // faltara — un número falso-pero-plausible es peor que uno que
+            // claramente avisa que algo está mal.
+            orderNumber: currentOrderNumber.map { String($0) } ?? "?",
             customerName: customerName.isEmpty ? nil : customerName,
             items: comandaItems,
             isDelivery: selectedTable == nil,
@@ -3511,7 +3514,7 @@ class POSViewModel: ObservableObject {
 
         await PrintService.shared.printTicket(
             customerName: customerName,
-            orderNumber: currentOrderNumber.map { String($0) } ?? String((sentItems.first?.orderId ?? "N/A").prefix(8)),
+            orderNumber: currentOrderNumber.map { String($0) } ?? "?",
             items: itemsBySeat,
             subtotal: Int(subtotal),
             tip: Int(tipPlusDelivery),
