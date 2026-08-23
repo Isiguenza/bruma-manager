@@ -8,17 +8,77 @@
 
 /* Begin PBXBuildFile section */
 		1649115C2FD8AE27002FC108 /* SocketIO in Frameworks */ = {isa = PBXBuildFile; productRef = 1649115B2FD8AE27002FC108 /* SocketIO */; };
+		166FD5D1303B851B001DD28F /* SocketIO in Frameworks */ = {isa = PBXBuildFile; productRef = 166FD5D0303B851B001DD28F /* SocketIO */; };
+		166FD5D3303B851B001DD28F /* QRCode in Frameworks */ = {isa = PBXBuildFile; productRef = 166FD5D2303B851B001DD28F /* QRCode */; };
 		16B8B9F72FE2714100B867D7 /* QRCode in Frameworks */ = {isa = PBXBuildFile; productRef = 16B8B9F62FE2714100B867D7 /* QRCode */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		166FD5D7303B851E001DD28F /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		160DE4562FA690AA00A3D140 /* Bruma POS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Bruma POS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		166FD5A8303B847C001DD28F /* Bruma POS Mobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Bruma POS Mobile.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		166FD5B4303B84D8001DD28F /* Exceptions for "Bruma POS" folder in "Bruma POS Mobile" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Config/Environment.swift,
+				Models/CashRegister.swift,
+				Models/CategoryFlow.swift,
+				Models/CorteData.swift,
+				Models/Employee.swift,
+				Models/MapFixture.swift,
+				Models/Order.swift,
+				Models/PendingCashPayment.swift,
+				Models/POSConfig.swift,
+				Models/Product.swift,
+				Models/Promotion.swift,
+				Models/QuickNote.swift,
+				Models/RegisterReports.swift,
+				Models/Table.swift,
+				Services/APIService.swift,
+				Services/IdleDimmer.swift,
+				Services/OfflineDataStore.swift,
+				Services/OfflineQueueService.swift,
+				Services/PrintService.swift,
+				Services/PromotionEngine.swift,
+				Services/SocketService.swift,
+				Services/SyncEngine.swift,
+				Styles/FlatStyles.swift,
+				Styles/GlassButtonStyle.swift,
+				Styles/GlassModifiers.swift,
+				Styles/Haptics.swift,
+				ViewModels/POSViewModel.swift,
+			);
+			target = 166FD5A7303B847C001DD28F /* Bruma POS Mobile */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		160DE4582FA690AA00A3D140 /* Bruma POS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				166FD5B4303B84D8001DD28F /* Exceptions for "Bruma POS" folder in "Bruma POS Mobile" target */,
+			);
 			path = "Bruma POS";
+			sourceTree = "<group>";
+		};
+		166FD5A9303B847C001DD28F /* Bruma POS Mobile */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Bruma POS Mobile";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -33,6 +93,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		166FD5A5303B847C001DD28F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				166FD5D3303B851B001DD28F /* QRCode in Frameworks */,
+				166FD5D1303B851B001DD28F /* SocketIO in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -40,6 +109,8 @@
 			isa = PBXGroup;
 			children = (
 				160DE4582FA690AA00A3D140 /* Bruma POS */,
+				166FD5A9303B847C001DD28F /* Bruma POS Mobile */,
+				166FD5CF303B851B001DD28F /* Frameworks */,
 				160DE4572FA690AA00A3D140 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,8 +119,16 @@
 			isa = PBXGroup;
 			children = (
 				160DE4562FA690AA00A3D140 /* Bruma POS.app */,
+				166FD5A8303B847C001DD28F /* Bruma POS Mobile.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		166FD5CF303B851B001DD28F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -79,6 +158,31 @@
 			productReference = 160DE4562FA690AA00A3D140 /* Bruma POS.app */;
 			productType = "com.apple.product-type.application";
 		};
+		166FD5A7303B847C001DD28F /* Bruma POS Mobile */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 166FD5B2303B847D001DD28F /* Build configuration list for PBXNativeTarget "Bruma POS Mobile" */;
+			buildPhases = (
+				166FD5A4303B847C001DD28F /* Sources */,
+				166FD5A5303B847C001DD28F /* Frameworks */,
+				166FD5A6303B847C001DD28F /* Resources */,
+				166FD5D7303B851E001DD28F /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				166FD5A9303B847C001DD28F /* Bruma POS Mobile */,
+			);
+			name = "Bruma POS Mobile";
+			packageProductDependencies = (
+				166FD5D0303B851B001DD28F /* SocketIO */,
+				166FD5D2303B851B001DD28F /* QRCode */,
+			);
+			productName = "Bruma POS Mobile";
+			productReference = 166FD5A8303B847C001DD28F /* Bruma POS Mobile.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -86,11 +190,14 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2630;
+				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					160DE4552FA690AA00A3D140 = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					166FD5A7303B847C001DD28F = {
+						CreatedOnToolsVersion = 26.6;
 					};
 				};
 			};
@@ -113,6 +220,7 @@
 			projectRoot = "";
 			targets = (
 				160DE4552FA690AA00A3D140 /* Bruma POS */,
+				166FD5A7303B847C001DD28F /* Bruma POS Mobile */,
 			);
 		};
 /* End PBXProject section */
@@ -125,10 +233,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		166FD5A6303B847C001DD28F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		160DE4522FA690AA00A3D140 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		166FD5A4303B847C001DD28F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -333,6 +455,76 @@
 			};
 			name = Release;
 		};
+		166FD5B0303B847D001DD28F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P4XK9MB8P5;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Bruma-POS-Mobile-Info.plist";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Se necesita acceso a la cámara para escanear códigos QR de las tarjetas de lealtad.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cocinabruma.Bruma-POS-Mobile.Bruma-POS-Mobile";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		166FD5B1303B847D001DD28F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P4XK9MB8P5;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Bruma-POS-Mobile-Info.plist";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Se necesita acceso a la cámara para escanear códigos QR de las tarjetas de lealtad.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cocinabruma.Bruma-POS-Mobile.Bruma-POS-Mobile";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -350,6 +542,15 @@
 			buildConfigurations = (
 				160DE4622FA690AD00A3D140 /* Debug */,
 				160DE4632FA690AD00A3D140 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		166FD5B2303B847D001DD28F /* Build configuration list for PBXNativeTarget "Bruma POS Mobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				166FD5B0303B847D001DD28F /* Debug */,
+				166FD5B1303B847D001DD28F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -380,6 +581,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 1649115A2FD8AE27002FC108 /* XCRemoteSwiftPackageReference "socket" */;
 			productName = SocketIO;
+		};
+		166FD5D0303B851B001DD28F /* SocketIO */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1649115A2FD8AE27002FC108 /* XCRemoteSwiftPackageReference "socket" */;
+			productName = SocketIO;
+		};
+		166FD5D2303B851B001DD28F /* QRCode */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 16B8B9F52FE2714100B867D7 /* XCRemoteSwiftPackageReference "qrcode" */;
+			productName = QRCode;
 		};
 		16B8B9F62FE2714100B867D7 /* QRCode */ = {
 			isa = XCSwiftPackageProductDependency;
