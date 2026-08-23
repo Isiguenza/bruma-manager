@@ -49,8 +49,18 @@ app.use(express.json());
 const ESC = "\x1B";
 const GS = "\x1D";
 
+// Por qué los acentos salían mal ("Camar<0n" en vez de "Camarón"): ESC @
+// resetea la impresora a su code page 0 (CP437/OEM437), que NO tiene los
+// acentos españoles en los mismos bytes que usa JS/Node al mandar el string
+// como binary/latin1 (p.ej. "ó" = byte 0xF3, pero en CP437 ese byte es otro
+// símbolo, no "ó"). El self-test de la impresora confirma que sí soporta
+// "16:WPC1252" (Windows-1252) — ese code page SÍ tiene los acentos exactos
+// en los mismos bytes que Node ya manda, así que basta con seleccionarlo una
+// vez después de inicializar. Comando ESC/POS estándar: ESC t n (0x1B 0x74 n).
+const SELECT_CODEPAGE_1252 = ESC + "t" + String.fromCharCode(16);
+
 const commands = {
-  init: ESC + "@",
+  init: ESC + "@" + SELECT_CODEPAGE_1252,
   alignCenter: ESC + "a" + "\x01",
   alignLeft: ESC + "a" + "\x00",
   alignRight: ESC + "a" + "\x02",
@@ -1169,8 +1179,10 @@ app.post('/print-comanda', async (req, res) => {
     content += "COMANDA\n";
     content += commands.textSizeNormal;
     content += commands.boldOff;
+    content += commands.feedLine;
     content += solidLine() + commands.feedLine;
-    
+    content += commands.feedLine;
+
     // Mesa y número de orden
     content += commands.alignLeft;
     content += commands.bold;
@@ -1210,9 +1222,10 @@ app.post('/print-comanda', async (req, res) => {
     }
     
     content += commands.alignLeft;
+    content += commands.feedLine;
     content += solidLine() + commands.feedLine;
     content += commands.feedLine;
-    
+
     // Separar bebidas y alimentos
     const beverages = items.filter(item => item.isBeverage);
     const food = items.filter(item => !item.isBeverage);
@@ -1224,8 +1237,10 @@ app.post('/print-comanda', async (req, res) => {
       content += "BEBIDAS\n";
       content += commands.textSizeNormal;
       content += commands.boldOff;
+      content += commands.feedLine;
       content += solidLine() + commands.feedLine;
-      
+      content += commands.feedLine;
+
       for (const item of beverages) {
         content += commands.bold;
         content += commands.textSizeTall;
@@ -1286,8 +1301,10 @@ app.post('/print-comanda', async (req, res) => {
         content += seat === 'C' ? 'COMPARTIDO\n' : `ASIENTO ${seat}\n`;
         content += commands.textSizeNormal;
         content += commands.boldOff;
+        content += commands.feedLine;
         content += solidLine() + commands.feedLine;
-        
+        content += commands.feedLine;
+
         // Agrupar por tiempo dentro del asiento
         const byCourse = {};
         for (const item of seatItems) {
@@ -1364,10 +1381,12 @@ app.post('/print-comanda', async (req, res) => {
     
     content += commands.feedLine;
     content += solidLine() + commands.feedLine;
+    content += commands.feedLine;
     content += commands.alignCenter;
     content += timeStr + "\n";
+    content += commands.feedLine;
     content += solidLine() + commands.feedLine;
-    
+
     // Espacio y corte
     content += commands.feedLine;
     content += commands.feedLine;
