@@ -146,6 +146,18 @@ export const categories = pgTable("categories", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Subcategories (subdivisiones dentro de una categoría, ej. Café → Fríos/Calientes/Té)
+export const subcategories = pgTable("subcategories", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  categoryId: uuid("category_id")
+    .notNull()
+    .references(() => categories.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Products
 export const products = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -154,6 +166,7 @@ export const products = pgTable("products", {
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
   platformPrice: decimal("platform_price", { precision: 10, scale: 2 }), // Precio para plataformas de delivery (Uber/Rappi)
   categoryId: uuid("category_id").references(() => categories.id),
+  subcategoryId: uuid("subcategory_id").references(() => subcategories.id, { onDelete: "set null" }),
   groupId: uuid("group_id").references(() => groups.id),
   imageUrl: text("image_url"),
   hasVariants: boolean("has_variants").notNull().default(false),
@@ -544,6 +557,15 @@ export const mercadopagoDevices = pgTable("mercadopago_devices", {
 export const categoriesRelations = relations(categories, ({ many }) => ({
   products: many(products),
   modifierSteps: many(modifierSteps),
+  subcategories: many(subcategories),
+}));
+
+export const subcategoriesRelations = relations(subcategories, ({ one, many }) => ({
+  category: one(categories, {
+    fields: [subcategories.categoryId],
+    references: [categories.id],
+  }),
+  products: many(products),
 }));
 
 export const modifierStepsRelations = relations(modifierSteps, ({ one, many }) => ({
@@ -565,6 +587,10 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   category: one(categories, {
     fields: [products.categoryId],
     references: [categories.id],
+  }),
+  subcategory: one(subcategories, {
+    fields: [products.subcategoryId],
+    references: [subcategories.id],
   }),
   ingredients: many(productIngredients),
   orderItems: many(orderItems),

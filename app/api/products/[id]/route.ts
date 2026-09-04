@@ -11,7 +11,7 @@ export async function GET(
     const { id } = await params;
     const product = await db.query.products.findFirst({
       where: eq(products.id, id),
-      with: { category: true, ingredients: { with: { ingredient: true } } },
+      with: { category: true, subcategory: true, ingredients: { with: { ingredient: true } } },
     });
 
     if (!product) {
@@ -32,7 +32,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, description, price, platformPrice, categoryId, imageUrl, hasVariants, variants, active, menuImages, menuVideo, menuWebVisible } = body;
+    const { name, description, price, platformPrice, categoryId, subcategoryId, imageUrl, hasVariants, variants, active, menuImages, menuVideo, menuWebVisible } = body;
 
     const [product] = await db
       .update(products)
@@ -42,6 +42,7 @@ export async function PUT(
         price: price || "0",
         platformPrice: platformPrice || null,
         categoryId: categoryId || null,
+        subcategoryId: subcategoryId || null,
         imageUrl: imageUrl || null,
         hasVariants: hasVariants ?? false,
         variants: variants || null,

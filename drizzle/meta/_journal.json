@@ -127,6 +127,13 @@
       "when": 1785194767441,
       "tag": "0017_cynical_argent",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788550273194,
+      "tag": "0018_military_doctor_faustus",
+      "breakpoints": true
     }
   ]
 }

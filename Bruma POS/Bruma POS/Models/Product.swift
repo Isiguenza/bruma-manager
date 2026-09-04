@@ -23,6 +23,7 @@ struct Product: Codable, Identifiable {
     let price: String
     let platformPrice: String?
     let categoryId: String?
+    let subcategoryId: String?
     let groupId: String?
     let hasVariants: Bool
     let variants: String? // JSON string of ProductVariant[]
@@ -61,6 +62,14 @@ struct Category: Codable, Identifiable {
     let sortOrder: Int
     let active: Bool
     let isBeverage: Bool?
+    let subcategories: [Subcategory]?
+}
+
+struct Subcategory: Codable, Identifiable {
+    let id: String
+    let name: String
+    let sortOrder: Int
+    let active: Bool
 }
 
 struct Frosting: Codable, Identifiable {

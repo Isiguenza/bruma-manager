@@ -56,6 +56,12 @@ router.get("/categories", async (req, res) => {
   try {
     const categories = await db.query.categories.findMany({
       orderBy: (categories, { asc }) => [asc(categories.sortOrder)],
+      with: {
+        subcategories: {
+          where: eq(schema.subcategories.active, true),
+          orderBy: (s, { asc }) => [asc(s.sortOrder)],
+        },
+      },
     });
 
     res.json(categories);

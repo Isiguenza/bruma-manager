@@ -98,6 +98,7 @@ interface ProductForm {
   price: string;
   platformPrice?: string;
   categoryId: string;
+  subcategoryId: string;
   groupId: string;
   imageUrl: string;
   hasVariants: boolean;
@@ -122,6 +123,7 @@ const emptyForm: ProductForm = {
   price: "",
   platformPrice: "",
   categoryId: "",
+  subcategoryId: "",
   groupId: "",
   imageUrl: "",
   hasVariants: false,
@@ -207,6 +209,7 @@ export default function ProductsPage() {
       price: product.price,
       platformPrice: product.platformPrice || "",
       categoryId: product.categoryId || "",
+      subcategoryId: product.subcategoryId || "",
       groupId: product.groupId || "",
       imageUrl: product.imageUrl || "",
       hasVariants: product.hasVariants || false,
@@ -433,6 +436,7 @@ export default function ProductsPage() {
         body: JSON.stringify({
           ...form,
           categoryId: form.categoryId || null,
+          subcategoryId: form.subcategoryId || null,
           groupId: form.groupId || null,
           variants: form.hasVariants ? JSON.stringify(form.variants) : null,
           menuImages: form.menuImages.length > 0 ? JSON.stringify(form.menuImages) : null,
@@ -1155,7 +1159,9 @@ export default function ProductsPage() {
                   </Label>
                   <Select
                     value={form.categoryId}
-                    onValueChange={(v) => setForm({ ...form, categoryId: v })}
+                    onValueChange={(v) =>
+                      setForm({ ...form, categoryId: v, subcategoryId: "" })
+                    }
                   >
                     <SelectTrigger id="category">
                       <SelectValue placeholder="Selecciona una categoría" />
@@ -1175,6 +1181,34 @@ export default function ProductsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {(() => {
+                  const selectedCategory = categories.find((c) => c.id === form.categoryId);
+                  const subcats = selectedCategory?.subcategories || [];
+                  if (subcats.length === 0) return null;
+                  return (
+                    <div className="space-y-2">
+                      <Label htmlFor="subcategory" className="text-sm font-medium">
+                        Subcategoría
+                      </Label>
+                      <Select
+                        value={form.subcategoryId}
+                        onValueChange={(v) => setForm({ ...form, subcategoryId: v })}
+                      >
+                        <SelectTrigger id="subcategory">
+                          <SelectValue placeholder="Selecciona una subcategoría" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {subcats.map((sub) => (
+                            <SelectItem key={sub.id} value={sub.id}>
+                              {sub.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 

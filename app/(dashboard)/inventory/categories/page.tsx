@@ -53,10 +53,13 @@ import {
   DotsSixVertical,
   SortAscending,
   HandGrabbing,
+  ListBullets,
+  ArrowUp,
+  ArrowDown,
 } from "@phosphor-icons/react";
 import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
-import type { Category } from "@/lib/types";
+import type { Category, Subcategory } from "@/lib/types";
 
 const PRESET_COLORS = [
   { name: "Rojo", value: "#EF4444" },
@@ -131,22 +134,128 @@ export default function CategoriesPage() {
   const [savingOrder, setSavingOrder] = useState(false);
   const [sortMode, setSortMode] = useState<"custom" | "alphabetical">("custom");
 
+  // Subcategories dialog
+  const [subcatDialogOpen, setSubcatDialogOpen] = useState(false);
+  const [subcatCategoryId, setSubcatCategoryId] = useState<string | null>(null);
+  const [subcatList, setSubcatList] = useState<Subcategory[]>([]);
+  const [newSubcatName, setNewSubcatName] = useState("");
+  const [editingSubcatId, setEditingSubcatId] = useState<string | null>(null);
+  const [editingSubcatName, setEditingSubcatName] = useState("");
+  const [subcatSaving, setSubcatSaving] = useState(false);
+
+  const subcatCategory = categories.find((c) => c.id === subcatCategoryId) || null;
+
   useEffect(() => {
     fetchCategories();
   }, []);
 
-  async function fetchCategories() {
+  async function fetchCategoriesData(): Promise<Category[] | null> {
     try {
       const res = await fetch("/api/categories");
-      if (res.ok) {
-        const data = await res.json();
-        setCategories(data);
-        setOrderedCategories(data);
-      }
-    } catch (error) {
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  async function fetchCategories() {
+    const data = await fetchCategoriesData();
+    if (data) {
+      setCategories(data);
+      setOrderedCategories(data);
+    } else {
       toast.error("Error cargando categorías");
+    }
+    setLoading(false);
+  }
+
+  function openSubcatDialog(category: Category) {
+    setSubcatCategoryId(category.id);
+    setSubcatList(category.subcategories || []);
+    setNewSubcatName("");
+    setEditingSubcatId(null);
+    setSubcatDialogOpen(true);
+  }
+
+  async function refreshSubcategories() {
+    const data = await fetchCategoriesData();
+    if (data && subcatCategoryId) {
+      setCategories(data);
+      setOrderedCategories(data);
+      const updated = data.find((c) => c.id === subcatCategoryId);
+      setSubcatList(updated?.subcategories || []);
+    }
+  }
+
+  async function handleAddSubcategory() {
+    if (!subcatCategoryId || !newSubcatName.trim()) return;
+    setSubcatSaving(true);
+    try {
+      const res = await fetch(`/api/categories/${subcatCategoryId}/subcategories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newSubcatName.trim(), sortOrder: subcatList.length }),
+      });
+      if (!res.ok) throw new Error();
+      setNewSubcatName("");
+      await refreshSubcategories();
+      toast.success("Subcategoría creada");
+    } catch {
+      toast.error("Error creando subcategoría");
     } finally {
-      setLoading(false);
+      setSubcatSaving(false);
+    }
+  }
+
+  async function handleRenameSubcategory(id: string) {
+    if (!editingSubcatName.trim()) return;
+    try {
+      const res = await fetch(`/api/subcategories/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editingSubcatName.trim() }),
+      });
+      if (!res.ok) throw new Error();
+      setEditingSubcatId(null);
+      await refreshSubcategories();
+      toast.success("Subcategoría actualizada");
+    } catch {
+      toast.error("Error actualizando subcategoría");
+    }
+  }
+
+  async function handleDeleteSubcategory(id: string) {
+    if (!confirm("¿Eliminar esta subcategoría? Los productos que la usan quedarán sin subcategoría.")) return;
+    try {
+      const res = await fetch(`/api/subcategories/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      await refreshSubcategories();
+      toast.success("Subcategoría eliminada");
+    } catch {
+      toast.error("Error eliminando subcategoría");
+    }
+  }
+
+  async function handleMoveSubcategory(index: number, direction: -1 | 1) {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= subcatList.length) return;
+    const reordered = [...subcatList];
+    [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+    setSubcatList(reordered);
+    try {
+      await Promise.all(
+        reordered.map((s, idx) =>
+          fetch(`/api/subcategories/${s.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sortOrder: idx }),
+          })
+        )
+      );
+      await refreshSubcategories();
+    } catch {
+      toast.error("Error guardando orden");
     }
   }
 
@@ -640,6 +749,18 @@ export default function CategoriesPage() {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => openSubcatDialog(category)}
+                      className="gap-2"
+                      title="Gestionar subcategorías"
+                    >
+                      <ListBullets className="size-4" />
+                      {category.subcategories && category.subcategories.length > 0
+                        ? category.subcategories.length
+                        : ""}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => handleEdit(category)}
                       className="gap-2"
                     >
@@ -660,6 +781,129 @@ export default function CategoriesPage() {
           ))}
         </div>
       )}
+
+      {/* Subcategories Dialog */}
+      <Dialog open={subcatDialogOpen} onOpenChange={setSubcatDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Subcategorías de {subcatCategory?.name}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                value={newSubcatName}
+                onChange={(e) => setNewSubcatName(e.target.value)}
+                placeholder="Ej: Fríos, Calientes, Té..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddSubcategory();
+                  }
+                }}
+              />
+              <Button
+                onClick={handleAddSubcategory}
+                disabled={subcatSaving || !newSubcatName.trim()}
+                className="gap-2 shrink-0"
+              >
+                <Plus className="size-4" />
+                Agregar
+              </Button>
+            </div>
+
+            {subcatList.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                Esta categoría no tiene subcategorías. Los productos se
+                mostrarán sin agrupar en Bruma POS.
+              </p>
+            ) : (
+              <div className="rounded-lg border divide-y">
+                {subcatList.map((sub, index) => (
+                  <div key={sub.id} className="flex items-center gap-2 px-3 py-2">
+                    <div className="flex flex-col">
+                      <button
+                        type="button"
+                        disabled={index === 0}
+                        onClick={() => handleMoveSubcategory(index, -1)}
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-20"
+                      >
+                        <ArrowUp className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={index === subcatList.length - 1}
+                        onClick={() => handleMoveSubcategory(index, 1)}
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-20"
+                      >
+                        <ArrowDown className="size-3.5" />
+                      </button>
+                    </div>
+
+                    {editingSubcatId === sub.id ? (
+                      <Input
+                        value={editingSubcatName}
+                        autoFocus
+                        onChange={(e) => setEditingSubcatName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleRenameSubcategory(sub.id);
+                          } else if (e.key === "Escape") {
+                            setEditingSubcatId(null);
+                          }
+                        }}
+                        onBlur={() => handleRenameSubcategory(sub.id)}
+                        className="h-8 flex-1"
+                      />
+                    ) : (
+                      <span
+                        className="flex-1 text-sm font-medium cursor-pointer hover:underline"
+                        onClick={() => {
+                          setEditingSubcatId(sub.id);
+                          setEditingSubcatName(sub.name);
+                        }}
+                      >
+                        {sub.name}
+                      </span>
+                    )}
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditingSubcatId(sub.id);
+                        setEditingSubcatName(sub.name);
+                      }}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteSubcategory(sub.id)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => setSubcatDialogOpen(false)}
+            >
+              Cerrar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

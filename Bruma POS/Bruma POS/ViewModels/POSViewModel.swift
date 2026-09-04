@@ -440,6 +440,38 @@ class POSViewModel: ObservableObject {
         return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// `filteredProducts` agrupado por subcategoría (si la categoría seleccionada tiene
+    /// subcategorías configuradas), para mostrar un separador con su nombre en el grid.
+    /// Si la categoría no tiene subcategorías, o estamos buscando, regresa un solo grupo
+    /// sin título — el grid se ve igual que antes.
+    var groupedFilteredProducts: [ProductSubcategoryGroup] {
+        guard searchQuery.isEmpty,
+              let catId = selectedCategory,
+              let subcats = categories.first(where: { $0.id == catId })?.subcategories,
+              !subcats.isEmpty
+        else {
+            return [ProductSubcategoryGroup(id: "all", title: nil, products: filteredProducts)]
+        }
+
+        let activeSubcats = subcats.filter { $0.active }.sorted { $0.sortOrder < $1.sortOrder }
+        var groups = activeSubcats.map { sub in
+            ProductSubcategoryGroup(
+                id: sub.id,
+                title: sub.name,
+                products: filteredProducts.filter { $0.subcategoryId == sub.id }
+            )
+        }
+
+        let ungrouped = filteredProducts.filter { product in
+            !activeSubcats.contains { $0.id == product.subcategoryId }
+        }
+        if !ungrouped.isEmpty {
+            groups.append(ProductSubcategoryGroup(id: "other", title: "Otros", products: ungrouped))
+        }
+
+        return groups.filter { !$0.products.isEmpty }
+    }
+
     /// Subtotal corriendo de un asiento/comensal (excluye invitados). Se muestra
     /// en el encabezado de cada asiento en el carrito para anticipar el split.
     func seatSubtotal(_ seat: String) -> Double {
@@ -4359,6 +4391,15 @@ class POSViewModel: ObservableObject {
 }
 
 // MARK: - Supporting Types
+
+/// Un grupo de productos dentro del grid, opcionalmente encabezado por el
+/// nombre de una subcategoría (`title == nil` cuando la categoría no tiene
+/// subcategorías, para no mostrar ningún separador).
+struct ProductSubcategoryGroup: Identifiable {
+    let id: String
+    let title: String?
+    let products: [Product]
+}
 
 struct GuestProductItem: Identifiable {
     let id = UUID()

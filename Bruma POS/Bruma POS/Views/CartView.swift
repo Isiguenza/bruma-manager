@@ -623,21 +623,21 @@ private enum CartPreview {
     /// tengan algo que mostrar en el preview.
     static func seedMenu(_ vm: POSViewModel) {
         vm.categories = [
-            Category(id: "c1", name: "Entradas", description: nil, color: "#22C55E", icon: "leaf.fill", sortOrder: 0, active: true, isBeverage: false),
-            Category(id: "c2", name: "Fuertes", description: nil, color: "#3B82F6", icon: "flame.fill", sortOrder: 1, active: true, isBeverage: false),
-            Category(id: "c3", name: "Postres", description: nil, color: "#EC4899", icon: "birthday.cake.fill", sortOrder: 2, active: true, isBeverage: false),
-            Category(id: "c4", name: "Bebidas", description: nil, color: "#F59E0B", icon: "cup.and.saucer.fill", sortOrder: 3, active: true, isBeverage: true)
+            Category(id: "c1", name: "Entradas", description: nil, color: "#22C55E", icon: "leaf.fill", sortOrder: 0, active: true, isBeverage: false, subcategories: nil),
+            Category(id: "c2", name: "Fuertes", description: nil, color: "#3B82F6", icon: "flame.fill", sortOrder: 1, active: true, isBeverage: false, subcategories: nil),
+            Category(id: "c3", name: "Postres", description: nil, color: "#EC4899", icon: "birthday.cake.fill", sortOrder: 2, active: true, isBeverage: false, subcategories: nil),
+            Category(id: "c4", name: "Bebidas", description: nil, color: "#F59E0B", icon: "cup.and.saucer.fill", sortOrder: 3, active: true, isBeverage: true, subcategories: nil)
         ]
         vm.selectedCategory = "c2"
         vm.products = [
-            Product(id: "p1", name: "Ensalada César", description: "Lechuga, parmesano, aderezo de la casa", price: "180", platformPrice: nil, categoryId: "c1", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
-            Product(id: "p2", name: "Ribeye 400g", description: "Corte premium a la parrilla", price: "620", platformPrice: nil, categoryId: "c2", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
-            Product(id: "p3", name: "Burger Bruma", description: "Doble carne, queso, tocino", price: "210", platformPrice: nil, categoryId: "c2", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
-            Product(id: "p4", name: "Alitas BBQ", description: "8 piezas, salsa BBQ o buffalo", price: "190", platformPrice: nil, categoryId: "c2", groupId: nil, hasVariants: true, variants: nil, active: true, category: nil, imageUrl: nil),
-            Product(id: "p5", name: "Pasta Alfredo", description: "Fettuccine, crema, parmesano", price: "220", platformPrice: nil, categoryId: "c2", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
-            Product(id: "p6", name: "Molten Chocolate", description: "Centro líquido, helado de vainilla", price: "145", platformPrice: nil, categoryId: "c3", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
-            Product(id: "p7", name: "Limonada", description: nil, price: "55", platformPrice: nil, categoryId: "c4", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
-            Product(id: "p8", name: "Refresco", description: nil, price: "45", platformPrice: nil, categoryId: "c4", groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil)
+            Product(id: "p1", name: "Ensalada César", description: "Lechuga, parmesano, aderezo de la casa", price: "180", platformPrice: nil, categoryId: "c1", subcategoryId: nil, groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p2", name: "Ribeye 400g", description: "Corte premium a la parrilla", price: "620", platformPrice: nil, categoryId: "c2", subcategoryId: nil, groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p3", name: "Burger Bruma", description: "Doble carne, queso, tocino", price: "210", platformPrice: nil, categoryId: "c2", subcategoryId: nil, groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p4", name: "Alitas BBQ", description: "8 piezas, salsa BBQ o buffalo", price: "190", platformPrice: nil, categoryId: "c2", subcategoryId: nil, groupId: nil, hasVariants: true, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p5", name: "Pasta Alfredo", description: "Fettuccine, crema, parmesano", price: "220", platformPrice: nil, categoryId: "c2", subcategoryId: nil, groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p6", name: "Molten Chocolate", description: "Centro líquido, helado de vainilla", price: "145", platformPrice: nil, categoryId: "c3", subcategoryId: nil, groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p7", name: "Limonada", description: nil, price: "55", platformPrice: nil, categoryId: "c4", subcategoryId: nil, groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil),
+            Product(id: "p8", name: "Refresco", description: nil, price: "45", platformPrice: nil, categoryId: "c4", subcategoryId: nil, groupId: nil, hasVariants: false, variants: nil, active: true, category: nil, imageUrl: nil)
         ]
     }
 

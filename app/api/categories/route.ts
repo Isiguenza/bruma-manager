@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { categories, modifierSteps } from "@/lib/db/schema";
+import { categories, modifierSteps, subcategories } from "@/lib/db/schema";
 import { asc } from "drizzle-orm";
 
 export async function GET() {
   try {
     const result = await db.query.categories.findMany({
       orderBy: [asc(categories.sortOrder), asc(categories.name)],
+      with: {
+        subcategories: {
+          orderBy: [asc(subcategories.sortOrder), asc(subcategories.name)],
+        },
+      },
     });
 
     // Marca qué categorías tienen flujo personalizado (tienen pasos definidos).

@@ -106,12 +106,23 @@ struct ProductGridView: View {
                 .frame(maxWidth: .infinity)
             } else {
                 ScrollView {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
-                        ForEach(vm.filteredProducts) { product in
-                            ProductCardView(product: product, vm: vm)
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        ForEach(vm.groupedFilteredProducts) { group in
+                            if let title = group.title {
+                                Text(title)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundColor(.gray)
+                                    .padding(.horizontal, 20)
+                            }
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
+                                ForEach(group.products) { product in
+                                    ProductCardView(product: product, vm: vm)
+                                }
+                            }
+                            .padding(.horizontal, 20)
                         }
                     }
-                    .padding(20)
+                    .padding(.vertical, 20)
                 }
             }
         }

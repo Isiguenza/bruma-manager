@@ -37,6 +37,7 @@ export interface Product {
   price: string;
   platformPrice?: string | null; // Precio para plataformas de delivery (Uber/Rappi)
   categoryId: string | null;
+  subcategoryId?: string | null;
   groupId: string | null;
   imageUrl: string | null;
   hasVariants: boolean;
@@ -45,8 +46,17 @@ export interface Product {
   createdAt: Date;
   updatedAt: Date;
   category?: Category | null;
+  subcategory?: Subcategory | null;
   group?: Group | null;
   ingredients?: ProductIngredient[];
+}
+
+export interface Subcategory {
+  id: string;
+  categoryId: string;
+  name: string;
+  sortOrder: number;
+  active: boolean;
 }
 
 export interface Category {
@@ -58,6 +68,7 @@ export interface Category {
   sortOrder: number;
   active: boolean;
   isBeverage?: boolean;
+  subcategories?: Subcategory[];
 }
 
 export interface QuickNote {
