@@ -2225,22 +2225,45 @@ class POSViewModel: ObservableObject {
                     switch step.stepType {
                     case "frosting":
                         if let f = sel as? Frosting {
+                            // Frosting real de la tabla "frostings" — id válido para el FK.
                             frostId = f.id; frostName = f.name
                         } else if let opt = sel as? ModifierOption {
-                            frostId = opt.id; frostName = opt.name
+                            // Opción definida en el flujo personalizado — su id viene de
+                            // "modifier_options", NO existe en "frostings" (violaría el FK
+                            // de order_items.frosting_id), así que se guarda en customModifiers.
+                            customModsDict[step.id] = [
+                                "stepName": step.stepName,
+                                "stepType": step.stepType,
+                                "options": [["id": opt.id, "name": opt.name, "price": opt.price]]
+                            ]
                             price += opt.numericPrice
-                        } else if let opts = sel as? [ModifierOption], let first = opts.first {
-                            frostId = first.id; frostName = opts.map { $0.name }.joined(separator: ", ")
+                        } else if let opts = sel as? [ModifierOption], !opts.isEmpty {
+                            customModsDict[step.id] = [
+                                "stepName": step.stepName,
+                                "stepType": step.stepType,
+                                "options": opts.map { ["id": $0.id, "name": $0.name, "price": $0.price] }
+                            ]
                             price += opts.reduce(0.0) { $0 + $1.numericPrice }
                         }
                     case "topping":
                         if let t = sel as? DryTopping {
+                            // Topping real de la tabla "dry_toppings" — id válido para el FK.
                             topId = t.id; topName = t.name
                         } else if let opt = sel as? ModifierOption {
-                            topId = opt.id; topName = opt.name
+                            // Opción definida en el flujo personalizado — mismo caso que
+                            // "frosting" arriba: su id no existe en "dry_toppings".
+                            customModsDict[step.id] = [
+                                "stepName": step.stepName,
+                                "stepType": step.stepType,
+                                "options": [["id": opt.id, "name": opt.name, "price": opt.price]]
+                            ]
                             price += opt.numericPrice
-                        } else if let opts = sel as? [ModifierOption], let first = opts.first {
-                            topId = first.id; topName = opts.map { $0.name }.joined(separator: ", ")
+                        } else if let opts = sel as? [ModifierOption], !opts.isEmpty {
+                            customModsDict[step.id] = [
+                                "stepName": step.stepName,
+                                "stepType": step.stepType,
+                                "options": opts.map { ["id": $0.id, "name": $0.name, "price": $0.price] }
+                            ]
                             price += opts.reduce(0.0) { $0 + $1.numericPrice }
                         }
                     case "extra":

@@ -15,7 +15,27 @@ export async function getOrCreateStripeCustomer(clerkUserId: string, email: stri
   const existing = await db.query.customerStripeAccounts.findFirst({
     where: eq(schema.customerStripeAccounts.clerkUserId, clerkUserId),
   });
-  if (existing) return existing.stripeCustomerId;
+
+  if (existing) {
+    // Los Stripe Customer IDs no son válidos entre modo test y modo live —
+    // si se cambió la llave (p.ej. al pasar a producción), el ID guardado
+    // ya no existe en la cuenta actual. Verificamos y lo recreamos si hace falta.
+    try {
+      const customer = await stripe.customers.retrieve(existing.stripeCustomerId);
+      if (!("deleted" in customer && customer.deleted)) {
+        return existing.stripeCustomerId;
+      }
+    } catch (err: any) {
+      if (err?.code !== "resource_missing") throw err;
+    }
+
+    const recreated = await stripe.customers.create({ email });
+    await db
+      .update(schema.customerStripeAccounts)
+      .set({ stripeCustomerId: recreated.id })
+      .where(eq(schema.customerStripeAccounts.clerkUserId, clerkUserId));
+    return recreated.id;
+  }
 
   const customer = await stripe.customers.create({ email });
   await db.insert(schema.customerStripeAccounts).values({
@@ -50,7 +70,9 @@ router.get("/public/payment-methods", requireClerkAuth, async (req, res) => {
     });
     if (!account) return res.json([]);
 
-    const methods = await stripe.paymentMethods.list({ customer: account.stripeCustomerId, type: "card" });
+    // Revalida/recrea el customer si quedó apuntando a otro modo de Stripe (test/live).
+    const stripeCustomerId = await getOrCreateStripeCustomer(req.clerkUserId!, req.clerkEmail!);
+    const methods = await stripe.paymentMethods.list({ customer: stripeCustomerId, type: "card" });
     res.json(
       methods.data.map((pm) => ({
         id: pm.id,
