@@ -14,15 +14,27 @@ export async function GET() {
       },
     });
 
-    // Marca qué categorías tienen flujo personalizado (tienen pasos definidos).
+    // Marca qué categorías y subcategorías tienen flujo propio (pasos definidos).
     const stepRows = await db
-      .select({ categoryId: modifierSteps.categoryId })
+      .select({
+        categoryId: modifierSteps.categoryId,
+        subcategoryId: modifierSteps.subcategoryId,
+      })
       .from(modifierSteps);
-    const withFlow = new Set(stepRows.map((r) => r.categoryId));
+    const catsWithFlow = new Set(
+      stepRows.map((r) => r.categoryId).filter(Boolean)
+    );
+    const subcatsWithFlow = new Set(
+      stepRows.map((r) => r.subcategoryId).filter(Boolean)
+    );
 
-    const withFlag = result.map((c) => ({
+    const withFlag = result.map((c: any) => ({
       ...c,
-      hasCustomFlow: withFlow.has(c.id),
+      hasCustomFlow: catsWithFlow.has(c.id),
+      subcategories: (c.subcategories || []).map((s: any) => ({
+        ...s,
+        hasCustomFlow: subcatsWithFlow.has(s.id),
+      })),
     }));
 
     return NextResponse.json(withFlag);

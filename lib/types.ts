@@ -57,6 +57,7 @@ export interface Subcategory {
   name: string;
   sortOrder: number;
   active: boolean;
+  hasCustomFlow?: boolean;
 }
 
 export interface Category {
@@ -69,6 +70,7 @@ export interface Category {
   active: boolean;
   isBeverage?: boolean;
   subcategories?: Subcategory[];
+  hasCustomFlow?: boolean;
 }
 
 export interface QuickNote {

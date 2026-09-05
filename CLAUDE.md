@@ -4,6 +4,15 @@ Monorepo para el sistema de restaurante de Cocina Bruma: backend, panel admin we
 apps de iOS (POS de iPad, comandas de iPhone, dispatch de delivery) y servidor de
 impresión.
 
+## Mantener este archivo actualizado
+
+Al terminar una tarea no trivial (feature nueva, bug fix con causa no obvia,
+cambio de arquitectura), agregar una nota breve aquí si el hallazgo es
+durable y no es obvio con solo leer el código — mismo criterio que el resto
+del archivo: gotchas, convenciones, decisiones de arquitectura. No convertir
+esto en un changelog cronológico de tareas (para eso está `git log`); si algo
+deja de aplicar, corregirlo o borrarlo en vez de apilar notas viejas.
+
 ## Mapa del repo
 
 - **`app/`, `components/`, `lib/`** — panel admin/dashboard Next.js (App Router),
@@ -30,6 +39,13 @@ impresión.
   `RESERVATIONS_SETUP.md`, `FLUJOS_PERSONALIZADOS.md`, etc.) son notas de
   features específicas, mayormente históricas — no son la fuente de verdad
   del estado actual del código.
+- **Web pública de pedidos en línea** (menú/checkout para clientes) vive en
+  un repo aparte, fuera de este monorepo:
+  `/Users/inakisiguenza/Desktop/Dev/BRUMA Web/bruma-nextjs`. Es un sitio
+  Next.js estático (sin servidor Next.js corriendo) que consume el mismo
+  `api-server`. Sus secrets `NEXT_PUBLIC_*` (p.ej. la publishable key de
+  Stripe) se configuran en Vercel y se inyectan en build time — cambiarlos
+  requiere un redeploy, no basta con guardarlos.
 
 ## Bruma POS Mobile: arquitectura de target compartido
 
@@ -63,6 +79,28 @@ como `.modifier(FlatCard(cornerRadius: 12))`, igual que ya hace POS en
 `Views/` — nunca tocar los archivos del target "Bruma POS" para hacerle
 cambios a Mobile.
 
+**Gotcha de flujos personalizados por categoría:** en
+`POSViewModel.buildFlowCartItem`, los pasos de flujo tipo `frosting`/`topping`
+solo deben llenar `frostingId`/`dryToppingId` (columnas con FK a las tablas
+`frostings`/`dry_toppings`) cuando la selección es una fila real de esas
+tablas. Si el paso trae opciones propias del flujo personalizado
+(`ModifierOption`, tabla `modifier_options`), su `id` NO existe en
+`frostings`/`dry_toppings` — debe guardarse en `customModifiers` (JSON), igual
+que ya hacía el caso `extra`. Guardar ese id en `frostingId`/`dryToppingId`
+revienta el insert de `order_items` por violación de FK al mandar el pedido.
+
+**Flujos por nivel — precedencia:** `modifier_steps` guarda pasos de flujo
+para categoría O subcategoría (`category_id` y `subcategory_id`, ambos
+nullable, exactamente uno seteado). La resolución del flujo efectivo de un
+producto vive en `api-server/src/routes/flows.ts` (`GET /api/products/:id/flow`,
+lo único que consume el POS) y su espejo en `app/api/products/[id]/flow`:
+producto (`product_flows`) > subcategoría > categoría > default. Cada nivel
+solo aplica si tiene pasos; si no, cae al siguiente. Los editores viven en
+`/inventory/categories/[id]/flow` y `/inventory/subcategories/[id]/flow`, ambos
+usan `<FlowEditor>` con `allowedStepTypes` limitado a los 4 tipos normalizados.
+`GET /api/categories` marca `hasCustomFlow` tanto en la categoría como en cada
+subcategoría.
+
 ## Compilar/verificar la app de iOS
 
 Usar las herramientas de XcodeBuildMCP en vez de `xcodebuild` a mano:
@@ -77,6 +115,31 @@ Edit/Write en este proyecto son frecuentemente ruido/incorrectos** (falsos
 "Cannot find type X in scope" en archivos de un target multi-compartido,
 antes de que el índice recompile). Solo confiar en la salida real de
 `build_sim`/`xcodebuild` como señal de verdad.
+
+## Base de datos: migraciones
+
+Esta DB (Neon) se aprovisionó históricamente con `db:push`/SQL manual, no con
+`drizzle-kit migrate` — la tabla de tracking `drizzle.__drizzle_migrations`
+está vacía/desincronizada del historial real. Correr `npm run db:migrate` a
+secas intenta reproducir TODO el historial de migraciones desde la 0000 y
+falla en el primer statement ("type/relation already exists"). Para agregar
+schema nuevo: `npm run db:generate`, revisar el SQL generado (puede traer
+drift de columnas/tablas que ya existen en la DB real pero nunca se
+"migraron" formalmente — hay que recortar esas líneas), y aplicar solo los
+statements realmente nuevos directo contra `DATABASE_URL` (p.ej. un script
+Node con `@neondatabase/serverless`), no con `db:migrate`.
+
+## Stripe: test vs live
+
+`customer_stripe_accounts.stripe_customer_id` no es válido entre modo test y
+modo live de Stripe (son cuentas distintas) — si se cambia la llave (p.ej. al
+pasar a producción), los customers guardados quedan huérfanos y cualquier uso
+truena con `No such customer`. Ya hay auto-cura para esto:
+`getOrCreateStripeCustomer` en `api-server/src/routes/payment-methods.ts`
+valida el customer contra Stripe antes de usarlo y lo recrea (actualizando la
+fila) si ya no existe. Si aparece ese error de nuevo, típicamente es porque
+falta actualizar la publishable key del lado del frontend (ver nota de la web
+pública arriba), no porque falte volver a aplicar este fix.
 
 ## Backend: rooms de socket
 

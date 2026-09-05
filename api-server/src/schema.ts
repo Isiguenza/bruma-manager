@@ -249,9 +249,14 @@ export const modifierStepTypeEnum = pgEnum("modifier_step_type", [
 
 export const modifierSteps = pgTable("modifier_steps", {
   id: uuid("id").defaultRandom().primaryKey(),
-  categoryId: uuid("category_id")
-    .notNull()
-    .references(() => categories.id, { onDelete: "cascade" }),
+  // Un flujo pertenece a una categoría O a una subcategoría (exactamente uno).
+  // Los pasos de subcategoría tienen precedencia sobre los de la categoría padre.
+  categoryId: uuid("category_id").references(() => categories.id, {
+    onDelete: "cascade",
+  }),
+  subcategoryId: uuid("subcategory_id").references(() => subcategories.id, {
+    onDelete: "cascade",
+  }),
   stepType: modifierStepTypeEnum("step_type").notNull(),
   stepName: varchar("step_name", { length: 255 }).notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -566,12 +571,17 @@ export const subcategoriesRelations = relations(subcategories, ({ one, many }) =
     references: [categories.id],
   }),
   products: many(products),
+  modifierSteps: many(modifierSteps),
 }));
 
 export const modifierStepsRelations = relations(modifierSteps, ({ one, many }) => ({
   category: one(categories, {
     fields: [modifierSteps.categoryId],
     references: [categories.id],
+  }),
+  subcategory: one(subcategories, {
+    fields: [modifierSteps.subcategoryId],
+    references: [subcategories.id],
   }),
   options: many(modifierOptions),
 }));

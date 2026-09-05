@@ -143,6 +143,48 @@ export async function GET(
       return NextResponse.json(response);
     }
 
+    // Precedencia: subcategoría antes que categoría
+    if (product.subcategoryId) {
+      const subSteps = await db.query.modifierSteps.findMany({
+        where: eq(modifierSteps.subcategoryId, product.subcategoryId),
+        orderBy: [asc(modifierSteps.sortOrder)],
+        with: {
+          options: {
+            orderBy: [asc(modifierOptions.sortOrder)],
+          },
+        },
+      });
+
+      if (subSteps.length > 0) {
+        return NextResponse.json({
+          productId: id,
+          useDefaultFlow: false,
+          steps: subSteps.map((s, index) => ({
+            id: s.id,
+            categoryId: product.categoryId,
+            stepName: s.stepName,
+            stepType: s.stepType,
+            sortOrder: s.sortOrder ?? index + 1,
+            isRequired: s.isRequired ?? false,
+            allowMultiple: s.allowMultiple ?? (s.stepType === "extra"),
+            includeNoneOption: s.includeNoneOption ?? true,
+            active: s.active ?? true,
+            options: (s.options || []).map((o: any) => ({
+              id: o.id,
+              stepId: o.stepId ?? s.id,
+              name: o.name,
+              description: o.description ?? null,
+              price: o.price ?? "0",
+              sortOrder: o.sortOrder ?? 0,
+              active: o.active ?? true,
+            })),
+          })),
+          isBeverage: productFlow?.isBeverage ?? false,
+          source: "subcategory",
+        });
+      }
+    }
+
     // Otherwise, inherit from category flow
     if (product.categoryId) {
       const steps = await db.query.modifierSteps.findMany({

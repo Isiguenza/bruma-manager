@@ -33,6 +33,8 @@ const nodeTypes = {
 interface FlowEditorProps {
   productId?: string;
   categoryId?: string;
+  subcategoryId?: string;
+  titleOverride?: string;
   initialSteps?: ModifierStep[];
   initialNodes?: any;
   onSave?: (steps: ModifierStep[], nodes: any) => void;
@@ -45,6 +47,8 @@ interface FlowEditorProps {
 export function FlowEditor({
   productId,
   categoryId,
+  subcategoryId,
+  titleOverride,
   initialSteps = [],
   initialNodes,
   onSave,
@@ -188,7 +192,12 @@ export function FlowEditor({
           <div>
             <h1 className="text-xl font-bold">Editor de Flujo</h1>
             <p className="text-sm text-muted-foreground">
-              {productId ? "Flujo de Producto" : "Flujo de Categoría"}
+              {titleOverride ??
+                (productId
+                  ? "Flujo de Producto"
+                  : subcategoryId
+                    ? "Flujo de Subcategoría"
+                    : "Flujo de Categoría")}
             </p>
           </div>
         </div>

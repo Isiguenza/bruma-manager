@@ -54,6 +54,51 @@ router.get("/categories/:id/flow", async (req, res) => {
   }
 });
 
+// GET /api/subcategories/:id/flow
+router.get("/subcategories/:id/flow", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const steps = await db.query.modifierSteps.findMany({
+      where: eq(schema.modifierSteps.subcategoryId, id),
+      orderBy: [asc(schema.modifierSteps.sortOrder)],
+      with: {
+        options: {
+          orderBy: [asc(schema.modifierOptions.sortOrder)],
+        },
+      },
+    });
+
+    if (!steps || steps.length === 0) {
+      return res.json({ subcategoryId: id, useDefaultFlow: true, steps: [] });
+    }
+
+    res.json({
+      subcategoryId: id,
+      useDefaultFlow: false,
+      steps: steps.map((s: any) => ({
+        id: s.id,
+        stepName: s.stepName,
+        stepType: s.stepType,
+        sortOrder: s.sortOrder,
+        isRequired: s.isRequired,
+        allowMultiple: s.allowMultiple,
+        options: (s.options || []).map((o: any) => ({
+          id: o.id,
+          stepId: o.stepId,
+          name: o.name,
+          description: o.description,
+          price: o.price,
+          sortOrder: o.sortOrder,
+        })),
+      })),
+    });
+  } catch (error) {
+    console.error("Error fetching subcategory flow:", error);
+    res.status(500).json({ error: "Error al obtener flujo de subcategoría" });
+  }
+});
+
 // GET /api/products/:id/flow
 router.get("/products/:id/flow", async (req, res) => {
   try {
@@ -140,7 +185,60 @@ router.get("/products/:id/flow", async (req, res) => {
       .where(eq(schema.products.id, id))
       .limit(1);
 
-    if (!product || !product.categoryId) {
+    if (!product || (!product.categoryId && !product.subcategoryId)) {
+      return res.json({
+        productId: id,
+        useDefaultFlow: true,
+        steps: [],
+        source: "default",
+      });
+    }
+
+    const normalizeSteps = (rows: any[]) =>
+      rows.map((s: any, index: number) => ({
+        id: s.id,
+        categoryId: product.categoryId,
+        stepName: s.stepName,
+        stepType: s.stepType,
+        sortOrder: s.sortOrder ?? index + 1,
+        isRequired: s.isRequired ?? false,
+        allowMultiple: s.allowMultiple ?? (s.stepType === "extra"),
+        includeNoneOption: s.includeNoneOption ?? true,
+        active: s.active ?? true,
+        options: (s.options || []).map((o: any) => ({
+          id: o.id,
+          stepId: o.stepId ?? s.id,
+          name: o.name,
+          description: o.description ?? null,
+          price: o.price ?? "0",
+          sortOrder: o.sortOrder ?? 0,
+          active: o.active ?? true,
+        })),
+      }));
+
+    // Precedencia: subcategoría antes que categoría
+    if (product.subcategoryId) {
+      const subSteps = await db.query.modifierSteps.findMany({
+        where: eq(schema.modifierSteps.subcategoryId, product.subcategoryId),
+        orderBy: [asc(schema.modifierSteps.sortOrder)],
+        with: {
+          options: {
+            orderBy: [asc(schema.modifierOptions.sortOrder)],
+          },
+        },
+      });
+
+      if (subSteps && subSteps.length > 0) {
+        return res.json({
+          productId: id,
+          useDefaultFlow: false,
+          steps: normalizeSteps(subSteps),
+          source: "subcategory",
+        });
+      }
+    }
+
+    if (!product.categoryId) {
       return res.json({
         productId: id,
         useDefaultFlow: true,

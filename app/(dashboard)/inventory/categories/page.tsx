@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   DndContext,
   closestCenter,
@@ -22,22 +22,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   Plus,
@@ -46,18 +37,15 @@ import {
   FlowArrow,
   BeerStein,
   FolderOpen,
-  CheckCircle,
-  XCircle,
-  Package,
-  ArrowCounterClockwise,
   DotsSixVertical,
   SortAscending,
   HandGrabbing,
-  ListBullets,
   ArrowUp,
   ArrowDown,
+  CaretRight,
+  Check,
+  X,
 } from "@phosphor-icons/react";
-import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
 import type { Category, Subcategory } from "@/lib/types";
 
@@ -74,44 +62,60 @@ const PRESET_COLORS = [
   { name: "Gris", value: "#6B7280" },
 ];
 
-// Sortable category item for drag-and-drop
-function SortableCategoryItem({ category }: { category: Category }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: category.id });
+function SortableCategoryRow({
+  category,
+  selected,
+  onSelect,
+}: {
+  category: Category;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: category.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.4 : 1,
   };
+
+  const subcatCount = category.subcategories?.length ?? 0;
+  const flowCount =
+    (category.hasCustomFlow ? 1 : 0) +
+    (category.subcategories?.filter((s) => s.hasCustomFlow).length ?? 0);
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0 bg-card hover:bg-accent/50 transition-colors"
+      onClick={onSelect}
+      className={`group flex items-center gap-2 rounded-lg px-2 py-2 cursor-pointer transition-colors ${
+        selected ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-accent/60"
+      }`}
     >
       <button
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
+        onClick={(e) => e.stopPropagation()}
+        className="cursor-grab active:cursor-grabbing p-0.5 text-muted-foreground/40 hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
       >
-        <DotsSixVertical className="size-5" />
+        <DotsSixVertical className="size-4" />
       </button>
       <div
-        className="size-3 rounded-full flex-shrink-0"
+        className="size-2.5 rounded-full flex-shrink-0"
         style={{ backgroundColor: category.color || "#6B7280" }}
       />
-      <span className="flex-1 font-medium">{category.name}</span>
+      <span className="flex-1 truncate text-sm font-medium">{category.name}</span>
       {category.isBeverage && (
-        <BeerStein className="size-4 text-cyan-500" weight="fill" />
+        <BeerStein className="size-3.5 text-cyan-500" weight="fill" />
       )}
+      {subcatCount > 0 && (
+        <span className="text-[11px] tabular-nums text-muted-foreground">
+          {subcatCount}
+        </span>
+      )}
+      {flowCount > 0 && <FlowArrow className="size-3.5 text-blue-500" />}
     </div>
   );
 }
@@ -120,86 +124,166 @@ export default function CategoriesPage() {
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<"custom" | "alphabetical">("custom");
+  const [savingOrder, setSavingOrder] = useState(false);
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  
   const [formData, setFormData] = useState({
     name: "",
     description: "",
     color: "#6B7280",
-    sortOrder: 0,
     isBeverage: false,
   });
-  const [orderedCategories, setOrderedCategories] = useState<Category[]>([]);
-  const [savingOrder, setSavingOrder] = useState(false);
-  const [sortMode, setSortMode] = useState<"custom" | "alphabetical">("custom");
 
-  // Subcategories dialog
-  const [subcatDialogOpen, setSubcatDialogOpen] = useState(false);
-  const [subcatCategoryId, setSubcatCategoryId] = useState<string | null>(null);
-  const [subcatList, setSubcatList] = useState<Subcategory[]>([]);
+  // Inline subcategory editing
   const [newSubcatName, setNewSubcatName] = useState("");
+  const [subcatSaving, setSubcatSaving] = useState(false);
   const [editingSubcatId, setEditingSubcatId] = useState<string | null>(null);
   const [editingSubcatName, setEditingSubcatName] = useState("");
-  const [subcatSaving, setSubcatSaving] = useState(false);
 
-  const subcatCategory = categories.find((c) => c.id === subcatCategoryId) || null;
+  const selected = useMemo(
+    () => categories.find((c) => c.id === selectedId) || null,
+    [categories, selectedId]
+  );
 
   useEffect(() => {
     fetchCategories();
   }, []);
 
-  async function fetchCategoriesData(): Promise<Category[] | null> {
+  async function fetchCategories(keepSelection = true) {
     try {
       const res = await fetch("/api/categories");
-      if (!res.ok) return null;
-      return await res.json();
+      if (!res.ok) throw new Error();
+      const data: Category[] = await res.json();
+      setCategories(data);
+      setSelectedId((prev) => {
+        if (keepSelection && prev && data.some((c) => c.id === prev)) return prev;
+        return data[0]?.id ?? null;
+      });
     } catch {
-      return null;
-    }
-  }
-
-  async function fetchCategories() {
-    const data = await fetchCategoriesData();
-    if (data) {
-      setCategories(data);
-      setOrderedCategories(data);
-    } else {
       toast.error("Error cargando categorías");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
-  function openSubcatDialog(category: Category) {
-    setSubcatCategoryId(category.id);
-    setSubcatList(category.subcategories || []);
-    setNewSubcatName("");
-    setEditingSubcatId(null);
-    setSubcatDialogOpen(true);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  async function persistOrder(ordered: Category[]) {
+    setSavingOrder(true);
+    try {
+      const res = await fetch("/api/categories/reorder", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orders: ordered.map((cat, idx) => ({ id: cat.id, sortOrder: idx })),
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Orden guardado");
+    } catch {
+      toast.error("Error guardando orden");
+      fetchCategories();
+    } finally {
+      setSavingOrder(false);
+    }
   }
 
-  async function refreshSubcategories() {
-    const data = await fetchCategoriesData();
-    if (data && subcatCategoryId) {
-      setCategories(data);
-      setOrderedCategories(data);
-      const updated = data.find((c) => c.id === subcatCategoryId);
-      setSubcatList(updated?.subcategories || []);
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setSortMode("custom");
+    setCategories((items) => {
+      const oldIndex = items.findIndex((i) => i.id === active.id);
+      const newIndex = items.findIndex((i) => i.id === over.id);
+      const reordered = arrayMove(items, oldIndex, newIndex);
+      persistOrder(reordered);
+      return reordered;
+    });
+  }
+
+  async function handleSortModeChange(mode: "custom" | "alphabetical") {
+    setSortMode(mode);
+    if (mode !== "alphabetical") return;
+    const sorted = [...categories].sort((a, b) =>
+      a.name.localeCompare(b.name, "es", { sensitivity: "base" })
+    );
+    setCategories(sorted);
+    await persistOrder(sorted);
+  }
+
+  function openCreate() {
+    setEditingCategory(null);
+    setFormData({ name: "", description: "", color: "#6B7280", isBeverage: false });
+    setDialogOpen(true);
+  }
+
+  function openEdit(category: Category) {
+    setEditingCategory(category);
+    setFormData({
+      name: category.name,
+      description: category.description || "",
+      color: category.color || "#6B7280",
+      isBeverage: category.isBeverage || false,
+    });
+    setDialogOpen(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const url = editingCategory
+        ? `/api/categories/${editingCategory.id}`
+        : "/api/categories";
+      const res = await fetch(url, {
+        method: editingCategory ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      if (!res.ok) throw new Error();
+      const saved = await res.json();
+      toast.success(editingCategory ? "Categoría actualizada" : "Categoría creada");
+      setDialogOpen(false);
+      await fetchCategories();
+      if (!editingCategory && saved?.id) setSelectedId(saved.id);
+    } catch {
+      toast.error("Error guardando categoría");
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("¿Eliminar esta categoría?")) return;
+    try {
+      const res = await fetch(`/api/categories/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      toast.success("Categoría eliminada");
+      setSelectedId(null);
+      await fetchCategories(false);
+    } catch {
+      toast.error("Error eliminando categoría");
     }
   }
 
   async function handleAddSubcategory() {
-    if (!subcatCategoryId || !newSubcatName.trim()) return;
+    if (!selected || !newSubcatName.trim()) return;
     setSubcatSaving(true);
     try {
-      const res = await fetch(`/api/categories/${subcatCategoryId}/subcategories`, {
+      const res = await fetch(`/api/categories/${selected.id}/subcategories`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newSubcatName.trim(), sortOrder: subcatList.length }),
+        body: JSON.stringify({
+          name: newSubcatName.trim(),
+          sortOrder: selected.subcategories?.length ?? 0,
+        }),
       });
       if (!res.ok) throw new Error();
       setNewSubcatName("");
-      await refreshSubcategories();
+      await fetchCategories();
       toast.success("Subcategoría creada");
     } catch {
       toast.error("Error creando subcategoría");
@@ -209,7 +293,10 @@ export default function CategoriesPage() {
   }
 
   async function handleRenameSubcategory(id: string) {
-    if (!editingSubcatName.trim()) return;
+    if (!editingSubcatName.trim()) {
+      setEditingSubcatId(null);
+      return;
+    }
     try {
       const res = await fetch(`/api/subcategories/${id}`, {
         method: "PUT",
@@ -218,31 +305,43 @@ export default function CategoriesPage() {
       });
       if (!res.ok) throw new Error();
       setEditingSubcatId(null);
-      await refreshSubcategories();
-      toast.success("Subcategoría actualizada");
+      await fetchCategories();
     } catch {
       toast.error("Error actualizando subcategoría");
     }
   }
 
   async function handleDeleteSubcategory(id: string) {
-    if (!confirm("¿Eliminar esta subcategoría? Los productos que la usan quedarán sin subcategoría.")) return;
+    if (
+      !confirm(
+        "¿Eliminar esta subcategoría? Los productos que la usan quedarán sin subcategoría."
+      )
+    )
+      return;
     try {
       const res = await fetch(`/api/subcategories/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
-      await refreshSubcategories();
+      await fetchCategories();
       toast.success("Subcategoría eliminada");
     } catch {
       toast.error("Error eliminando subcategoría");
     }
   }
 
-  async function handleMoveSubcategory(index: number, direction: -1 | 1) {
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= subcatList.length) return;
-    const reordered = [...subcatList];
-    [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
-    setSubcatList(reordered);
+  async function handleMoveSubcategory(
+    list: Subcategory[],
+    index: number,
+    direction: -1 | 1
+  ) {
+    const target = index + direction;
+    if (target < 0 || target >= list.length) return;
+    const reordered = [...list];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    setCategories((cats) =>
+      cats.map((c) =>
+        c.id === selectedId ? { ...c, subcategories: reordered } : c
+      )
+    );
     try {
       await Promise.all(
         reordered.map((s, idx) =>
@@ -253,138 +352,14 @@ export default function CategoriesPage() {
           })
         )
       );
-      await refreshSubcategories();
+      await fetchCategories();
     } catch {
       toast.error("Error guardando orden");
-    }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    
-    try {
-      const url = editingCategory ? `/api/categories/${editingCategory.id}` : "/api/categories";
-      const method = editingCategory ? "PUT" : "POST";
-      
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-
-      if (!res.ok) throw new Error();
-
-      toast.success(editingCategory ? "Categoría actualizada" : "Categoría creada");
-      setDialogOpen(false);
-      resetForm();
       fetchCategories();
-    } catch (error) {
-      toast.error("Error guardando categoría");
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("¿Eliminar esta categoría?")) return;
-
-    try {
-      const res = await fetch(`/api/categories/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-      
-      toast.success("Categoría eliminada");
-      fetchCategories();
-    } catch (error) {
-      toast.error("Error eliminando categoría");
-    }
-  }
-
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setSortMode("custom");
-      setOrderedCategories((items) => {
-        const oldIndex = items.findIndex((i) => i.id === active.id);
-        const newIndex = items.findIndex((i) => i.id === over.id);
-        return arrayMove(items, oldIndex, newIndex);
-      });
-    }
-  }
-
-  async function persistOrder(ordered: Category[]) {
-    setSavingOrder(true);
-    try {
-      const orders = ordered.map((cat, idx) => ({
-        id: cat.id,
-        sortOrder: idx,
-      }));
-      const res = await fetch("/api/categories/reorder", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orders }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Orden guardado");
-      fetchCategories();
-    } catch {
-      toast.error("Error guardando orden");
-    } finally {
-      setSavingOrder(false);
-    }
-  }
-
-  async function handleSaveOrder() {
-    await persistOrder(orderedCategories);
-  }
-
-  function handleResetOrder() {
-    setOrderedCategories(categories);
-  }
-
-  async function handleSortModeChange(mode: "custom" | "alphabetical") {
-    setSortMode(mode);
-    if (mode === "alphabetical") {
-      const sorted = [...categories].sort((a, b) =>
-        a.name.localeCompare(b.name, "es", { sensitivity: "base" })
-      );
-      setOrderedCategories(sorted);
-      await persistOrder(sorted);
-    } else {
-      setOrderedCategories(categories);
-    }
-  }
-
-  function handleEdit(category: Category) {
-    setEditingCategory(category);
-    setFormData({
-      name: category.name,
-      description: category.description || "",
-      color: category.color || "#6B7280",
-      sortOrder: category.sortOrder,
-      isBeverage: category.isBeverage || false,
-    });
-    setDialogOpen(true);
-  }
-
-  function resetForm() {
-    setEditingCategory(null);
-    setFormData({
-      name: "",
-      description: "",
-      color: "#6B7280",
-      sortOrder: 0,
-      isBeverage: false,
-    });
-  }
-
-  const activeCategories = categories.filter(c => c.active).length;
-  const inactiveCategories = categories.filter(c => !c.active).length;
-  const beverageCategories = categories.filter(c => c.isBeverage).length;
+  const beverageCount = categories.filter((c) => c.isBeverage).length;
 
   if (loading) {
     return (
@@ -397,511 +372,406 @@ export default function CategoriesPage() {
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Hero Section */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Categorías de Productos</h1>
-            <p className="text-muted-foreground mt-1">
-              Organiza y gestiona tus categorías
-            </p>
-          </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={resetForm} className="gap-2">
-                <Plus className="size-4" />
-                Nueva Categoría
-              </Button>
-            </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {editingCategory ? "Editar Categoría" : "Nueva Categoría"}
-              </DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="name">Nombre</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  required
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="description">Descripción</Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  rows={3}
-                />
-              </div>
+  const subcats = selected?.subcategories ?? [];
 
-              <div>
-                <Label>Color</Label>
-                <div className="grid grid-cols-5 gap-2 mt-2">
-                  {PRESET_COLORS.map((color) => (
-                    <button
-                      key={color.value}
-                      type="button"
-                      onClick={() =>
-                        setFormData({ ...formData, color: color.value })
-                      }
-                      className={`h-12 rounded-md border-2 transition-all ${
-                        formData.color === color.value
-                          ? "border-primary scale-110"
-                          : "border-transparent"
-                      }`}
-                      style={{ backgroundColor: color.value }}
-                      title={color.name}
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Categorías</h1>
+          <p className="text-sm text-muted-foreground">
+            {categories.length} categoría{categories.length === 1 ? "" : "s"}
+            {beverageCount > 0 && ` · ${beverageCount} bebida${beverageCount === 1 ? "" : "s"}`}
+            {" · el orden se refleja en Bruma POS"}
+          </p>
+        </div>
+        <Button onClick={openCreate} className="gap-2">
+          <Plus className="size-4" />
+          Nueva categoría
+        </Button>
+      </div>
+
+      <div className="flex gap-6 items-start">
+        {/* Left: list */}
+        <div className="w-72 shrink-0 space-y-2">
+          <div className="inline-flex rounded-lg border bg-muted p-0.5 text-xs w-full">
+            <button
+              type="button"
+              onClick={() => handleSortModeChange("custom")}
+              disabled={savingOrder}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium transition-colors ${
+                sortMode === "custom"
+                  ? "bg-background shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <HandGrabbing className="size-3.5" />
+              Manual
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSortModeChange("alphabetical")}
+              disabled={savingOrder}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium transition-colors ${
+                sortMode === "alphabetical"
+                  ? "bg-background shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <SortAscending className="size-3.5" />
+              A–Z
+            </button>
+          </div>
+
+          {categories.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Sin categorías todavía
+            </div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={categories.map((c) => c.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="rounded-lg border bg-card p-1 space-y-0.5">
+                  {categories.map((category) => (
+                    <SortableCategoryRow
+                      key={category.id}
+                      category={category}
+                      selected={category.id === selectedId}
+                      onSelect={() => setSelectedId(category.id)}
                     />
                   ))}
                 </div>
-              </div>
-
-              <div>
-                <Label htmlFor="sortOrder">Orden</Label>
-                <Input
-                  id="sortOrder"
-                  type="number"
-                  value={formData.sortOrder}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      sortOrder: parseInt(e.target.value),
-                    })
-                  }
-                />
-              </div>
-
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div className="flex items-center gap-2">
-                  <BeerStein className="size-4 text-cyan-500" weight="fill" />
-                  <Label htmlFor="isBeverage" className="cursor-pointer">Es bebida</Label>
-                </div>
-                <Switch
-                  id="isBeverage"
-                  checked={formData.isBeverage}
-                  onCheckedChange={(checked) =>
-                    setFormData({ ...formData, isBeverage: checked })
-                  }
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Button type="submit" className="flex-1">
-                  {editingCategory ? "Actualizar" : "Crear"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDialogOpen(false)}
-                >
-                  Cancelar
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-none shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-blue-500/10 p-3">
-                <FolderOpen className="size-5 text-blue-600" weight="duotone" />
-              </div>
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Categorías
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{categories.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-none shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-green-500/10 p-3">
-                <CheckCircle className="size-5 text-green-600" weight="duotone" />
-              </div>
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Activas
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeCategories}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-none shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-orange-500/10 p-3">
-                <XCircle className="size-5 text-orange-600" weight="duotone" />
-              </div>
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Inactivas
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{inactiveCategories}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-none shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-cyan-500/10 p-3">
-                <BeerStein className="size-5 text-cyan-600" weight="duotone" />
-              </div>
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Bebidas
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{beverageCategories}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Divider */}
-      <div className="border-t" />
-
-      {/* Reorder Section */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Orden de categorías</h2>
-            <p className="text-sm text-muted-foreground">
-              Elige cómo se acomodan. El orden se refleja en Bruma POS (iOS).
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleResetOrder}
-              disabled={savingOrder}
-            >
-              <ArrowCounterClockwise className="size-4 mr-1" />
-              Restaurar
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSaveOrder}
-              disabled={savingOrder || sortMode === "alphabetical"}
-            >
-              {savingOrder ? "Guardando..." : "Guardar orden"}
-            </Button>
-          </div>
+              </SortableContext>
+            </DndContext>
+          )}
         </div>
 
-        {/* Sort mode toggle: custom (drag) vs alphabetical */}
-        <div className="inline-flex rounded-lg border bg-muted p-1">
-          <button
-            type="button"
-            onClick={() => handleSortModeChange("custom")}
-            disabled={savingOrder}
-            className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              sortMode === "custom"
-                ? "bg-background shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <HandGrabbing className="size-4" />
-            Personalizado
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSortModeChange("alphabetical")}
-            disabled={savingOrder}
-            className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              sortMode === "alphabetical"
-                ? "bg-background shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <SortAscending className="size-4" />
-            Alfabético (A-Z)
-          </button>
-        </div>
-
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={orderedCategories.map((c) => c.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="rounded-lg border bg-card">
-              {orderedCategories.map((category) => (
-                <SortableCategoryItem
-                  key={category.id}
-                  category={category}
-                />
-              ))}
+        {/* Right: detail */}
+        <div className="flex-1 min-w-0">
+          {!selected ? (
+            <div className="flex flex-col items-center justify-center h-80 rounded-lg border border-dashed text-muted-foreground">
+              <FolderOpen className="size-14 mb-3 opacity-20" weight="duotone" />
+              <p className="font-medium">Selecciona una categoría</p>
+              <p className="text-sm">o crea una nueva para empezar</p>
             </div>
-          </SortableContext>
-        </DndContext>
-      </div>
-
-      <div className="border-t" />
-
-      {/* Categories Grid */}
-      {categories.length === 0 ? (
-        <Card className="border-none shadow-sm">
-          <CardContent className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-            <FolderOpen className="size-16 mb-4 opacity-20" weight="duotone" />
-            <p className="text-lg font-medium">No hay categorías creadas</p>
-            <p className="text-sm">Crea tu primera categoría para organizar productos</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {categories.map((category) => (
-            <Card 
-              key={category.id} 
-              className="group border-none shadow-sm hover:shadow-md transition-all"
-            >
-              <CardContent className="p-5">
-                <div className="space-y-3">
-                  {/* Header with color dot aligned with title */}
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="size-3 rounded-full shadow-sm animate-pulse"
-                      style={{ 
-                        backgroundColor: category.color || "#6B7280",
-                        boxShadow: `0 0 0 4px ${category.color || "#6B7280"}20`
-                      }}
-                    />
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-lg leading-none">{category.name}</h3>
-                    </div>
-                  </div>
-
-                  {/* Metadata */}
-                  <div className="flex items-center gap-2 pl-6">
-                    <span className="text-xs text-muted-foreground">
-                      Orden: {category.sortOrder}
+          ) : (
+            <div className="space-y-5">
+              {/* Header */}
+              <div className="flex items-start gap-3">
+                <div
+                  className="size-4 rounded-full mt-1.5 flex-shrink-0"
+                  style={{ backgroundColor: selected.color || "#6B7280" }}
+                />
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-xl font-bold truncate">{selected.name}</h2>
+                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                    {selected.isBeverage && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/10 px-2 py-0.5 text-xs font-medium text-cyan-600">
+                        <BeerStein className="size-3.5" weight="fill" />
+                        Bebida
+                      </span>
+                    )}
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                        selected.hasCustomFlow
+                          ? "bg-blue-500/10 text-blue-600"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      <FlowArrow className="size-3.5" />
+                      {selected.hasCustomFlow ? "Flujo propio" : "Flujo default"}
                     </span>
-                    {category.isBeverage && (
-                      <>
-                        <span className="text-xs text-muted-foreground">•</span>
-                        <div className="flex items-center gap-1 text-cyan-600">
-                          <BeerStein className="size-3.5" weight="fill" />
-                          <span className="text-xs font-medium">Bebida</span>
-                        </div>
-                      </>
-                    )}
-                    <span className="text-xs text-muted-foreground">•</span>
-                    {(category as any).hasCustomFlow ? (
-                      <div className="flex items-center gap-1 text-blue-600">
-                        <FlowArrow className="size-3.5" />
-                        <span className="text-xs font-medium">Flujo propio</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-muted-foreground">
-                        <FlowArrow className="size-3.5" />
-                        <span className="text-xs">Flujo default</span>
-                      </div>
-                    )}
                   </div>
+                  {selected.description && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {selected.description}
+                    </p>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openEdit(selected)}
+                    className="gap-1.5"
+                  >
+                    <Pencil className="size-4" />
+                    Editar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDelete(selected.id)}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <Trash className="size-4" />
+                  </Button>
+                </div>
+              </div>
 
-                  {/* Description */}
-                  {category.description && (
-                    <p className="text-sm text-muted-foreground line-clamp-2 pl-6">
-                      {category.description}
+              {/* Category flow */}
+              <button
+                type="button"
+                onClick={() =>
+                  router.push(`/inventory/categories/${selected.id}/flow`)
+                }
+                className="flex w-full items-center gap-3 rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent/60"
+              >
+                <div className="rounded-lg bg-blue-500/10 p-2.5">
+                  <FlowArrow className="size-5 text-blue-600" weight="duotone" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium">Flujo de la categoría</p>
+                  <p className="text-sm text-muted-foreground">
+                    {selected.hasCustomFlow
+                      ? "Personalizado — aplica a todos sus productos"
+                      : "Usa el flujo default (Escarchado · Topping · Extras)"}
+                  </p>
+                </div>
+                <CaretRight className="size-4 text-muted-foreground" />
+              </button>
+
+              {/* Subcategories */}
+              <div className="rounded-lg border bg-card">
+                <div className="flex items-center justify-between border-b px-4 py-3">
+                  <div>
+                    <p className="font-medium">Subcategorías</p>
+                    <p className="text-xs text-muted-foreground">
+                      Agrupan productos dentro de la categoría y pueden tener su
+                      propio flujo
+                    </p>
+                  </div>
+                  <span className="text-sm tabular-nums text-muted-foreground">
+                    {subcats.length}
+                  </span>
+                </div>
+
+                <div className="p-3 space-y-1">
+                  {subcats.length === 0 && (
+                    <p className="px-1 py-3 text-sm text-muted-foreground">
+                      Sin subcategorías. Los productos se muestran sin agrupar en
+                      Bruma POS.
                     </p>
                   )}
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 pt-2 border-t">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => router.push(`/inventory/categories/${category.id}/flow`)}
-                      className="flex-1 gap-2"
-                      title="Configurar flujo de modificadores"
+                  {subcats.map((sub, index) => (
+                    <div
+                      key={sub.id}
+                      className="flex items-center gap-2 rounded-md px-1 py-1.5 hover:bg-accent/50"
                     >
-                      <FlowArrow className="size-4" />
-                      Flujo
-                    </Button>
+                      <div className="flex flex-col">
+                        <button
+                          type="button"
+                          disabled={index === 0}
+                          onClick={() =>
+                            handleMoveSubcategory(subcats, index, -1)
+                          }
+                          className="text-muted-foreground/50 hover:text-foreground disabled:opacity-20"
+                        >
+                          <ArrowUp className="size-3" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === subcats.length - 1}
+                          onClick={() =>
+                            handleMoveSubcategory(subcats, index, 1)
+                          }
+                          className="text-muted-foreground/50 hover:text-foreground disabled:opacity-20"
+                        >
+                          <ArrowDown className="size-3" />
+                        </button>
+                      </div>
+
+                      {editingSubcatId === sub.id ? (
+                        <div className="flex flex-1 items-center gap-1">
+                          <Input
+                            value={editingSubcatName}
+                            autoFocus
+                            onChange={(e) => setEditingSubcatName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleRenameSubcategory(sub.id);
+                              } else if (e.key === "Escape") {
+                                setEditingSubcatId(null);
+                              }
+                            }}
+                            className="h-8 flex-1"
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleRenameSubcategory(sub.id)}
+                          >
+                            <Check className="size-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setEditingSubcatId(null)}
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="flex-1 truncate text-left text-sm font-medium hover:underline"
+                            onClick={() => {
+                              setEditingSubcatId(sub.id);
+                              setEditingSubcatName(sub.name);
+                            }}
+                          >
+                            {sub.name}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              router.push(`/inventory/subcategories/${sub.id}/flow`)
+                            }
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium transition-colors ${
+                              sub.hasCustomFlow
+                                ? "bg-blue-500/10 text-blue-600 hover:bg-blue-500/20"
+                                : "bg-muted text-muted-foreground hover:bg-accent"
+                            }`}
+                          >
+                            <FlowArrow className="size-3.5" />
+                            {sub.hasCustomFlow ? "Flujo propio" : "Hereda categoría"}
+                            <CaretRight className="size-3" />
+                          </button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteSubcategory(sub.id)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash className="size-3.5" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+
+                  <div className="flex gap-2 pt-2">
+                    <Input
+                      value={newSubcatName}
+                      onChange={(e) => setNewSubcatName(e.target.value)}
+                      placeholder="Nueva subcategoría (ej. Fríos, Calientes, Té…)"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddSubcategory();
+                        }
+                      }}
+                      className="h-9"
+                    />
                     <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openSubcatDialog(category)}
-                      className="gap-2"
-                      title="Gestionar subcategorías"
+                      onClick={handleAddSubcategory}
+                      disabled={subcatSaving || !newSubcatName.trim()}
+                      className="h-9 shrink-0 gap-1.5"
                     >
-                      <ListBullets className="size-4" />
-                      {category.subcategories && category.subcategories.length > 0
-                        ? category.subcategories.length
-                        : ""}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEdit(category)}
-                      className="gap-2"
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDelete(category.id)}
-                      className="gap-2 text-destructive hover:text-destructive"
-                    >
-                      <Trash className="size-4" />
+                      <Plus className="size-4" />
+                      Agregar
                     </Button>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Subcategories Dialog */}
-      <Dialog open={subcatDialogOpen} onOpenChange={setSubcatDialogOpen}>
+      {/* Create / edit dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Subcategorías de {subcatCategory?.name}
+              {editingCategory ? "Editar categoría" : "Nueva categoría"}
             </DialogTitle>
           </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="flex gap-2">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="name">Nombre</Label>
               <Input
-                value={newSubcatName}
-                onChange={(e) => setNewSubcatName(e.target.value)}
-                placeholder="Ej: Fríos, Calientes, Té..."
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAddSubcategory();
-                  }
-                }}
+                id="name"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+                required
               />
-              <Button
-                onClick={handleAddSubcategory}
-                disabled={subcatSaving || !newSubcatName.trim()}
-                className="gap-2 shrink-0"
-              >
-                <Plus className="size-4" />
-                Agregar
-              </Button>
             </div>
 
-            {subcatList.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">
-                Esta categoría no tiene subcategorías. Los productos se
-                mostrarán sin agrupar en Bruma POS.
-              </p>
-            ) : (
-              <div className="rounded-lg border divide-y">
-                {subcatList.map((sub, index) => (
-                  <div key={sub.id} className="flex items-center gap-2 px-3 py-2">
-                    <div className="flex flex-col">
-                      <button
-                        type="button"
-                        disabled={index === 0}
-                        onClick={() => handleMoveSubcategory(index, -1)}
-                        className="text-muted-foreground hover:text-foreground disabled:opacity-20"
-                      >
-                        <ArrowUp className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={index === subcatList.length - 1}
-                        onClick={() => handleMoveSubcategory(index, 1)}
-                        className="text-muted-foreground hover:text-foreground disabled:opacity-20"
-                      >
-                        <ArrowDown className="size-3.5" />
-                      </button>
-                    </div>
+            <div>
+              <Label htmlFor="description">Descripción</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                rows={3}
+              />
+            </div>
 
-                    {editingSubcatId === sub.id ? (
-                      <Input
-                        value={editingSubcatName}
-                        autoFocus
-                        onChange={(e) => setEditingSubcatName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleRenameSubcategory(sub.id);
-                          } else if (e.key === "Escape") {
-                            setEditingSubcatId(null);
-                          }
-                        }}
-                        onBlur={() => handleRenameSubcategory(sub.id)}
-                        className="h-8 flex-1"
-                      />
-                    ) : (
-                      <span
-                        className="flex-1 text-sm font-medium cursor-pointer hover:underline"
-                        onClick={() => {
-                          setEditingSubcatId(sub.id);
-                          setEditingSubcatName(sub.name);
-                        }}
-                      >
-                        {sub.name}
-                      </span>
-                    )}
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setEditingSubcatId(sub.id);
-                        setEditingSubcatName(sub.name);
-                      }}
-                    >
-                      <Pencil className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteSubcategory(sub.id)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash className="size-3.5" />
-                    </Button>
-                  </div>
+            <div>
+              <Label>Color</Label>
+              <div className="grid grid-cols-5 gap-2 mt-2">
+                {PRESET_COLORS.map((color) => (
+                  <button
+                    key={color.value}
+                    type="button"
+                    onClick={() =>
+                      setFormData({ ...formData, color: color.value })
+                    }
+                    className={`h-11 rounded-md border-2 transition-all ${
+                      formData.color === color.value
+                        ? "border-primary scale-110"
+                        : "border-transparent"
+                    }`}
+                    style={{ backgroundColor: color.value }}
+                    title={color.name}
+                  />
                 ))}
               </div>
-            )}
+            </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => setSubcatDialogOpen(false)}
-            >
-              Cerrar
-            </Button>
-          </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="flex items-center gap-2">
+                <BeerStein className="size-4 text-cyan-500" weight="fill" />
+                <Label htmlFor="isBeverage" className="cursor-pointer">
+                  Es bebida
+                </Label>
+              </div>
+              <Switch
+                id="isBeverage"
+                checked={formData.isBeverage}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, isBeverage: checked })
+                }
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1">
+                {editingCategory ? "Actualizar" : "Crear"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
