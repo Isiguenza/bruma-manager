@@ -101,6 +101,15 @@ usan `<FlowEditor>` con `allowedStepTypes` limitado a los 4 tipos normalizados.
 `GET /api/categories` marca `hasCustomFlow` tanto en la categoría como en cada
 subcategoría.
 
+**Comanda de cocina — nombre del item:** `api-server/src/lib/kitchenPrint.ts`
+(`printKitchenComanda`, la ruta canónica de impresión) arma el nombre así:
+`comandaItemName` invierte "Producto - Variante" → "Variante - Producto" (en
+cocina se lee primero el tamaño), y si el producto tiene subcategoría se le
+antepone: `"Frío - Capuccino"` (o `"Frío - Grande - Capuccino"` con variante).
+El ticket de cuenta/pre-cuenta NO invierte ni prefija. OJO: Bruma POS tiene
+copias client-side de `comandaItemName` (`POSViewModel.swift`) para el flujo
+de pedidos en línea — ahí el prefijo de subcategoría todavía no está.
+
 ## Compilar/verificar la app de iOS
 
 Usar las herramientas de XcodeBuildMCP en vez de `xcodebuild` a mano:

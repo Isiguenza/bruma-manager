@@ -78,6 +78,29 @@ function comandaItemName(productName: string): string {
   return `${variant} - ${product}`;
 }
 
+/** Nombre de subcategoría por producto — para prefijarlo en la comanda de
+ * cocina ("Frío - Capuccino"), mismo criterio de lectura que la variante. */
+async function resolveSubcategoryNames(
+  productIds: string[]
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (productIds.length === 0) return map;
+  const uniqueIds = Array.from(new Set(productIds));
+
+  const products = await db.query.products.findMany({
+    where: inArray(schema.products.id, uniqueIds),
+    columns: { id: true, subcategoryId: true },
+    with: { subcategory: { columns: { name: true } } },
+  });
+
+  for (const p of products as any[]) {
+    if (p.subcategoryId && p.subcategory?.name) {
+      map.set(p.id, p.subcategory.name);
+    }
+  }
+  return map;
+}
+
 /** Convierte el customModifiers (JSON de flujo por categoría/producto) que ya
  * mandan los clientes al formato plano {name} que espera print-server. */
 function buildFlowSteps(customModifiers: string | null | undefined): { name: string }[] {
@@ -130,12 +153,17 @@ export async function printKitchenComanda(opts: PrintKitchenComandaOptions): Pro
   if (!opts.items.length) return true;
 
   const printServerUrl = process.env.PRINT_SERVER_URL || "http://print-server:3001";
-  const beverageIds = await resolveBeverageFlags(
-    opts.items.map((i) => i.productId).filter((id): id is string => !!id)
-  );
+  const productIds = opts.items
+    .map((i) => i.productId)
+    .filter((id): id is string => !!id);
+  const beverageIds = await resolveBeverageFlags(productIds);
+  const subcategoryNames = await resolveSubcategoryNames(productIds);
 
-  const items = opts.items.map((item) => ({
-    name: comandaItemName(item.productName),
+  const items = opts.items.map((item) => {
+    const baseName = comandaItemName(item.productName);
+    const subName = item.productId ? subcategoryNames.get(item.productId) : undefined;
+    return {
+    name: subName ? `${subName} - ${baseName}` : baseName,
     qty: item.quantity,
     seat: item.seat || "C",
     course: item.course || 1,
@@ -148,7 +176,8 @@ export async function printKitchenComanda(opts: PrintKitchenComandaOptions): Pro
       const flowSteps = buildFlowSteps(item.customModifiers);
       return flowSteps.length > 0 ? { flowSteps } : {};
     })(),
-  }));
+    };
+  });
 
   const body = {
     orderNumber: String(opts.orderNumber),

@@ -37,6 +37,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -72,6 +77,7 @@ import {
   Tag,
   Image as ImageIcon,
   FlowArrow,
+  Check,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import type { Product, Category, Group } from "@/lib/types";
@@ -134,6 +140,93 @@ const emptyForm: ProductForm = {
   menuWebVisible: true,
 };
 
+type FilterOption = { value: string; label: string; hint?: string };
+
+function MultiSelectFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: FilterOption[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const count = selected.size;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          className={`gap-1.5 ${count > 0 ? "border-primary/40 bg-primary/5" : ""}`}
+        >
+          {label}
+          {count > 0 && (
+            <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+              {count}
+            </span>
+          )}
+          <CaretDown className="size-4 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 gap-0 p-0">
+        <div className="max-h-72 overflow-y-auto p-1">
+          {options.length === 0 ? (
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+              Sin opciones
+            </p>
+          ) : (
+            options.map((opt) => {
+              const on = selected.has(opt.value);
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    const next = new Set(selected);
+                    if (on) next.delete(opt.value);
+                    else next.add(opt.value);
+                    onChange(next);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+                >
+                  <span
+                    className={`flex size-4 shrink-0 items-center justify-center rounded border ${
+                      on
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-input"
+                    }`}
+                  >
+                    {on && <Check className="size-3" weight="bold" />}
+                  </span>
+                  <span className="flex-1 truncate">{opt.label}</span>
+                  {opt.hint && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {opt.hint}
+                    </span>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+        {count > 0 && (
+          <div className="border-t p-1">
+            <button
+              type="button"
+              onClick={() => onChange(new Set())}
+              className="w-full rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent"
+            >
+              Limpiar selección
+            </button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function ProductsPage() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
@@ -143,6 +236,8 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedCategoryFilters, setSelectedCategoryFilters] = useState<Set<string>>(new Set());
+  const [selectedSubcategoryFilters, setSelectedSubcategoryFilters] = useState<Set<string>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [extraDialogOpen, setExtraDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -655,16 +750,103 @@ export default function ProductsPage() {
     }).format(parseFloat(amount));
 
   const filtered = products.filter((p) => {
-    // Filtro de búsqueda
-    const matchesSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
-    
-    // Filtro de categorías (si hay categorías seleccionadas, solo mostrar esas)
-    const matchesCategory = selectedCategoryFilters.size === 0 || 
+    const matchesSearch =
+      !search || p.name.toLowerCase().includes(search.toLowerCase());
+
+    const matchesCategory =
+      selectedCategoryFilters.size === 0 ||
       (p.categoryId && selectedCategoryFilters.has(p.categoryId)) ||
-      (!p.categoryId && selectedCategoryFilters.has('no-category'));
-    
-    return matchesSearch && matchesCategory;
+      (!p.categoryId && selectedCategoryFilters.has("no-category"));
+
+    const matchesSubcategory =
+      selectedSubcategoryFilters.size === 0 ||
+      (p.subcategoryId != null &&
+        selectedSubcategoryFilters.has(p.subcategoryId));
+
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "active" ? p.active : !p.active);
+
+    return matchesSearch && matchesCategory && matchesSubcategory && matchesStatus;
   });
+
+  const categoryFilterOptions: FilterOption[] = [
+    ...categories.map((c) => ({ value: c.id, label: c.name })),
+    { value: "no-category", label: "Sin categoría" },
+  ];
+
+  const subcategoryFilterOptions: FilterOption[] = (
+    selectedCategoryFilters.size > 0
+      ? categories.filter((c) => selectedCategoryFilters.has(c.id))
+      : categories
+  ).flatMap((c) =>
+    (c.subcategories ?? []).map((s) => ({
+      value: s.id,
+      label: s.name,
+      hint: c.name,
+    }))
+  );
+
+  const allSubcategories = categories.flatMap((c) => c.subcategories ?? []);
+
+  function handleCategoryFilterChange(next: Set<string>) {
+    setSelectedCategoryFilters(next);
+    if (next.size > 0) {
+      const validSubs = new Set(
+        categories
+          .filter((c) => next.has(c.id))
+          .flatMap((c) => (c.subcategories ?? []).map((s) => s.id))
+      );
+      setSelectedSubcategoryFilters(
+        (prev) => new Set([...prev].filter((id) => validSubs.has(id)))
+      );
+    }
+  }
+
+  const withoutId = (set: Set<string>, id: string) => {
+    const next = new Set(set);
+    next.delete(id);
+    return next;
+  };
+
+  const activeFilterChips: { key: string; label: string; onRemove: () => void }[] =
+    [];
+  for (const id of selectedCategoryFilters) {
+    activeFilterChips.push({
+      key: `cat-${id}`,
+      label:
+        id === "no-category"
+          ? "Sin categoría"
+          : categories.find((c) => c.id === id)?.name ?? id,
+      onRemove: () =>
+        handleCategoryFilterChange(withoutId(selectedCategoryFilters, id)),
+    });
+  }
+  for (const id of selectedSubcategoryFilters) {
+    activeFilterChips.push({
+      key: `sub-${id}`,
+      label: allSubcategories.find((s) => s.id === id)?.name ?? id,
+      onRemove: () =>
+        setSelectedSubcategoryFilters(withoutId(selectedSubcategoryFilters, id)),
+    });
+  }
+  if (statusFilter !== "all") {
+    activeFilterChips.push({
+      key: "status",
+      label: statusFilter === "active" ? "Solo activos" : "Solo inactivos",
+      onRemove: () => setStatusFilter("all"),
+    });
+  }
+
+  const hasActiveFilters =
+    activeFilterChips.length > 0 || search.trim().length > 0;
+
+  function clearAllFilters() {
+    setSearch("");
+    setSelectedCategoryFilters(new Set());
+    setSelectedSubcategoryFilters(new Set());
+    setStatusFilter("all");
+  }
 
   const activeProducts = products.filter(p => p.active).length;
   const inactiveProducts = products.filter(p => !p.active).length;
@@ -762,74 +944,80 @@ export default function ProductsPage() {
         </Card>
       </div>
 
-      {/* Filtro de categorías */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Filtrar por categorías</Label>
-            <div className="flex flex-wrap gap-2">
-              {categories.map((category) => {
-                const isSelected = selectedCategoryFilters.has(category.id);
-                return (
-                  <Badge
-                    key={category.id}
-                    variant={isSelected ? "default" : "outline"}
-                    className="cursor-pointer hover:bg-primary/80"
-                    onClick={() => {
-                      const newFilters = new Set(selectedCategoryFilters);
-                      if (isSelected) {
-                        newFilters.delete(category.id);
-                      } else {
-                        newFilters.add(category.id);
-                      }
-                      setSelectedCategoryFilters(newFilters);
-                    }}
-                  >
-                    {category.name}
-                  </Badge>
-                );
-              })}
-              {/* Opción para productos sin categoría */}
-              <Badge
-                variant={selectedCategoryFilters.has('no-category') ? "default" : "outline"}
-                className="cursor-pointer hover:bg-primary/80"
-                onClick={() => {
-                  const newFilters = new Set(selectedCategoryFilters);
-                  if (selectedCategoryFilters.has('no-category')) {
-                    newFilters.delete('no-category');
-                  } else {
-                    newFilters.add('no-category');
-                  }
-                  setSelectedCategoryFilters(newFilters);
-                }}
-              >
-                Sin categoría
-              </Badge>
-              {/* Botón para limpiar filtros */}
-              {selectedCategoryFilters.size > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedCategoryFilters(new Set())}
-                  className="h-6 px-2 text-xs"
-                >
-                  <X className="size-3 mr-1" />
-                  Limpiar
-                </Button>
-              )}
-            </div>
+      {/* Filtros */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[220px] flex-1">
+            <MagnifyingGlass className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar producto..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
           </div>
-        </CardContent>
-      </Card>
 
-      <div className="relative">
-        <MagnifyingGlass className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Buscar producto..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+          <MultiSelectFilter
+            label="Categoría"
+            options={categoryFilterOptions}
+            selected={selectedCategoryFilters}
+            onChange={handleCategoryFilterChange}
+          />
+
+          {subcategoryFilterOptions.length > 0 && (
+            <MultiSelectFilter
+              label="Subcategoría"
+              options={subcategoryFilterOptions}
+              selected={selectedSubcategoryFilters}
+              onChange={setSelectedSubcategoryFilters}
+            />
+          )}
+
+          <div className="inline-flex rounded-lg border bg-muted p-0.5 text-sm">
+            {(["all", "active", "inactive"] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStatusFilter(s)}
+                className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                  statusFilter === s
+                    ? "bg-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {s === "all" ? "Todos" : s === "active" ? "Activos" : "Inactivos"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {activeFilterChips.map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              onClick={chip.onRemove}
+              className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground/80 hover:bg-accent"
+            >
+              {chip.label}
+              <X className="size-3" />
+            </button>
+          ))}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Limpiar todo
+            </button>
+          )}
+          <span className="ml-auto text-xs text-muted-foreground">
+            {filtered.length}
+            {filtered.length !== products.length && ` de ${products.length}`}{" "}
+            producto{products.length === 1 ? "" : "s"}
+          </span>
+        </div>
       </div>
 
       {/* Barra de acciones en masa */}
