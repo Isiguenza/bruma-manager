@@ -24,7 +24,11 @@ class SocketService: ObservableObject {
     var onCashRegisterClosed: (() -> Void)?
     var onCustomerDisplayUpdate: (([String: Any]) -> Void)?
     var onReservationNew: (() -> Void)?
-    
+    /// Se dispara en cada RE-conexión (no en la primera) — momento ideal para
+    /// re-sincronizar lo que se haya podido perder mientras el socket estuvo caído.
+    var onReconnect: (() -> Void)?
+    private var hasConnectedOnce = false
+
     private init() {}
     
     func connect() {
@@ -53,8 +57,13 @@ class SocketService: ObservableObject {
     private func setupEventHandlers() {
         socket?.on(clientEvent: .connect) { [weak self] data, ack in
             print("🔌 Socket connected")
-            self?.isConnected = true
-            self?.joinRooms()
+            guard let self else { return }
+            self.isConnected = true
+            self.joinRooms()
+            if self.hasConnectedOnce {
+                self.onReconnect?()
+            }
+            self.hasConnectedOnce = true
         }
         
         socket?.on(clientEvent: .disconnect) { [weak self] data, ack in

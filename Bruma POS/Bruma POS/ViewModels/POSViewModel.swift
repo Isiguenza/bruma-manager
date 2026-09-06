@@ -8,6 +8,9 @@ class POSViewModel: ObservableObject {
     // MARK: - Pedidos en línea (pantalla verde)
     @Published var incomingOnlineOrder: Order?
     private var onlineOrderAudioPlayer: AVAudioPlayer?
+    /// Poll de respaldo: reconstruye la pantalla verde aunque se pierda el
+    /// evento de socket (reconexión, app en background, iPad dormido).
+    private var onlineOrderReconcileTimer: Timer?
     
     // MARK: - WebSocket & Network
     private let socketService = SocketService.shared
@@ -650,6 +653,7 @@ class POSViewModel: ObservableObject {
         setupSocketCallbacks()
         socketService.connect()
         setupSyncEngine()
+        setupOnlineOrderReconciliation()
         // Re-emit payment display when method or tip changes while on confirmation
         Publishers.CombineLatest3($paymentMethod, $tipPercentage, $customTip)
             .dropFirst()
@@ -838,6 +842,13 @@ class POSViewModel: ObservableObject {
         socketService.onOnlineOrder = { [weak self] dict in
             Task { @MainActor in
                 self?.handleIncomingOnlineOrder(dict)
+            }
+        }
+
+        socketService.onReconnect = { [weak self] in
+            Task { @MainActor in
+                await self?.reconcilePendingOnlineOrders()
+                await self?.refreshReadyItemsAndDelivery()
             }
         }
         
@@ -2795,8 +2806,58 @@ class POSViewModel: ObservableObject {
             print("⚠️ No se pudo decodificar el pedido online")
             return
         }
+        presentOnlineOrder(order)
+    }
+
+    /// Muestra la pantalla verde para `order` (desde socket o desde el poll de
+    /// reconciliación). Si ya se está mostrando ese mismo pedido, no reinicia
+    /// el sonido; si es otro, lo cambia. Agenda además el aviso local por si el
+    /// iPad está con la app en segundo plano.
+    func presentOnlineOrder(_ order: Order) {
+        let alreadyShowing = incomingOnlineOrder?.id == order.id
         incomingOnlineOrder = order
-        startOnlineOrderSound()
+        if !alreadyShowing {
+            startOnlineOrderSound()
+        }
+        LocalNotificationManager.shared.schedulePendingOnlineOrder(
+            orderNumber: order.orderNumber,
+            customerName: order.customerName
+        )
+    }
+
+    // MARK: Reconciliación de pedidos en línea (red de seguridad)
+
+    private func setupOnlineOrderReconciliation() {
+        // Poll de respaldo cada 25s.
+        onlineOrderReconcileTimer = Timer.scheduledTimer(withTimeInterval: 25, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.reconcilePendingOnlineOrders() }
+        }
+        // Tap en la notificación local / vuelta del background.
+        NotificationCenter.default.addObserver(
+            forName: .reconcilePendingOnlineOrders, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.reconcilePendingOnlineOrders() }
+        }
+        Task { await reconcilePendingOnlineOrders() }
+    }
+
+    /// Consulta al backend si hay un pedido en línea con pago confirmado que
+    /// nadie aceptó ni rechazó. Si lo hay y no se está mostrando, lo trae a la
+    /// pantalla verde. Si no hay ninguno y tampoco se está mostrando uno,
+    /// limpia el aviso local. Esto garantiza que ningún pedido quede "en el
+    /// aire" pase lo que pase con el socket.
+    func reconcilePendingOnlineOrders() async {
+        guard employeeId != nil else { return } // sin sesión iniciada, nada que hacer
+        guard let pending = try? await APIService.shared.fetchPendingOnlineOrders() else { return }
+
+        if let first = pending.first {
+            if incomingOnlineOrder == nil {
+                print("🟢 [reconcile] pedido en línea sin atender #\(first.orderNumber) — mostrando pantalla verde")
+                presentOnlineOrder(first)
+            }
+        } else if incomingOnlineOrder == nil {
+            LocalNotificationManager.shared.clearPendingOnlineOrder()
+        }
     }
 
     /// Reproduce `delivery_sound.wav` EN LOOP mientras la pantalla verde esté visible.
@@ -2827,6 +2888,7 @@ class POSViewModel: ObservableObject {
     func dismissOnlineOrder() {
         stopOnlineOrderSound()
         incomingOnlineOrder = nil
+        LocalNotificationManager.shared.clearPendingOnlineOrder()
     }
 
     func acceptOnlineOrder(estimatedReadyMinutes: Int? = nil) {
@@ -3468,6 +3530,64 @@ class POSViewModel: ObservableObject {
                 let message = (error as? APIError)?.errorDescription ?? "Error al actualizar el pedido"
                 showToast(message, isError: true)
             }
+        }
+    }
+
+    // MARK: - Confirmar / Rechazar pedido en línea desde el cart
+
+    /// Cuando un pedido en línea `pending` se abrió en el cart (p.ej. porque la
+    /// pantalla verde nunca salió), el botón grande deja de ser "Marcar listo"
+    /// y ofrece Confirmar / Rechazar — misma acción que la pantalla verde pero
+    /// operando sobre `currentOrderId`.
+    func confirmOnlineOrderFromCart() {
+        guard let orderId = currentOrderId else { return }
+        processing = true
+        Task {
+            do {
+                let minutes = try? await APIService.shared.fetchOnlineOrderEtaSuggestion(
+                    deliveryType: currentOrderAddress != nil ? "delivery" : "pickup"
+                )
+                try await APIService.shared.acceptOnlineOrder(orderId: orderId, estimatedReadyMinutes: minutes)
+                // Si la pantalla verde estaba mostrando este mismo pedido, ciérrala.
+                if incomingOnlineOrder?.id == orderId { dismissOnlineOrder() }
+                LocalNotificationManager.shared.clearPendingOnlineOrder()
+                showToast("Pedido confirmado — enviado a cocina")
+                cart = []
+                currentOrderId = nil
+                currentOrderNumber = nil
+                resetPaymentState()
+                selectedTable = nil
+                currentScreen = .tableSelection
+                await refreshReadyItemsAndDelivery()
+            } catch {
+                let message = (error as? APIError)?.errorDescription ?? "Error al confirmar el pedido"
+                showToast(message, isError: true)
+            }
+            processing = false
+        }
+    }
+
+    func rejectOnlineOrderFromCart(reason: String) {
+        guard let orderId = currentOrderId else { return }
+        processing = true
+        Task {
+            do {
+                let message = try await APIService.shared.rejectOnlineOrder(orderId: orderId, reason: reason)
+                if incomingOnlineOrder?.id == orderId { dismissOnlineOrder() }
+                LocalNotificationManager.shared.clearPendingOnlineOrder()
+                showToast(message)
+                cart = []
+                currentOrderId = nil
+                currentOrderNumber = nil
+                resetPaymentState()
+                selectedTable = nil
+                currentScreen = .tableSelection
+                await refreshReadyItemsAndDelivery()
+            } catch {
+                let message = (error as? APIError)?.errorDescription ?? "Error al rechazar el pedido"
+                showToast(message, isError: true)
+            }
+            processing = false
         }
     }
 

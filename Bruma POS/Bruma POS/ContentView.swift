@@ -10,6 +10,7 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var vm = POSViewModel()
     @StateObject private var idle = IdleMonitor()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -45,6 +46,13 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.25), value: vm.incomingOnlineOrder?.id)
         .preferredColorScheme(.dark)
         .statusBarHidden(true)
+        // Al volver del segundo plano, revisar si quedó un pedido en línea sin
+        // atender (el socket pudo haberse perdido el evento mientras tanto).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await vm.reconcilePendingOnlineOrders() }
+            }
+        }
         // Rest the screen (dim + clock) after 5 min of inactivity to save
         // battery, except on the customer-facing display.
         .idleScreenRest(idle, enabled: vm.currentScreen != .customerDisplay)

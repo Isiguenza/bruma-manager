@@ -41,7 +41,7 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 }));
 // Stripe webhook: se monta con body RAW ANTES de express.json (para verificar firma).
-import onlineOrdersRouter, { stripeWebhookHandler, cleanupAbandonedOnlineOrders } from "./routes/online-orders";
+import onlineOrdersRouter, { stripeWebhookHandler, cleanupAbandonedOnlineOrders, remindPendingOnlineOrders } from "./routes/online-orders";
 app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookHandler);
 
 app.use(express.json({ limit: "10mb" }));
@@ -141,4 +141,8 @@ httpServer.listen(PORT, () => {
   // failed, sin canceled) — se barren cada 10 min.
   cleanupAbandonedOnlineOrders();
   setInterval(cleanupAbandonedOnlineOrders, 10 * 60 * 1000);
+
+  // Red de seguridad: re-empuja (socket + push) los pedidos en línea que
+  // llevan rato sin que el POS los acepte ni rechace.
+  setInterval(remindPendingOnlineOrders, 60 * 1000);
 });

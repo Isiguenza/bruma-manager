@@ -2,7 +2,10 @@ import SwiftUI
 
 struct CartView: View {
     @ObservedObject var vm: POSViewModel
-    
+
+    @State private var showCartRejectDialog = false
+    @State private var cartRejectReason = ""
+
     var body: some View {
         VStack(spacing: 0) {
             // Header (back, tableInfoPill, guestCount)
@@ -24,6 +27,16 @@ struct CartView: View {
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 1))
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
+        .alert("Rechazar pedido en línea", isPresented: $showCartRejectDialog) {
+            TextField("Motivo (opcional)", text: $cartRejectReason)
+            Button("Cancelar", role: .cancel) {}
+            Button("Rechazar", role: .destructive) {
+                vm.rejectOnlineOrderFromCart(reason: cartRejectReason)
+                cartRejectReason = ""
+            }
+        } message: {
+            Text("Si ya se autorizó el pago, se libera la retención (no se cobra nada). Si ya se había cobrado, se reembolsa.")
+        }
         .alert("Liberar Mesa", isPresented: $vm.showingReleaseConfirmation) {
             Button("Cancelar", role: .cancel) { }
             Button("Liberar", role: .destructive) {
@@ -487,6 +500,9 @@ struct CartView: View {
                     .foregroundColor(.white)
             }
 
+            if vm.currentOrderSource == "web" && (vm.currentOrderStatus ?? "") == "pending" {
+                pendingOnlineOrderActions
+            } else {
             HStack(spacing: 12) {
                 // Print button with context menu
                 Menu {
@@ -566,8 +582,42 @@ struct CartView: View {
                 .disabled(vm.cart.isEmpty)
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasUnsentItems || isPaidTakeout || needsReadyStep || needsDeliveringStep)
             }
+            }
         }
 
+    }
+
+    /// Pedido en línea que llegó como "pending" (la pantalla verde no se atendió
+    /// o nunca salió) y se abrió aquí desde la lista de delivery. En vez de
+    /// "Marcar listo", ofrece Confirmar / Rechazar apilados.
+    private var pendingOnlineOrderActions: some View {
+        VStack(spacing: 8) {
+            Button {
+                vm.confirmOnlineOrderFromCart()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                    Text("Confirmar pedido").font(.callout.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+            }
+            .buttonStyle(.flatCapsule(Color.green))
+            .disabled(vm.processing)
+
+            Button(role: .destructive) {
+                showCartRejectDialog = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "xmark.circle.fill")
+                    Text("Rechazar pedido").font(.callout.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+            }
+            .buttonStyle(.flatCapsule(Color.red))
+            .disabled(vm.processing)
+        }
     }
 }
 

@@ -82,6 +82,40 @@ export async function cleanupAbandonedOnlineOrders() {
   }
 }
 
+// Un pedido en línea "en el aire" = pago confirmado (authorized/paid) pero el
+// POS todavía no lo aceptó ni lo rechazó (status sigue "pending"). Estos son
+// exactamente los que deben estar forzando la pantalla verde.
+function pendingOnlineWhere() {
+  return and(
+    eq(schema.orders.source, "web"),
+    eq(schema.orders.status, "pending"),
+    sql`${schema.orders.paymentStatus} IN ('authorized', 'paid')`
+  );
+}
+
+/** Recordatorio: si un pedido en línea lleva > REMIND_AFTER_SECONDS sin
+ * atenderse, vuelve a emitir el evento de socket. Corre en intervalo desde
+ * index.ts. Es la red de seguridad para que el POS reconstruya la pantalla
+ * verde aunque se haya perdido el evento original (reconexión, etc.). La
+ * notificación local la agenda el propio POS al recibir esto. */
+const REMIND_AFTER_SECONDS = 90;
+export async function remindPendingOnlineOrders() {
+  try {
+    const cutoff = new Date(Date.now() - REMIND_AFTER_SECONDS * 1000);
+    const stuck = await db.query.orders.findMany({
+      where: and(pendingOnlineWhere(), sql`${schema.orders.updatedAt} < ${cutoff}`),
+      with: { items: true },
+    });
+    if (stuck.length === 0) return;
+    console.log(`[remind] ${stuck.length} pedido(s) en línea sin atender — re-emitiendo socket`);
+    for (const order of stuck) {
+      emitOnlineOrder(order);
+    }
+  } catch (error) {
+    console.error("[remind] error:", error);
+  }
+}
+
 /** Reembolsa un pago de Stripe por su PaymentIntent. Reusable desde otras rutas. */
 export async function refundStripePayment(paymentIntentId: string) {
   return stripe.refunds.create({ payment_intent: paymentIntentId });
@@ -506,6 +540,24 @@ router.get("/public/profile/orders", async (req, res) => {
   } catch (error) {
     console.error("[profile/orders] error:", error);
     res.status(500).json({ error: "Error al obtener pedidos" });
+  }
+});
+
+// GET /api/orders/pending-online — pedidos en línea con pago confirmado que el
+// POS todavía no aceptó ni rechazó. El POS lo consulta por polling / al
+// reconectar / al volver del background para reconstruir la pantalla verde
+// aunque se haya perdido el evento de socket.
+router.get("/orders/pending-online", async (_req, res) => {
+  try {
+    const orders = await db.query.orders.findMany({
+      where: pendingOnlineWhere(),
+      with: { items: true },
+      orderBy: (o, { asc }) => [asc(o.createdAt)],
+    });
+    res.json(orders);
+  } catch (error) {
+    console.error("[orders/pending-online] error:", error);
+    res.status(500).json({ error: "Error" });
   }
 });
 

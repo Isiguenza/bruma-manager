@@ -256,6 +256,14 @@ class APIService {
         }
     }
 
+    /// Pedidos en línea con pago confirmado que el POS todavía no aceptó ni
+    /// rechazó — la fuente de verdad para reconstruir la pantalla verde aunque
+    /// se haya perdido el evento de socket.
+    func fetchPendingOnlineOrders() async throws -> [Order] {
+        let url = URL(string: "\(baseURL)/api/orders/pending-online")!
+        return try await request(url)
+    }
+
     /// Acepta un pedido en línea (pantalla verde) → entra a cocina. `estimatedReadyMinutes`
     /// es el tiempo que el POS confirma al cliente (se guarda en la orden y la web lo
     /// muestra en vez de calcular un estimado).

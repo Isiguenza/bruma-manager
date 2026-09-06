@@ -163,3 +163,29 @@ web) — el broadcast es del backend, no punto-a-punto.
 `itemCount` real. Si algo necesita contar items por mesa desde el listado,
 hay que pedir el detalle o ajustar el endpoint, no asumir que el campo del
 listado es confiable.
+
+## Pedidos en línea: que nunca quede uno "en el aire"
+
+Un pedido web con pago confirmado (`paymentStatus` `authorized`/`paid`) y
+`status='pending'` = esperando que el POS lo acepte o rechace en la pantalla
+verde. Antes, si el POS se perdía el evento de socket `order:online` (reconexión,
+app en background), el pedido quedaba pendiente sin forma de atenderlo. Ahora
+hay 3 capas, todas independientes:
+
+1. **Socket** `order:online` → pantalla verde + sonido en loop (como siempre).
+   `emitOnlineOrder` se RE-emite cada 60s para los que llevan >90s sin atender
+   (`remindPendingOnlineOrders` en `online-orders.ts`, corre desde `index.ts`).
+2. **Poll de reconciliación** (POS): `POSViewModel.reconcilePendingOnlineOrders`
+   consulta `GET /api/orders/pending-online` cada 25s, al reconectar el socket
+   (`SocketService.onReconnect`), al volver del background (`scenePhase`), y al
+   tocar la notificación local. Si hay uno y no se está mostrando → lo trae a
+   la pantalla verde. Garantiza que aparezca sin importar dónde esté el POS.
+3. **Notificación LOCAL** (no push del server — decisión explícita): la agenda
+   el propio POS (`LocalNotificationManager`) al detectar el pendiente: una
+   inmediata + una que se repite cada 2 min hasta atenderlo. `AppDelegate`
+   (vía `@UIApplicationDelegateAdaptor`) solo existe para mostrarlas en
+   foreground y manejar el tap. No requiere capability ni entitlement.
+4. **Fallback manual**: si el pedido `pending` se abre en el cart (desde la
+   lista de delivery), el botón grande deja de ser "Marcar listo" y muestra
+   **Confirmar / Rechazar** apilados (`confirmOnlineOrderFromCart` /
+   `rejectOnlineOrderFromCart`).
