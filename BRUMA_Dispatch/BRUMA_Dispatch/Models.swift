@@ -152,6 +152,15 @@ struct OrderBatch: Identifiable {
     }
 }
 
+// MARK: - CompletedOrder (franja de "recién completadas" con deshacer)
+struct CompletedOrder: Identifiable {
+    let id: String          // orderId
+    let orderNumber: Int
+    let label: String       // "Mesa 5" / "Llevar - Juan"
+    let itemIds: [String]
+    let completedAt: Date
+}
+
 // MARK: - Product
 struct Product: Codable {
     let id: String

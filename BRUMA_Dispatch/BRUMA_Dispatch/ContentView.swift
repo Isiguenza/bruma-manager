@@ -29,7 +29,11 @@ struct ContentView: View {
                 
                 VStack(spacing: 0) {
                     headerBar
-                    
+
+                    if !viewModel.recentlyCompleted.isEmpty {
+                        completedStrip
+                    }
+
                     if viewModel.batches.isEmpty {
                         emptyState
                     } else {
@@ -40,7 +44,7 @@ struct ContentView: View {
                                         batch: batch,
                                         isExpanded: viewModel.expandedBatchIds.contains(batch.id),
                                         onToggleExpand: { viewModel.toggleExpand(batchId: batch.id) },
-                                        onMarkAsReady: { Task { await viewModel.markBatchAsReady(batch: batch) } },
+                                        onMarkAsReady: { Task { await viewModel.markRemaining(batch) } },
                                         onRush: { Task { await viewModel.toggleRush(batch: batch) } },
                                         onHold: { Task { await viewModel.toggleHold(batch: batch) } },
                                         viewModel: viewModel
@@ -74,7 +78,7 @@ struct ContentView: View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack{
-                    Text("BRUMA KDS")
+                    Text("Pase")
                         .font(.system(size: 28, weight: .black))
                         .foregroundColor(Color(UIColor.label))
                     Circle()
@@ -156,6 +160,65 @@ struct ContentView: View {
         )
     }
     
+    // MARK: — Franja de órdenes recién completadas (con deshacer, 60s)
+
+    private var completedStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(viewModel.recentlyCompleted) { c in
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.green)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(c.label)
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(Color(UIColor.label))
+                            Text("#\(c.orderNumber) · completada")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(UIColor.secondaryLabel))
+                        }
+                        Button {
+                            Task { await viewModel.undoCompleted(c) }
+                        } label: {
+                            Text("Deshacer")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.blue.opacity(0.12))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            viewModel.dismissCompleted(c)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Color(UIColor.tertiaryLabel))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.green.opacity(0.35), lineWidth: 1)
+                    )
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 10)
+        }
+        .background(Color(UIColor.systemBackground))
+        .overlay(
+            Rectangle().frame(height: 0.5).foregroundColor(Color(UIColor.separator)),
+            alignment: .bottom
+        )
+    }
+
     private var emptyState: some View {
         VStack(spacing: 16) {
             Spacer()

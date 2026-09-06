@@ -18,10 +18,24 @@ class OrdersViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var currentTime = Date() // Para forzar actualización del timer
     @Published var viewMode: String = "all" // all | food | beverages
-    
+
+    /// Estado optimista de "entregado" por item (itemId → entregado). Se aplica
+    /// al instante al tocar un platillo y se limpia cuando un fetch lo confirma.
+    @Published var deliveredOverride: [String: Bool] = [:]
+    /// Órdenes que se completaron hace poco — franja arriba del board con
+    /// "Deshacer" durante 60s, para que una orden grande no desaparezca en
+    /// silencio si faltó marcar un plato.
+    @Published var recentlyCompleted: [CompletedOrder] = []
+
     private var timer: Timer?
     private var uiTimer: Timer?
     private let soundPlayer = SoundPlayer.shared
+
+    private var previousOrderIds: Set<String> = []
+    /// Última foto conocida de cada orden (para detectar cuáles se completaron
+    /// al desaparecer del fetch).
+    private var orderSnapshots: [String: (orderNumber: Int, label: String, itemIds: [String], allDelivered: Bool)] = [:]
+    private let completedTTL: TimeInterval = 60
     
     init() {
         Task {
@@ -89,6 +103,7 @@ class OrdersViewModel: ObservableObject {
             guard let self = self else { return }
             Task { @MainActor in
                 self.currentTime = Date()
+                self.pruneCompleted()
             }
         }
         RunLoop.main.add(uiTimer!, forMode: .common)
@@ -101,11 +116,131 @@ class OrdersViewModel: ObservableObject {
         uiTimer = nil
     }
     
+    // ¿Este item está entregado? (override optimista o dato del servidor)
+    func isDelivered(_ item: OrderItem) -> Bool {
+        deliveredOverride[item.id] ?? (item.deliveredToTable == true)
+    }
+
+    /// (entregados, total) de un batch — para la barra de progreso.
+    func deliveredProgress(_ batch: OrderBatch) -> (done: Int, total: Int) {
+        let active = batch.items.filter { $0.voided != true }
+        return (active.filter { isDelivered($0) }.count, active.count)
+    }
+
+    /// Tap en un platillo → marca / desmarca entregado (optimista + API).
+    func toggleItemDelivered(_ item: OrderItem) async {
+        let target = !isDelivered(item)
+        deliveredOverride[item.id] = target
+        do {
+            try await APIService.shared.setItemsDelivered([item.id], delivered: target)
+            await fetchOrders()
+        } catch {
+            deliveredOverride[item.id] = !target // revertir
+            errorMessage = "No se pudo marcar el platillo — reintenta"
+        }
+    }
+
+    /// "Marcar lo que falta" — entrega todos los platillos pendientes del batch.
+    func markRemaining(_ batch: OrderBatch) async {
+        let pending = batch.items.filter { $0.voided != true && !isDelivered($0) }.map { $0.id }
+        guard !pending.isEmpty else { return }
+        for id in pending { deliveredOverride[id] = true }
+        do {
+            try await APIService.shared.setItemsDelivered(pending, delivered: true)
+            await fetchOrders()
+        } catch {
+            for id in pending { deliveredOverride[id] = false }
+            errorMessage = "No se pudo completar la orden — reintenta"
+        }
+    }
+
+    /// "Deshacer" en la franja de completadas → revierte y la orden vuelve al board.
+    func undoCompleted(_ completed: CompletedOrder) async {
+        recentlyCompleted.removeAll { $0.id == completed.id }
+        for id in completed.itemIds { deliveredOverride[id] = false }
+        do {
+            try await APIService.shared.setItemsDelivered(completed.itemIds, delivered: false)
+            await fetchOrders()
+        } catch {
+            errorMessage = "No se pudo deshacer — reintenta"
+        }
+    }
+
+    func dismissCompleted(_ completed: CompletedOrder) {
+        recentlyCompleted.removeAll { $0.id == completed.id }
+    }
+
+    private func pruneCompleted() {
+        let now = Date()
+        let expired = recentlyCompleted.filter { now.timeIntervalSince($0.completedAt) > completedTTL }
+        for c in expired {
+            for id in c.itemIds { deliveredOverride.removeValue(forKey: id) }
+        }
+        recentlyCompleted.removeAll { now.timeIntervalSince($0.completedAt) > completedTTL }
+    }
+
+    private func orderLabel(_ order: Order) -> String {
+        if let t = order.table { return "Mesa \(t.number)" }
+        if let n = order.customerName, !n.isEmpty { return "Llevar · \(n)" }
+        return "Para llevar"
+    }
+
     // Fetch orders from API and convert to batches
     func fetchOrders() async {
         do {
             let orders = try await APIService.shared.fetchPreparingOrders()
-            
+
+            // Reconciliar overrides: si el servidor ya refleja lo que marcamos
+            // localmente, soltar el override para no arrastrar estado viejo.
+            for order in orders {
+                for item in order.items ?? [] {
+                    if let ov = deliveredOverride[item.id], ov == (item.deliveredToTable == true) {
+                        deliveredOverride.removeValue(forKey: item.id)
+                    }
+                }
+            }
+
+            // Detección de órdenes completadas: las que estaban antes y ya no
+            // están, y que quedaron con TODO entregado (según el último dato del
+            // servidor o los taps locales) → a la franja de "recién completadas".
+            let currentOrderIds = Set(orders.map { $0.id })
+            for goneId in previousOrderIds.subtracting(currentOrderIds) {
+                guard let snap = orderSnapshots[goneId],
+                      !recentlyCompleted.contains(where: { $0.id == goneId }) else { continue }
+                let doneNow = snap.allDelivered
+                    || snap.itemIds.allSatisfy { deliveredOverride[$0] == true }
+                if doneNow {
+                    recentlyCompleted.insert(
+                        CompletedOrder(id: goneId, orderNumber: snap.orderNumber,
+                                       label: snap.label, itemIds: snap.itemIds,
+                                       completedAt: Date()),
+                        at: 0
+                    )
+                }
+            }
+
+            // Actualizar fotos de las órdenes vigentes.
+            var snapshots: [String: (orderNumber: Int, label: String, itemIds: [String], allDelivered: Bool)] = [:]
+            for order in orders {
+                let active = (order.items ?? []).filter { $0.voided != true }
+                guard !active.isEmpty else { continue }
+                snapshots[order.id] = (
+                    order.orderNumber,
+                    orderLabel(order),
+                    active.map { $0.id },
+                    active.allSatisfy { isDelivered($0) }
+                )
+            }
+            orderSnapshots = snapshots
+            previousOrderIds = currentOrderIds
+            pruneCompleted()
+
+            // Limpiar overrides huérfanos (items que ya no están en ninguna orden
+            // del board ni en la franja de completadas) para no crecer sin fin.
+            let liveItemIds = Set(orders.flatMap { ($0.items ?? []).map { $0.id } })
+                .union(recentlyCompleted.flatMap { $0.itemIds })
+            deliveredOverride = deliveredOverride.filter { liveItemIds.contains($0.key) }
+
             // Convert orders to batches
             let newBatches = convertOrdersToBatches(orders)
             let newBatchIds = Set(newBatches.map { $0.id })
@@ -146,10 +281,10 @@ class OrdersViewModel: ObservableObject {
         var allBatches: [OrderBatch] = []
         
         for order in orders {
-            // Filter out voided and delivered items
-            let activeItems = (order.items ?? []).filter { 
-                $0.voided != true && $0.deliveredToTable != true 
-            }
+            // En el Pase los platillos ENTREGADOS siguen visibles (tachados) —
+            // solo se ocultan los anulados. La orden entera desaparece del
+            // board cuando ya está todo entregado (pasa a "ready" en el backend).
+            let activeItems = (order.items ?? []).filter { $0.voided != true }
             
             // Apply KDS view mode filter (food / beverages / all)
             let filteredItems: [OrderItem]

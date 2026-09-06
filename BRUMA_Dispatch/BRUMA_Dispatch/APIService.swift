@@ -137,19 +137,25 @@ class APIService {
     
     // Mark batch of items as ready (delivered to table)
     func markBatchAsReady(itemIds: [String]) async throws {
-        guard let url = URL(string: "\(baseURL)/api/order-items/batch-ready") else {
+        try await setItemsDelivered(itemIds, delivered: true)
+    }
+
+    /// Marca / desmarca items como entregados (tap por platillo en el Pase, o
+    /// "Deshacer" en la franja de completadas). `delivered: false` regresa la
+    /// orden a "preparando" si se había auto-completado.
+    func setItemsDelivered(_ itemIds: [String], delivered: Bool) async throws {
+        guard !itemIds.isEmpty else { return }
+        let path = delivered ? "batch-ready" : "batch-unready"
+        guard let url = URL(string: "\(baseURL)/api/order-items/\(path)") else {
             throw URLError(.badURL)
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let body = ["itemIds": itemIds]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["itemIds": itemIds])
+
         let (_, response) = try await URLSession.shared.data(for: request)
-        
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)

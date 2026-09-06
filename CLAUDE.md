@@ -32,7 +32,17 @@ deja de aplicar, corregirlo o borrarlo en vez de apilar notas viejas.
   Models/Services/ViewModels, sin compartir código con POS). Se está
   retirando a favor de "Bruma POS Mobile" una vez validada en TestFlight —
   no seguir arreglando bugs ahí, el destino es Bruma POS Mobile.
-- **`BRUMA_Dispatch/`** — proyecto Xcode, app de dispatch de delivery.
+- **`BRUMA_Dispatch/`** — proyecto Xcode. Nació como KDS de cocina; hoy cocina
+  usa comanda impresa, así que se repurposó como **"Pase"** (expeditor): un
+  iPad fijo en la ventana donde alguien marca cada platillo conforme sale.
+  Tap por platillo → `POST /api/order-items/batch-ready` (`deliveredToTable`);
+  tap de nuevo → `batch-unready`. Cuando todos los items de una orden dine-in
+  están entregados, el backend la pasa sola a `ready` y sale del board. Los
+  items entregados siguen visibles (tachados), no se ocultan. Hay una franja
+  de "recién completadas" con Deshacer (60s) — el estado optimista y esa
+  detección viven en `OrdersViewModel` (`deliveredOverride`, `recentlyCompleted`).
+  El nombre de carpeta/target sigue siendo `BRUMA_Dispatch` (solo cambió el
+  título en la UI).
 - **`print-server/`** — servidor Node para impresión de comandas/tickets
   (Docker + túnel ngrok).
 - Varios `.md` en la raíz (`WALLET_SETUP.md`, `WHATSAPP_BUSINESS_SETUP.md`,

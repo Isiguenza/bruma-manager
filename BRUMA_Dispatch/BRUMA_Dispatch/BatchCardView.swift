@@ -124,10 +124,8 @@ struct BatchCardView: View {
                         .font(.system(size: 15))
                         .foregroundColor(Color(UIColor.secondaryLabel))
                     
-                    Text("\(batch.items.count) Item\(batch.items.count == 1 ? "" : "s")")
-                        .font(.system(size: 19, weight: .bold))
-                        .foregroundColor(Color(UIColor.label))
-                        .padding(.top, 3)
+                    deliveryProgress
+                        .padding(.top, 4)
                 }
             }
             
@@ -152,6 +150,31 @@ struct BatchCardView: View {
         .background(Color(UIColor.secondarySystemBackground))
     }
     
+    // MARK: — Progreso de entrega
+
+    private var progress: (done: Int, total: Int) {
+        viewModel.deliveredProgress(batch)
+    }
+
+    private var allDelivered: Bool { progress.done >= progress.total && progress.total > 0 }
+
+    private var deliveryProgress: some View {
+        let p = progress
+        return VStack(alignment: .leading, spacing: 5) {
+            Text("\(p.done) / \(p.total) entregados")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(allDelivered ? .green : Color(UIColor.label))
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color(UIColor.tertiarySystemFill))
+                    Capsule().fill(allDelivered ? Color.green : Color.blue)
+                        .frame(width: p.total == 0 ? 0 : geo.size.width * CGFloat(p.done) / CGFloat(p.total))
+                }
+            }
+            .frame(width: 150, height: 6)
+        }
+    }
+
     // MARK: — Status strip (Rush / Hold banner)
     
     @ViewBuilder
@@ -254,19 +277,20 @@ struct BatchCardView: View {
             .padding(.horizontal, 14)
             .padding(.top, 12)
             
-            // Complete button
+            // Marcar lo que falta (atajo — normalmente se marca plato por plato)
             Button(action: onMarkAsReady) {
-                Text("Completar Orden")
+                Text(allDelivered ? "Todo entregado" : "Marcar lo que falta")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(
                         Capsule()
-                            .fill(Color.blue)
+                            .fill(allDelivered ? Color.green.opacity(0.5) : Color.blue)
                     )
             }
             .buttonStyle(.plain)
+            .disabled(allDelivered)
             .padding(.horizontal, 14)
             .padding(.top, 10)
             .padding(.bottom, 14)
@@ -411,39 +435,34 @@ struct BatchCardView: View {
     
     @ViewBuilder
     private func itemRow(_ item: OrderItem) -> some View {
+        let delivered = viewModel.isDelivered(item)
+        let urgent = batch.urgency == .warning || batch.urgency == .urgent
+        let mods = buildModifierLines(item)
+
         VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .top, spacing: 0) {
-                Color.clear.frame(width: 18)
-                
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: delivered ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundColor(delivered ? .green : (urgent ? .orange : Color(UIColor.tertiaryLabel)))
+
                 HStack(spacing: 6) {
                     Text("\(item.quantity) x")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(Color(UIColor.secondaryLabel))
                     Text(item.productName)
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(Color(UIColor.label))
+                        .foregroundColor(delivered ? Color(UIColor.tertiaryLabel) : Color(UIColor.label))
+                        .strikethrough(delivered, color: Color(UIColor.tertiaryLabel))
                         .lineLimit(2)
-                   
                 }
-                
-               /* Spacer()
-                
-                if item.deliveredToTable == true {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.green)
-                } else {
-                    Image(systemName: "clock.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.orange)
-                }*/
+
+                Spacer(minLength: 0)
             }
-            
+
             // Modifier / note lines
-            let mods = buildModifierLines(item)
             if !mods.isEmpty {
                 HStack(spacing: 0) {
-                    Color.clear.frame(width: 36)
+                    Color.clear.frame(width: 30)
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(Array(mods.enumerated()), id: \.offset) { _, line in
                             HStack(spacing: 4) {
@@ -459,7 +478,10 @@ struct BatchCardView: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .opacity(delivered ? 0.5 : 1)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture { Task { await viewModel.toggleItemDelivered(item) } }
     }
     
     private func buildModifierLines(_ item: OrderItem) -> [(text: String, color: Color)] {

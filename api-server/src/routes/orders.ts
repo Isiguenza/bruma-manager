@@ -1862,6 +1862,54 @@ router.patch("/orders/:id/items/:itemId/deliver", async (req, res) => {
   }
 });
 
+// POST /api/order-items/batch-unready
+// Deshace el "entregado" de items (desde el board del Pase: tap para desmarcar,
+// o "Deshacer" en la franja de órdenes recién completadas). Si la orden ya se
+// había auto-completado a "ready" por tener todo entregado, la regresa a
+// "preparing" para que vuelva a aparecer en el board.
+router.post("/order-items/batch-unready", async (req, res) => {
+  try {
+    const { itemIds } = req.body;
+    if (!itemIds || itemIds.length === 0) {
+      return res.status(400).json({ error: "itemIds es requerido" });
+    }
+
+    await db
+      .update(schema.orderItems)
+      .set({ deliveredToTable: false })
+      .where(inArray(schema.orderItems.id, itemIds));
+
+    const items = await db.query.orderItems.findMany({
+      where: inArray(schema.orderItems.id, itemIds),
+    });
+
+    if (items.length > 0) {
+      let order = await db.query.orders.findFirst({
+        where: eq(schema.orders.id, items[0].orderId),
+        with: { items: true },
+      });
+      // Solo revertir dine-in (mismo criterio que el auto-ready de batch-ready).
+      if (order && order.tableId && order.status === "ready") {
+        await db
+          .update(schema.orders)
+          .set({ status: "preparing" })
+          .where(eq(schema.orders.id, order.id));
+        order = await db.query.orders.findFirst({
+          where: eq(schema.orders.id, order.id),
+          with: { items: true },
+        });
+      }
+      if (order) emitOrderUpdated(order);
+      emitOrderItemsReady(items);
+    }
+
+    res.json({ success: true, count: items.length });
+  } catch (error) {
+    console.error("Error deshaciendo entrega de items:", error);
+    res.status(500).json({ error: "Error al deshacer entrega" });
+  }
+});
+
 // POST /api/order-items/batch-ready
 router.post("/order-items/batch-ready", async (req, res) => {
   try {
