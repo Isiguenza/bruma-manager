@@ -136,3 +136,59 @@ export async function notifyOrderCancelled(order: NotifiableOrder) {
   if (!order.customerPhone) return;
   await sendTemplate(order.customerPhone, "pedido_cancelado", [String(order.orderNumber)]);
 }
+
+// ---------------------------------------------------------------------------
+// Auto-respuesta "este número es solo para notificaciones"
+// ---------------------------------------------------------------------------
+
+// Cuando un cliente responde a un mensaje nuestro, abre una ventana de 24h de
+// atención — dentro de esa ventana SÍ se permite mandar texto libre (no hace
+// falta plantilla). Le contestamos una sola vez cada AUTO_REPLY_COOLDOWN_MS por
+// número, para no spamear si manda varios mensajes seguidos.
+const AUTO_REPLY_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const lastAutoReplyAt = new Map<string, number>();
+
+const DEFAULT_AUTO_REPLY =
+  "Este chat es solo para avisos automáticos de tu pedido y no se contesta por aquí. " +
+  "Si necesitas algo, contáctanos por nuestras redes sociales o por teléfono. ¡Gracias!";
+
+/** Manda un mensaje de texto libre (solo válido dentro de la ventana de 24h). */
+async function sendWhatsAppText(phone: string, text: string) {
+  const phoneId = process.env.META_WA_PHONE_ID;
+  const token = process.env.META_WA_TOKEN;
+  if (!phoneId || !token) return;
+
+  const to = normalizePhone(phone);
+  try {
+    const resp = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to,
+        type: "text",
+        text: { body: text, preview_url: false },
+      }),
+    });
+    if (!resp.ok) {
+      console.error("❌ WhatsApp auto-reply error:", resp.status, await resp.text());
+    } else {
+      console.log(`📱 WhatsApp auto-reply enviado a ${to}`);
+    }
+  } catch (err) {
+    console.error("❌ WhatsApp auto-reply fetch error:", err);
+  }
+}
+
+/** Llamar por cada mensaje ENTRANTE de un cliente (desde el webhook). Contesta
+ * el aviso de "solo notificaciones" con rate-limit por número. */
+export async function handleInboundWhatsApp(from: string): Promise<void> {
+  if (!from) return;
+  const now = Date.now();
+  const last = lastAutoReplyAt.get(from) ?? 0;
+  if (now - last < AUTO_REPLY_COOLDOWN_MS) return;
+  lastAutoReplyAt.set(from, now);
+
+  const text = process.env.WHATSAPP_AUTO_REPLY?.trim() || DEFAULT_AUTO_REPLY;
+  await sendWhatsAppText(from, text);
+}

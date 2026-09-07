@@ -1,6 +1,13 @@
 import { Router } from "express";
+import { handleInboundWhatsApp } from "../lib/whatsapp";
 
 const router = Router();
+
+// Tipos de mensaje entrante que cuentan como "el cliente escribió" (y merecen
+// la auto-respuesta). Se ignoran reacciones, recibos, mensajes de sistema, etc.
+const REPLYABLE_TYPES = new Set([
+  "text", "image", "audio", "video", "document", "sticker", "voice", "button", "interactive", "location", "contacts",
+]);
 
 // GET /api/whatsapp/webhook — Meta verification handshake
 router.get("/whatsapp/webhook", (req, res) => {
@@ -33,6 +40,14 @@ router.post("/whatsapp/webhook", (req, res) => {
     if (value?.messages) {
       for (const m of value.messages) {
         console.log(`📱 WA message from ${m.from}: ${m.text?.body ?? m.type}`);
+        // El cliente respondió al mensaje de notificación → contestarle una
+        // vez que este número no se atiende. Fire-and-forget: Meta espera un
+        // 200 rápido, no bloqueamos por esto.
+        if (REPLYABLE_TYPES.has(m.type) && m.from) {
+          handleInboundWhatsApp(m.from).catch((e) =>
+            console.error("Error en auto-respuesta de WhatsApp:", e)
+          );
+        }
       }
     }
   }
