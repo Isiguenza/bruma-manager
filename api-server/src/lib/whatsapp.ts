@@ -189,6 +189,10 @@ export async function handleInboundWhatsApp(from: string): Promise<void> {
   if (now - last < AUTO_REPLY_COOLDOWN_MS) return;
   lastAutoReplyAt.set(from, now);
 
-  const text = process.env.WHATSAPP_AUTO_REPLY?.trim() || DEFAULT_AUTO_REPLY;
+  // Acepta `\n` literal en la env var (dotenv sin comillas, docker-compose,
+  // etc. no lo expanden) — mismo truco que usamos con la APNs key.
+  const text =
+    process.env.WHATSAPP_AUTO_REPLY?.replace(/\\n/g, "\n").trim() ||
+    DEFAULT_AUTO_REPLY;
   await sendWhatsAppText(from, text);
 }
