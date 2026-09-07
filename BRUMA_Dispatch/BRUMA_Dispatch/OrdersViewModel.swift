@@ -27,6 +27,9 @@ class OrdersViewModel: ObservableObject {
     /// silencio si faltó marcar un plato.
     @Published var recentlyCompleted: [CompletedOrder] = []
 
+    /// Batch cuya comanda se está reimprimiendo ahora (para el spinner).
+    @Published var reprintingBatchId: String?
+
     private var timer: Timer?
     private var uiTimer: Timer?
     private let soundPlayer = SoundPlayer.shared
@@ -151,6 +154,19 @@ class OrdersViewModel: ObservableObject {
         } catch {
             for id in pending { deliveredOverride[id] = false }
             errorMessage = "No se pudo completar la orden — reintenta"
+        }
+    }
+
+    /// Reimprime la comanda de cocina de esta ronda y la manda a la impresora.
+    func reprintComanda(_ batch: OrderBatch) async {
+        reprintingBatchId = batch.id
+        defer { reprintingBatchId = nil }
+        let itemIds = batch.items.filter { $0.voided != true }.map { $0.id }
+        do {
+            try await APIService.shared.reprintComanda(orderId: batch.orderId, itemIds: itemIds)
+            errorMessage = nil
+        } catch {
+            errorMessage = "No se pudo reimprimir — revisa la impresora"
         }
     }
 

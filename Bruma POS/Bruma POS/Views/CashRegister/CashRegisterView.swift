@@ -7,6 +7,8 @@ struct CashRegisterView: View {
     // con los mismos números que muestra el botón "Corte". No se toca su lógica.
     @StateObject private var corteVM = CorteViewModel()
 
+    @State private var showEditPayment = false
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -293,7 +295,7 @@ struct CashRegisterView: View {
                 corteExpectedCash: corteVM.hasData ? corteVM.cashExpected : nil
             )
         }
-        .sheet(item: $vm.selectedOrder) { order in
+        .sheet(item: $vm.selectedOrder, onDismiss: { showEditPayment = false }) { order in
             orderDetailSheet(order)
         }
         .sheet(isPresented: $vm.showQuickCount) {
@@ -1014,6 +1016,24 @@ struct CashRegisterView: View {
                         }
                         totalRow(label: "Total", value: order.total ?? "0", isTotal: true)
                     }
+
+                    if EditOrderPaymentSheet.isEditable(order) {
+                        Button {
+                            showEditPayment = true
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "pencil")
+                                Text("Editar método de pago y propina")
+                                    .font(.subheadline.bold())
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Capsule().fill(Color.orange.opacity(0.9)))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                    }
                 }
                 .padding()
             }
@@ -1026,6 +1046,12 @@ struct CashRegisterView: View {
                         vm.selectedOrder = nil
                     }
                 }
+            }
+            .sheet(isPresented: $showEditPayment) {
+                EditOrderPaymentSheet(vm: vm, order: order, onSaved: {
+                    showEditPayment = false
+                    vm.selectedOrder = nil
+                })
             }
         }
         .preferredColorScheme(.dark)

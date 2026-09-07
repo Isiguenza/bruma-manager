@@ -47,6 +47,7 @@ struct ContentView: View {
                                         onMarkAsReady: { Task { await viewModel.markRemaining(batch) } },
                                         onRush: { Task { await viewModel.toggleRush(batch: batch) } },
                                         onHold: { Task { await viewModel.toggleHold(batch: batch) } },
+                                        onReprint: { Task { await viewModel.reprintComanda(batch) } },
                                         viewModel: viewModel
                                     )
                                 }

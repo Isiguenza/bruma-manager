@@ -140,6 +140,24 @@ class APIService {
         try await setItemsDelivered(itemIds, delivered: true)
     }
 
+    /// Reimprime la comanda de cocina. Si `itemIds` no está vacío, reimprime
+    /// solo esa ronda; si no, toda la orden. El backend espera el resultado de
+    /// la impresora, así que si truena aquí es que la impresora/conexión falló.
+    func reprintComanda(orderId: String, itemIds: [String]) async throws {
+        guard let url = URL(string: "\(baseURL)/api/orders/\(orderId)/reprint-comanda") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["itemIds": itemIds])
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
     /// Marca / desmarca items como entregados (tap por platillo en el Pase, o
     /// "Deshacer" en la franja de completadas). `delivered: false` regresa la
     /// orden a "preparando" si se había auto-completado.

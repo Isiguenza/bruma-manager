@@ -14,6 +14,7 @@ struct BatchCardView: View {
     let onMarkAsReady: () -> Void
     let onRush: () -> Void
     let onHold: () -> Void
+    var onReprint: () -> Void = {}
     @ObservedObject var viewModel: OrdersViewModel
     
     // MARK: — Status badge color (by elapsed time urgency)
@@ -234,6 +235,26 @@ struct BatchCardView: View {
     private var bottomButtons: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
+                // Reimprimir comanda → impresora de cocina
+                Button(action: onReprint) {
+                    HStack(spacing: 6) {
+                        if viewModel.reprintingBatchId == batch.id {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "printer.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                        }
+                        Text("Reimprimir")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(Capsule().fill(Color(red: 0.30, green: 0.44, blue: 0.95)))
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.reprintingBatchId == batch.id)
+
                 // Rush button
                /* Button(action: onRush) {
                     HStack(spacing: 6) {

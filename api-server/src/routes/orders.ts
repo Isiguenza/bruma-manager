@@ -987,13 +987,20 @@ router.post("/orders/:id/send-to-kitchen", async (req, res) => {
 router.post("/orders/:id/reprint-comanda", async (req, res) => {
   try {
     const { id } = req.params;
+    // itemIds opcional: si viene, reimprime SOLO esos items (p.ej. una ronda
+    // concreta desde el board del Pase); si no, reimprime toda la orden.
+    const { itemIds } = req.body || {};
     const order = await db.query.orders.findFirst({
       where: eq(schema.orders.id, id),
       with: { items: true },
     });
     if (!order) return res.status(404).json({ error: "Orden no encontrada" });
 
-    const activeItems = (order.items || []).filter((i: any) => !i.voided && !i.isGuest);
+    let activeItems = (order.items || []).filter((i: any) => !i.voided && !i.isGuest);
+    if (Array.isArray(itemIds) && itemIds.length > 0) {
+      const wanted = new Set(itemIds);
+      activeItems = activeItems.filter((i: any) => wanted.has(i.id));
+    }
     if (activeItems.length === 0) {
       return res.status(400).json({ error: "La orden no tiene items para imprimir" });
     }
