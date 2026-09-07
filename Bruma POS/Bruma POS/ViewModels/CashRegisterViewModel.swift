@@ -451,6 +451,32 @@ class CashRegisterViewModel: ObservableObject {
         }
     }
 
+    /// Corrige método de pago / propina de una orden pagada desde el historial.
+    /// Recarga para que la barrita, el corte y el efectivo esperado reflejen el
+    /// cambio (el backend recalcula todo lo que depende).
+    func updateOrderPaymentDetails(
+        orderId: String,
+        paymentMethod: String,
+        tip: Double,
+        tipPaymentMethod: String
+    ) async -> Bool {
+        do {
+            try await APIService.shared.updateOrderPaymentDetails(
+                orderId: orderId,
+                paymentMethod: paymentMethod,
+                tip: tip,
+                tipPaymentMethod: tipPaymentMethod
+            )
+            showToast("Orden actualizada")
+            await loadData()
+            return true
+        } catch {
+            let msg = (error as? APIError)?.errorDescription ?? "Error al actualizar la orden"
+            showToast(msg, isError: true)
+            return false
+        }
+    }
+
     /// Reembolsa (anula) una orden pagada con PIN de gerente. En la tab de Caja
     /// todas las órdenes están pagadas, por eso el "matar" desde aquí es refund.
     func refundOrder(orderId: String, reason: String, pin: String) async -> Bool {

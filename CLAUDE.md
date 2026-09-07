@@ -36,11 +36,16 @@ deja de aplicar, corregirlo o borrarlo en vez de apilar notas viejas.
   usa comanda impresa, así que se repurposó como **"Pase"** (expeditor): un
   iPad fijo en la ventana donde alguien marca cada platillo conforme sale.
   Tap por platillo → `POST /api/order-items/batch-ready` (`deliveredToTable`);
-  tap de nuevo → `batch-unready`. Cuando todos los items de una orden dine-in
-  están entregados, el backend la pasa sola a `ready` y sale del board. Los
-  items entregados siguen visibles (tachados), no se ocultan. Hay una franja
-  de "recién completadas" con Deshacer (60s) — el estado optimista y esa
-  detección viven en `OrdersViewModel` (`deliveredOverride`, `recentlyCompleted`).
+  tap de nuevo → `batch-unready`. **Unidad del board = la RONDA (batch), no la
+  orden**: `convertOrdersToBatches` parte cada orden por gaps de 30s entre
+  `createdAt` de los items, así que dos rondas de la misma mesa son dos
+  tarjetas independientes. Una tarjeta se va del board cuando SUS platillos
+  están entregados, sin esperar a las otras rondas de esa mesa. La detección de
+  completadas y las "fotos" (`batchSnapshots`) son a nivel batch; el board
+  filtra las rondas 100% entregadas en `fetchOrders` (no en
+  `convertOrdersToBatches`, que devuelve todas). El backend pasa la orden a
+  `ready` solo cuando TODOS sus items están entregados. Franja de "recién
+  completadas" con Deshacer (60s); estado optimista en `deliveredOverride`.
   El nombre de carpeta/target sigue siendo `BRUMA_Dispatch` (solo cambió el
   título en la UI).
 - **`print-server/`** — servidor Node para impresión de comandas/tickets
@@ -173,6 +178,25 @@ web) — el broadcast es del backend, no punto-a-punto.
 `itemCount` real. Si algo necesita contar items por mesa desde el listado,
 hay que pedir el detalle o ajustar el endpoint, no asumir que el campo del
 listado es confiable.
+
+## Caja: el corte se calcula EN VIVO desde `orders`
+
+`GET /api/cash-register/:id/corte` (y `/report`) recalculan ventas por método,
+propinas por método, efectivo esperado y comisiones **en cada llamada**, leyendo
+`orders` (where `cashRegisterId` + `paymentStatus='paid'`) y `order_payments`
+para splits. Las columnas `cash_registers.cash_sales`/`terminal_sales`/etc. se
+escriben al cerrar pero **nunca se leen**; `sales_history` está definida en el
+schema pero **no se usa** (legacy del backend Next viejo). Consecuencia: para
+corregir una venta basta con actualizar la fila de `orders` — todo lo que
+depende se recalcula solo, en caja abierta o cerrada.
+
+`POST /api/orders/:id/payment-details` hace justo eso desde el historial de caja
+(dashboard `/cash-register` y `OrdersHistoryModal` del POS): corrige
+`paymentMethod`, `tip`, `tipPaymentMethod`, recalcula `total = subtotal + tip`,
+sincroniza la transacción `type:'sale'` ligada y deja audit log. No aplica a
+órdenes con pago dividido (`order_payments`), web/online ni plataforma. Emite
+`order:updated` + `order:paid`. (`POST /api/orders/:id/tip` es el hermano viejo,
+solo propina — sigue existiendo.)
 
 ## Pedidos en línea: que nunca quede uno "en el aire"
 

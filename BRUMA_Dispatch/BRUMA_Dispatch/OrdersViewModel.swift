@@ -22,8 +22,8 @@ class OrdersViewModel: ObservableObject {
     /// Estado optimista de "entregado" por item (itemId → entregado). Se aplica
     /// al instante al tocar un platillo y se limpia cuando un fetch lo confirma.
     @Published var deliveredOverride: [String: Bool] = [:]
-    /// Órdenes que se completaron hace poco — franja arriba del board con
-    /// "Deshacer" durante 60s, para que una orden grande no desaparezca en
+    /// Rondas (batches) que se completaron hace poco — franja arriba del board
+    /// con "Deshacer" durante 60s, para que una ronda no desaparezca en
     /// silencio si faltó marcar un plato.
     @Published var recentlyCompleted: [CompletedOrder] = []
 
@@ -31,10 +31,10 @@ class OrdersViewModel: ObservableObject {
     private var uiTimer: Timer?
     private let soundPlayer = SoundPlayer.shared
 
-    private var previousOrderIds: Set<String> = []
-    /// Última foto conocida de cada orden (para detectar cuáles se completaron
-    /// al desaparecer del fetch).
-    private var orderSnapshots: [String: (orderNumber: Int, label: String, itemIds: [String], allDelivered: Bool)] = [:]
+    /// Última foto conocida de cada BATCH (ronda). Cada ronda enviada a cocina
+    /// es una tarjeta independiente aunque sea de la misma mesa/orden — se va
+    /// del board cuando SUS platillos están entregados, sin esperar a las demás.
+    private var batchSnapshots: [String: (orderNumber: Int, label: String, itemIds: [String], allDelivered: Bool)] = [:]
     private let completedTTL: TimeInterval = 60
     
     init() {
@@ -179,10 +179,15 @@ class OrdersViewModel: ObservableObject {
         recentlyCompleted.removeAll { now.timeIntervalSince($0.completedAt) > completedTTL }
     }
 
-    private func orderLabel(_ order: Order) -> String {
-        if let t = order.table { return "Mesa \(t.number)" }
-        if let n = order.customerName, !n.isEmpty { return "Llevar · \(n)" }
+    private func batchLabel(_ batch: OrderBatch) -> String {
+        if let t = batch.table { return "Mesa \(t.number)" }
+        if let n = batch.customerName, !n.isEmpty { return "Llevar · \(n)" }
         return "Para llevar"
+    }
+
+    private func batchAllDelivered(_ batch: OrderBatch) -> Bool {
+        let active = batch.items.filter { $0.voided != true }
+        return !active.isEmpty && active.allSatisfy { isDelivered($0) }
     }
 
     // Fetch orders from API and convert to batches
@@ -200,18 +205,33 @@ class OrdersViewModel: ObservableObject {
                 }
             }
 
-            // Detección de órdenes completadas: las que estaban antes y ya no
-            // están, y que quedaron con TODO entregado (según el último dato del
-            // servidor o los taps locales) → a la franja de "recién completadas".
-            let currentOrderIds = Set(orders.map { $0.id })
-            for goneId in previousOrderIds.subtracting(currentOrderIds) {
-                guard let snap = orderSnapshots[goneId],
-                      !recentlyCompleted.contains(where: { $0.id == goneId }) else { continue }
-                let doneNow = snap.allDelivered
-                    || snap.itemIds.allSatisfy { deliveredOverride[$0] == true }
+            // TODAS las rondas (batches) de las órdenes vigentes, incluidas las
+            // que ya están completas — el filtrado y la detección de completadas
+            // se hacen aquí, a nivel batch.
+            let allBatches = convertOrdersToBatches(orders)
+            var batchDone: [String: Bool] = [:]
+            for b in allBatches { batchDone[b.id] = batchAllDelivered(b) }
+            let allBatchIds = Set(allBatches.map { $0.id })
+
+            // Limpiar overrides huérfanos.
+            let liveItemIds = Set(orders.flatMap { ($0.items ?? []).map { $0.id } })
+                .union(recentlyCompleted.flatMap { $0.itemIds })
+            deliveredOverride = deliveredOverride.filter { liveItemIds.contains($0.key) }
+
+            // Detección de rondas recién completadas: la foto previa tenía algo
+            // pendiente y ahora la ronda salió (todos sus platillos entregados, o
+            // desapareció del fetch). Cada ronda es independiente aunque
+            // comparta mesa/orden con otra.
+            for (batchId, snap) in batchSnapshots {
+                guard !snap.allDelivered,
+                      !recentlyCompleted.contains(where: { $0.id == batchId }) else { continue }
+                let gone = !allBatchIds.contains(batchId)
+                let doneNow = gone
+                    ? snap.itemIds.allSatisfy { deliveredOverride[$0] == true }
+                    : (batchDone[batchId] ?? false)
                 if doneNow {
                     recentlyCompleted.insert(
-                        CompletedOrder(id: goneId, orderNumber: snap.orderNumber,
+                        CompletedOrder(id: batchId, orderNumber: snap.orderNumber,
                                        label: snap.label, itemIds: snap.itemIds,
                                        completedAt: Date()),
                         at: 0
@@ -219,55 +239,41 @@ class OrdersViewModel: ObservableObject {
                 }
             }
 
-            // Actualizar fotos de las órdenes vigentes.
+            // Actualizar fotos de las rondas vigentes.
             var snapshots: [String: (orderNumber: Int, label: String, itemIds: [String], allDelivered: Bool)] = [:]
-            for order in orders {
-                let active = (order.items ?? []).filter { $0.voided != true }
+            for b in allBatches {
+                let active = b.items.filter { $0.voided != true }
                 guard !active.isEmpty else { continue }
-                snapshots[order.id] = (
-                    order.orderNumber,
-                    orderLabel(order),
+                snapshots[b.id] = (
+                    b.orderNumber,
+                    batchLabel(b),
                     active.map { $0.id },
-                    active.allSatisfy { isDelivered($0) }
+                    batchDone[b.id] ?? false
                 )
             }
-            orderSnapshots = snapshots
-            previousOrderIds = currentOrderIds
+            batchSnapshots = snapshots
             pruneCompleted()
 
-            // Limpiar overrides huérfanos (items que ya no están en ninguna orden
-            // del board ni en la franja de completadas) para no crecer sin fin.
-            let liveItemIds = Set(orders.flatMap { ($0.items ?? []).map { $0.id } })
-                .union(recentlyCompleted.flatMap { $0.itemIds })
-            deliveredOverride = deliveredOverride.filter { liveItemIds.contains($0.key) }
-
-            // Convert orders to batches
-            let newBatches = convertOrdersToBatches(orders)
-            let newBatchIds = Set(newBatches.map { $0.id })
-            
-            // Check for new batches
-            let hasNewBatch = newBatches.contains { !previousBatchIds.contains($0.id) }
-            
-            // Play sound for new batches
+            // Sonido / auto-expand de rondas nuevas — contra TODOS los batch ids
+            // vistos (los completados siguen contando) para que "Deshacer" no
+            // dispare el sonido otra vez.
+            let hasNewBatch = allBatches.contains { !previousBatchIds.contains($0.id) }
             if hasNewBatch {
-                print("🔔 New batch detected!")
                 soundPlayer.playNotification(viewMode: viewMode)
-                
-                // Auto-expand new batches
-                for batch in newBatches where !previousBatchIds.contains(batch.id) {
+                for batch in allBatches where !previousBatchIds.contains(batch.id) {
                     expandedBatchIds.insert(batch.id)
                 }
             }
-            
-            // Update tracking
-            previousBatchIds = newBatchIds
-            
-            // Sort: rush first, then by effective elapsed time (oldest first = FIFO)
-            batches = newBatches.sorted { a, b in
-                if a.isRush && !b.isRush { return true }
-                if !a.isRush && b.isRush { return false }
-                return a.effectiveElapsedMinutes > b.effectiveElapsedMinutes
-            }
+            previousBatchIds = allBatchIds
+
+            // El board solo muestra rondas con algo pendiente de entregar.
+            batches = allBatches
+                .filter { b in b.items.contains { $0.voided != true && !isDelivered($0) } }
+                .sorted { a, b in
+                    if a.isRush && !b.isRush { return true }
+                    if !a.isRush && b.isRush { return false }
+                    return a.effectiveElapsedMinutes > b.effectiveElapsedMinutes
+                }
             errorMessage = nil
             
         } catch {
@@ -298,7 +304,7 @@ class OrdersViewModel: ObservableObject {
             }
             
             guard !filteredItems.isEmpty else { continue }
-            
+
             print("🔍 Order #\(order.orderNumber): \(filteredItems.count) filtered items (total: \(order.items?.count ?? 0))")
             
             // Sort items by createdAt

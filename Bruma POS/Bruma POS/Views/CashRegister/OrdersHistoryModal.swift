@@ -11,6 +11,15 @@ struct OrdersHistoryModal: View {
     @State private var deletePin = ""
     @State private var deleting = false
     @State private var reprintingOrderId: String?
+
+    @State private var orderToEdit: Order?
+
+    private func isEditable(_ order: Order) -> Bool {
+        !order.isSplitPayment
+            && order.source != "web"
+            && order.paymentMethod != "online"
+            && order.paymentMethod != "platform_delivery"
+    }
     
     var body: some View {
         ZStack {
@@ -93,6 +102,9 @@ struct OrdersHistoryModal: View {
             if let order = orderToDelete {
                 Text("¿Reembolsar y anular la orden #\(order.orderNumber)? Requiere PIN de gerente. Queda registrada para auditoría.")
             }
+        }
+        .sheet(item: $orderToEdit) { order in
+            EditOrderPaymentSheet(vm: vm, order: order)
         }
     }
     
@@ -179,7 +191,29 @@ struct OrdersHistoryModal: View {
                     )
                 }
                 .disabled(reprintingOrderId == order.id)
-                
+
+                if isEditable(order) {
+                    Button {
+                        orderToEdit = order
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "pencil")
+                                .font(.caption)
+                            Text("Editar pago")
+                                .font(.caption.bold())
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.orange.opacity(0.2))
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.orange, lineWidth: 1)
+                        )
+                    }
+                }
+
                 Button {
                     orderToDelete = order
                     showDeleteConfirm = true
@@ -270,6 +304,90 @@ struct OrdersHistoryModal: View {
                 deleteReason = ""
                 deletePin = ""
             }
+        }
+    }
+}
+
+// MARK: - Editar datos de pago de una orden pagada
+
+private struct EditOrderPaymentSheet: View {
+    @ObservedObject var vm: CashRegisterViewModel
+    let order: Order
+    @Environment(\.dismiss) private var dismiss
+
+    private let methods: [(String, String)] = [
+        ("cash", "Efectivo"),
+        ("terminal_mercadopago", "Terminal"),
+        ("card", "Tarjeta"),
+        ("transfer", "Transferencia"),
+    ]
+
+    @State private var paymentMethod = "cash"
+    @State private var tipText = "0"
+    @State private var tipMethod = "cash"
+    @State private var saving = false
+
+    private var subtotal: Double { Double(order.subtotal ?? "0") ?? 0 }
+    private var tipValue: Double { Double(tipText.replacingOccurrences(of: ",", with: ".")) ?? 0 }
+    private var newTotal: Double { subtotal + max(0, tipValue) }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    LabeledContent("Subtotal", value: vm.formatCurrency(String(subtotal)))
+                    LabeledContent("Total nuevo") {
+                        Text(vm.formatCurrency(String(newTotal))).bold()
+                    }
+                }
+
+                Section("Método de pago") {
+                    Picker("Método de pago", selection: $paymentMethod) {
+                        ForEach(methods, id: \.0) { Text($0.1).tag($0.0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section("Propina") {
+                    TextField("Monto", text: $tipText)
+                        .keyboardType(.decimalPad)
+                    if tipValue > 0 {
+                        Picker("Método de la propina", selection: $tipMethod) {
+                            ForEach(methods, id: \.0) { Text($0.1).tag($0.0) }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Editar pago · #\(order.orderNumber)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(saving ? "Guardando…" : "Guardar") { save() }
+                        .disabled(saving || tipValue < 0)
+                }
+            }
+            .onAppear {
+                paymentMethod = order.paymentMethod ?? "cash"
+                tipText = String(Double(order.tip ?? "0") ?? 0)
+                tipMethod = order.tipPaymentMethod ?? order.paymentMethod ?? "cash"
+            }
+        }
+    }
+
+    private func save() {
+        saving = true
+        Task {
+            let ok = await vm.updateOrderPaymentDetails(
+                orderId: order.id,
+                paymentMethod: paymentMethod,
+                tip: max(0, tipValue),
+                tipPaymentMethod: tipValue > 0 ? tipMethod : paymentMethod
+            )
+            saving = false
+            if ok { dismiss() }
         }
     }
 }

@@ -828,6 +828,112 @@ router.post("/orders/:id/tip", async (req, res) => {
   }
 });
 
+// POST /api/orders/:id/payment-details
+// Corrige los datos de pago de una orden YA PAGADA desde el historial de caja:
+// método de pago general, monto de propina y método de propina. Recalcula el
+// total y sincroniza la transacción de venta ligada. Como el corte/reportes
+// leen order.paymentMethod / order.tip / order.tipPaymentMethod EN VIVO, todo
+// lo que depende (ventas por método, propinas por método, efectivo esperado,
+// comisiones) se recalcula solo — sirve para caja abierta o cerrada.
+// No aplica a: órdenes con pago dividido, pedidos web/online, plataformas.
+router.post("/orders/:id/payment-details", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { paymentMethod, tip, tipPaymentMethod, employeeId } = req.body;
+
+    const CORRECTABLE = ["cash", "card", "terminal_mercadopago", "transfer"];
+
+    const order = await db.query.orders.findFirst({ where: eq(schema.orders.id, id) });
+    if (!order) return res.status(404).json({ error: "Orden no encontrada" });
+    if (order.paymentStatus !== "paid") {
+      return res.status(400).json({ error: "Solo se pueden corregir órdenes pagadas" });
+    }
+    if (order.source === "web" || order.paymentMethod === "online" || order.paymentMethod === "platform_delivery") {
+      return res.status(400).json({ error: "Los pedidos en línea o de plataforma no se editan aquí" });
+    }
+
+    const splits = await db.query.orderPayments.findMany({
+      where: eq(schema.orderPayments.orderId, id),
+    });
+    if (splits.length > 0) {
+      return res.status(400).json({ error: "No disponible en órdenes con pago dividido" });
+    }
+
+    const newPaymentMethod = (paymentMethod ?? order.paymentMethod ?? "cash") as string;
+    if (!CORRECTABLE.includes(newPaymentMethod)) {
+      return res.status(400).json({ error: "Método de pago no válido" });
+    }
+
+    const tipAmount = tip !== undefined && tip !== null ? parseFloat(String(tip)) : parseFloat(order.tip || "0");
+    if (isNaN(tipAmount) || tipAmount < 0) {
+      return res.status(400).json({ error: "Propina inválida" });
+    }
+
+    let newTipMethod = (tipPaymentMethod ?? order.tipPaymentMethod ?? newPaymentMethod) as string;
+    if (tipAmount === 0) newTipMethod = newPaymentMethod;
+    if (!CORRECTABLE.includes(newTipMethod)) {
+      return res.status(400).json({ error: "Método de propina no válido" });
+    }
+
+    const subtotal = parseFloat(order.subtotal || "0");
+    const newTotal = (subtotal + tipAmount).toFixed(2);
+
+    const [updated] = await db
+      .update(schema.orders)
+      .set({
+        paymentMethod: newPaymentMethod as any,
+        tip: tipAmount.toFixed(2),
+        tipPaymentMethod: newTipMethod as any,
+        total: newTotal,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.orders.id, id))
+      .returning();
+
+    // Mantener la transacción de venta ligada consistente con el nuevo método/total.
+    await db
+      .update(schema.cashRegisterTransactions)
+      .set({ paymentMethod: newPaymentMethod as any, amount: newTotal })
+      .where(
+        and(
+          eq(schema.cashRegisterTransactions.orderId, id),
+          eq(schema.cashRegisterTransactions.type, "sale")
+        )
+      );
+
+    await db
+      .insert(schema.auditLog)
+      .values({
+        userId: employeeId || order.userId || null,
+        action: "order.payment_details_corrected",
+        entityType: "order",
+        entityId: id,
+        details: JSON.stringify({
+          before: {
+            paymentMethod: order.paymentMethod,
+            tip: order.tip,
+            tipPaymentMethod: order.tipPaymentMethod,
+            total: order.total,
+          },
+          after: {
+            paymentMethod: newPaymentMethod,
+            tip: tipAmount.toFixed(2),
+            tipPaymentMethod: newTipMethod,
+            total: newTotal,
+          },
+        }),
+      })
+      .catch((e) => console.error("[payment-details] audit log falló:", e));
+
+    emitOrderUpdated(updated);
+    emitOrderPaid(updated);
+    res.json({ success: true, order: updated });
+  } catch (error) {
+    console.error("Error corrigiendo datos de pago:", error);
+    res.status(500).json({ error: "Error al corregir los datos de pago" });
+  }
+});
+
 // POST /api/orders/:id/send-to-kitchen
 router.post("/orders/:id/send-to-kitchen", async (req, res) => {
   try {

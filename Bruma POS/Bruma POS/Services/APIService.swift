@@ -256,6 +256,35 @@ class APIService {
         }
     }
 
+    /// Corrige los datos de pago de una orden pagada desde el historial de caja
+    /// (método de pago, propina, método de propina). El backend recalcula el
+    /// total y todo lo que depende (corte, efectivo esperado, comisiones).
+    func updateOrderPaymentDetails(
+        orderId: String,
+        paymentMethod: String,
+        tip: Double,
+        tipPaymentMethod: String
+    ) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/payment-details")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "paymentMethod": paymentMethod,
+            "tip": tip,
+            "tipPaymentMethod": tipPaymentMethod,
+        ])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else { throw APIError.serverError }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let msg = json["error"] as? String {
+                throw APIError.badRequest(msg)
+            }
+            throw APIError.serverError
+        }
+    }
+
     /// Pedidos en línea con pago confirmado que el POS todavía no aceptó ni
     /// rechazó — la fuente de verdad para reconstruir la pantalla verde aunque
     /// se haya perdido el evento de socket.

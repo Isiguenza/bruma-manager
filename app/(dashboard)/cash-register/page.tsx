@@ -15,6 +15,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -72,6 +79,14 @@ export default function CashRegisterPage() {
   const [deleteReason, setDeleteReason] = useState("");
   const [deletingOrder, setDeletingOrder] = useState(false);
   const [reprintingOrderId, setReprintingOrderId] = useState<string | null>(null);
+
+  // Edit order payment details modal
+  const [editOrderOpen, setEditOrderOpen] = useState(false);
+  const [editOrder, setEditOrder] = useState<any>(null);
+  const [editPaymentMethod, setEditPaymentMethod] = useState("cash");
+  const [editTip, setEditTip] = useState("0");
+  const [editTipMethod, setEditTipMethod] = useState("cash");
+  const [savingEdit, setSavingEdit] = useState(false);
   const [printingSummary, setPrintingSummary] = useState(false);
 
   useEffect(() => {
@@ -249,6 +264,53 @@ export default function CashRegisterPage() {
       toast.error("Error eliminando orden");
     } finally {
       setDeletingOrder(false);
+    }
+  }
+
+  const isEditableOrder = (order: any) =>
+    order.source !== "web" &&
+    order.paymentMethod !== "online" &&
+    order.paymentMethod !== "platform_delivery" &&
+    !(order.payments && order.payments.length > 0);
+
+  function handleEditOrderClick(order: any) {
+    setEditOrder(order);
+    setEditPaymentMethod(order.paymentMethod || "cash");
+    setEditTip(String(parseFloat(order.tip || "0")));
+    setEditTipMethod(order.tipPaymentMethod || order.paymentMethod || "cash");
+    setEditOrderOpen(true);
+  }
+
+  async function handleSaveOrderEdit() {
+    if (!editOrder) return;
+    const tipNum = parseFloat(editTip || "0");
+    if (isNaN(tipNum) || tipNum < 0) {
+      toast.error("Propina inválida");
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/orders/${editOrder.id}/payment-details`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paymentMethod: editPaymentMethod,
+          tip: tipNum.toFixed(2),
+          tipPaymentMethod: tipNum > 0 ? editTipMethod : editPaymentMethod,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Error");
+      }
+      toast.success("Orden actualizada");
+      setEditOrderOpen(false);
+      setEditOrder(null);
+      await loadPaidOrders();
+    } catch (error: any) {
+      toast.error(error.message || "Error al actualizar la orden");
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -656,6 +718,15 @@ export default function CashRegisterPage() {
                           </div>
                         )}
                       </div>
+                      {isEditableOrder(order) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditOrderClick(order)}
+                        >
+                          Editar pago
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -677,6 +748,103 @@ export default function CashRegisterPage() {
               ))}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Order Payment Details Modal */}
+      <Dialog open={editOrderOpen} onOpenChange={setEditOrderOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Editar pago — Orden #{editOrder?.orderNumber}
+            </DialogTitle>
+            <DialogDescription>
+              Corrige el método de pago y la propina. El total, el corte y el
+              efectivo esperado se recalculan solos.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editOrder && (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span>{formatCurrency(editOrder.subtotal || "0")}</span>
+                </div>
+                <div className="flex justify-between font-semibold">
+                  <span>Total nuevo</span>
+                  <span>
+                    {formatCurrency(
+                      (
+                        parseFloat(editOrder.subtotal || "0") +
+                        (parseFloat(editTip || "0") || 0)
+                      ).toFixed(2)
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Método de pago</Label>
+                <Select
+                  value={editPaymentMethod}
+                  onValueChange={setEditPaymentMethod}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Efectivo</SelectItem>
+                    <SelectItem value="terminal_mercadopago">Terminal</SelectItem>
+                    <SelectItem value="card">Tarjeta</SelectItem>
+                    <SelectItem value="transfer">Transferencia</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-tip">Propina</Label>
+                <Input
+                  id="edit-tip"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editTip}
+                  onChange={(e) => setEditTip(e.target.value)}
+                />
+              </div>
+
+              {parseFloat(editTip || "0") > 0 && (
+                <div className="space-y-2">
+                  <Label>Método de la propina</Label>
+                  <Select value={editTipMethod} onValueChange={setEditTipMethod}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Efectivo</SelectItem>
+                      <SelectItem value="terminal_mercadopago">Terminal</SelectItem>
+                      <SelectItem value="card">Tarjeta</SelectItem>
+                      <SelectItem value="transfer">Transferencia</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditOrderOpen(false)}
+              disabled={savingEdit}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveOrderEdit} disabled={savingEdit}>
+              {savingEdit ? "Guardando..." : "Guardar cambios"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
