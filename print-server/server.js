@@ -1158,7 +1158,7 @@ function sendToKitchenPrinter(content) {
 // Endpoint para imprimir comanda en cocina
 app.post('/print-comanda', async (req, res) => {
   try {
-    const { tableNumber, orderNumber, customerName, items, guestCount } = req.body;
+    const { tableNumber, orderNumber, customerName, items, guestCount, isPractice } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: "No items to print" });
@@ -1168,10 +1168,25 @@ app.post('/print-comanda', async (req, res) => {
     const timeStr = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", timeZone: "America/Mexico_City" });
 
     let content = "";
-    
+
     // Inicializar impresora
     content += commands.init;
-    
+
+    // Modo Práctica: letrero grande hasta arriba, antes que nada más — la
+    // comanda es real (imprime/aparece en el Pase) pero nunca se debe
+    // confundir con un pedido real de cocina.
+    if (isPractice) {
+      content += commands.alignCenter;
+      content += commands.bold;
+      content += commands.textSizeLarge;
+      content += "MODO\nPRACTICA\n";
+      content += commands.textSizeNormal;
+      content += commands.boldOff;
+      content += commands.feedLine;
+      content += solidLine() + commands.feedLine;
+      content += commands.feedLine;
+    }
+
     // Header
     content += commands.alignCenter;
     content += commands.bold;

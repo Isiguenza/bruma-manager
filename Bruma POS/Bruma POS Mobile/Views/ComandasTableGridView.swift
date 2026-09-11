@@ -93,6 +93,22 @@ struct ComandasTableGridView: View {
             Spacer()
             Button {
                 Haptics.tap()
+                startPracticeSession()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "graduationcap.fill")
+                    Text("Práctica")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.purple)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.purple.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            Button {
+                Haptics.tap()
                 vm.clearSession()
             } label: {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
@@ -107,6 +123,34 @@ struct ComandasTableGridView: View {
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 12)
+    }
+
+    /// Modo Práctica: reusa el flujo REAL de comandar (mismo producto,
+    /// mismo asiento/tiempo, misma impresión y mismo Pase) contra una mesa
+    /// oculta dedicada ("PRACTICA", active=false — nunca aparece en este
+    /// grid ni en el de iPad) para no inventar un tableId falso que
+    /// tronaría en el backend (FK real a `tables`). `vm.isPracticeMode`
+    /// etiqueta la orden para que imprima/aparezca en el Pase con el
+    /// letrero "MODO PRÁCTICA" y quede excluida de caja/reportes.
+    private func startPracticeSession() {
+        guard let practiceTable = vm.tables.first(where: { $0.number == "PRACTICA" }) else {
+            vm.showToast("Pide a un admin que configure la Mesa de Práctica", isError: true)
+            return
+        }
+        vm.resetPaymentState()
+        vm.isHomeDelivery = false
+        vm.isEmployeeOrder = false
+        vm.selectedEmployee = nil
+        vm.selectedTable = practiceTable
+        vm.guestCount = practiceTable.capacity > 0 ? practiceTable.capacity : 4
+        vm.activeSeat = "A1"
+        vm.activeCourse = 1
+        vm.customerName = ""
+        vm.currentOrderId = nil
+        vm.currentOrderNumber = nil
+        vm.cart = []
+        vm.isPracticeMode = true
+        vm.currentScreen = .pos
     }
 
     private var newParaLlevarCard: some View {

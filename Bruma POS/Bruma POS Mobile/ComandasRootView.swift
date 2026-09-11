@@ -9,7 +9,7 @@ struct ComandasRootView: View {
     @State private var selectedTab: ComandasTab = .tables
 
     enum ComandasTab {
-        case tables, loyalty
+        case tables, loyalty, employees
     }
 
     var body: some View {
@@ -64,8 +64,22 @@ struct ComandasRootView: View {
             ComandasLoyaltyView(vm: vm)
                 .tabItem { Label("Lealtad", systemImage: "star.circle.fill") }
                 .tag(ComandasTab.loyalty)
+
+            // Tab admin-only: si el empleado deja de ser admin (otro login
+            // en la misma sesión de la app) el tab desaparece del TabView,
+            // por eso el onChange de abajo regresa la selección a Mesas.
+            if vm.employeeRole == "admin" {
+                ComandasEmployeesView(vm: vm)
+                    .tabItem { Label("Empleados", systemImage: "person.2.fill") }
+                    .tag(ComandasTab.employees)
+            }
         }
         .tint(.blue)
+        .onChange(of: vm.employeeRole) { _, newRole in
+            if newRole != "admin" && selectedTab == .employees {
+                selectedTab = .tables
+            }
+        }
     }
 }
 

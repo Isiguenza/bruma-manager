@@ -64,7 +64,7 @@ import authRouter from "./routes/auth";
 import cashRegisterRouter from "./routes/cash-register";
 import tablesRouter from "./routes/tables";
 import productsRouter from "./routes/products";
-import ordersRouter from "./routes/orders";
+import ordersRouter, { cleanupPracticeOrders } from "./routes/orders";
 import employeesRouter from "./routes/employees";
 import promotionsRouter from "./routes/promotions";
 import loyaltyRouter from "./routes/loyalty";
@@ -145,4 +145,9 @@ httpServer.listen(PORT, () => {
   // Red de seguridad: re-empuja (socket + push) los pedidos en línea que
   // llevan rato sin que el POS los acepte ni rechace.
   setInterval(remindPendingOnlineOrders, 60 * 1000);
+
+  // Órdenes de Modo Práctica (Bruma POS Mobile) con más de 2h — se borran
+  // solas, no deben acumularse para siempre en la BD.
+  cleanupPracticeOrders();
+  setInterval(cleanupPracticeOrders, 30 * 60 * 1000);
 });

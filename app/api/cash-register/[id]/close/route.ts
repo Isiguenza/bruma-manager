@@ -57,7 +57,8 @@ export async function POST(
     const paidOrders = await db.query.orders.findMany({
       where: and(
         eq(orders.cashRegisterId, id),
-        eq(orders.paymentStatus, "paid")
+        eq(orders.paymentStatus, "paid"),
+        eq(orders.isPractice, false)
       ),
     });
 

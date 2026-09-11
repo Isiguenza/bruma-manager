@@ -84,7 +84,8 @@ router.post("/cash-register/:id/close", async (req, res) => {
     const paidOrders = await db.query.orders.findMany({
       where: and(
         eq(schema.orders.cashRegisterId, id),
-        eq(schema.orders.paymentStatus, "paid")
+        eq(schema.orders.paymentStatus, "paid"),
+        eq(schema.orders.isPractice, false)
       ),
     });
 
@@ -262,7 +263,8 @@ router.get("/cash-register/:id/report", async (req, res) => {
     const orders = await db.query.orders.findMany({
       where: and(
         eq(schema.orders.cashRegisterId, id),
-        eq(schema.orders.paymentStatus, "paid")
+        eq(schema.orders.paymentStatus, "paid"),
+        eq(schema.orders.isPractice, false)
       ),
       with: {
         items: true,
@@ -357,7 +359,8 @@ router.get("/cash-register/:id/corte", async (req, res) => {
     const registerOrders = await db.query.orders.findMany({
       where: and(
         eq(schema.orders.cashRegisterId, id),
-        eq(schema.orders.paymentStatus, "paid")
+        eq(schema.orders.paymentStatus, "paid"),
+        eq(schema.orders.isPractice, false)
       ),
       with: {
         items: true,

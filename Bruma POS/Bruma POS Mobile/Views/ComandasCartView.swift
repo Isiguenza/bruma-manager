@@ -141,9 +141,30 @@ struct ComandasCartView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
                 }
+
+                // Imprimir cuenta: solo admin (pedido explícito — Mobile es
+                // "solo comandar", el resto del equipo no debe imprimir).
+                if vm.employeeRole == "admin" {
+                    printButton
+                }
             }
         }
         .padding(.top, 4)
+    }
+
+    private var printButton: some View {
+        Button {
+            Haptics.tap()
+            Task { await vm.handlePrint() }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "printer.fill").font(.callout)
+                Text("Imprimir Cuenta").font(.callout.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+        }
+        .buttonStyle(.flatCapsule(Color(white: 0.2)))
     }
 
     private var hasUnsentItems: Bool {

@@ -88,6 +88,7 @@ export async function GET(
 
     for (const order of registerOrders) {
       if (order.paymentStatus !== "paid") continue;
+      if (order.isPractice) continue;
 
       totalOrders++;
       const orderTip = parseFloat(order.tip || "0");

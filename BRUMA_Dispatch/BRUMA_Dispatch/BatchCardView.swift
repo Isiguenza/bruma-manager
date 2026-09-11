@@ -67,16 +67,20 @@ struct BatchCardView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if batch.isPractice {
+                practiceStrip
+            }
+
             topInfoSection
-            
+
             if batch.isOnHold || batch.isRush {
                 statusStrip
             }
-            
+
             itemsSection
-            
+
             Divider()
-            
+
             bottomButtons
         }
         .background(Color(UIColor.systemBackground))
@@ -85,12 +89,30 @@ struct BatchCardView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .stroke(
+                    batch.isPractice ? Color.purple.opacity(0.6) :
                     batch.isOnHold ? Color.red.opacity(0.45) :
                     batch.isRush   ? Color.orange.opacity(0.55) :
                     Color(UIColor.separator).opacity(0.4),
-                    lineWidth: (batch.isRush || batch.isOnHold) ? 2 : 0.5
+                    lineWidth: (batch.isPractice || batch.isRush || batch.isOnHold) ? 2 : 0.5
                 )
         )
+    }
+
+    // MARK: — Modo Práctica strip (letrero grande, siempre primero)
+
+    private var practiceStrip: some View {
+        HStack(spacing: 8) {
+            Spacer()
+            Image(systemName: "graduationcap.fill")
+                .font(.system(size: 15, weight: .black))
+            Text("MODO PRÁCTICA")
+                .font(.system(size: 16, weight: .black))
+                .kerning(0.5)
+            Spacer()
+        }
+        .foregroundColor(.white)
+        .padding(.vertical, 10)
+        .background(Color.purple.opacity(0.85))
     }
     
     // MARK: — TOP INFO

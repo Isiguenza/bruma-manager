@@ -32,7 +32,8 @@ export async function GET() {
       .where(
         and(
           gte(orders.createdAt, todayStart),
-          eq(orders.paymentStatus, "paid")
+          eq(orders.paymentStatus, "paid"),
+          eq(orders.isPractice, false)
         )
       );
 
@@ -45,7 +46,8 @@ export async function GET() {
       .where(
         and(
           gte(orders.createdAt, weekStart),
-          eq(orders.paymentStatus, "paid")
+          eq(orders.paymentStatus, "paid"),
+          eq(orders.isPractice, false)
         )
       );
 
@@ -58,7 +60,8 @@ export async function GET() {
       .where(
         and(
           gte(orders.createdAt, monthStart),
-          eq(orders.paymentStatus, "paid")
+          eq(orders.paymentStatus, "paid"),
+          eq(orders.isPractice, false)
         )
       );
 
@@ -67,7 +70,7 @@ export async function GET() {
       .select({ count: sql<number>`COUNT(*)` })
       .from(orders)
       .where(
-        sql`${orders.status} IN ('pending', 'preparing', 'ready')`
+        sql`${orders.status} IN ('pending', 'preparing', 'ready') AND ${orders.isPractice} = false`
       );
 
     // Low stock ingredients
@@ -91,6 +94,7 @@ export async function GET() {
         and(
           gte(orders.createdAt, todayStart),
           eq(orders.paymentStatus, "paid"),
+          eq(orders.isPractice, false),
           ne(orderItems.productId, CUSTOM_MODIFIER_PRODUCT_ID)
         )
       )
@@ -118,7 +122,8 @@ export async function GET() {
           and(
             gte(orders.createdAt, dayStart),
             lte(orders.createdAt, dayEnd),
-            eq(orders.paymentStatus, "paid")
+            eq(orders.paymentStatus, "paid"),
+            eq(orders.isPractice, false)
           )
         );
 

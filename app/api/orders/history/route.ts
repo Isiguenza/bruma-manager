@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     const conditions: any[] = [
       eq(orders.cashRegisterId, registerId),
       eq(orders.paymentStatus, "paid"),
+      eq(orders.isPractice, false),
     ];
 
     // All paid orders for this register — no date filtering needed.

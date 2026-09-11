@@ -365,7 +365,8 @@ class OrdersViewModel: ObservableObject {
                         preparationTime: order.preparationTime,
                         isRush: order.priority == 1,
                         isOnHold: order.onHold ?? false,
-                        holdAccumulatedSeconds: order.holdAccumulatedSeconds ?? 0
+                        holdAccumulatedSeconds: order.holdAccumulatedSeconds ?? 0,
+                        isPractice: order.isPractice ?? false
                     )
                     allBatches.append(batch)
                     print("  ✅ Batch created: \(currentBatch.count) items")

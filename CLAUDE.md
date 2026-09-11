@@ -46,6 +46,9 @@ deja de aplicar, corregirlo o borrarlo en vez de apilar notas viejas.
   `convertOrdersToBatches`, que devuelve todas). El backend pasa la orden a
   `ready` solo cuando TODOS sus items están entregados. Franja de "recién
   completadas" con Deshacer (60s); estado optimista en `deliveredOverride`.
+  Cada tarjeta tiene botón "Reimprimir" → `POST /api/orders/:id/reprint-comanda`
+  con `itemIds` de esa ronda (el endpoint acepta `itemIds` opcional: con él
+  reimprime solo esos items, sin él toda la orden).
   El nombre de carpeta/target sigue siendo `BRUMA_Dispatch` (solo cambió el
   título en la UI).
 - **`print-server/`** — servidor Node para impresión de comandas/tickets
@@ -83,6 +86,32 @@ carpeta ya sincronizada del target Mobile, sin pasos manuales de Xcode). Como
 es un target/módulo distinto al de POS, no hay conflicto de nombres con la
 definición real de POS. Ejemplos ya duplicados ahí: `MapGridMetrics`,
 `PromotionGroup`, `CartRenderElement`, `POSConstants`.
+
+**Gotcha del `.pbxproj` — `membershipExceptions` es opt-in, no opt-out:** la
+lista en `PBXFileSystemSynchronizedBuildFileExceptionSet` ("Exceptions for
+'Bruma POS' folder in 'Bruma POS Mobile' target") es la ÚNICA fuente de qué
+archivos de la carpeta compartida (`Models/`, `Services/`, `Styles/`, etc.)
+también compilan en Mobile — un archivo nuevo en esas carpetas NO se comparte
+solo, hay que agregarlo a mano a `membershipExceptions`. Ya pasó: se agregó
+`Services/LocalNotifications.swift` (feature de notificaciones locales de
+pedidos en línea) y `POSViewModel.swift` (compartido) lo referencia, pero
+nadie lo sumó a la lista → Mobile dejó de compilar (`cannot find
+'LocalNotificationManager' in scope`) sin que nadie tocara código de Mobile.
+Si Mobile no compila después de agregar algo a `Services/`/`Models/`/`Styles/`
+en el target POS, este archivo es sospechoso #1 antes de buscar el bug en
+otro lado.
+
+**Gate de admin en Mobile:** `POSViewModel.employeeRole == "admin"` (mismo
+patrón que `canEditLayout` en POS) gatea el botón "Imprimir Cuenta" del
+carrito (`ComandasCartView.footer`) y el tab "Empleados" completo
+(`ComandasRootView.tabsContainer`, con un `onChange(of: vm.employeeRole)` que
+regresa a la tab de Mesas si el rol deja de ser admin en la misma sesión de
+la app). El tab de Empleados de Mobile (`ComandasEmployeesView.swift`, propio
+de Mobile, no reusa `EmployeeSelectionView` de iPad) es una lista simple en
+vez del grid de iPad, con historial de órdenes por empleado vía
+`APIService.fetchEmployeeOrders(userId:)` en una hoja aparte — ese endpoint
+filtra `source=employee` (consumos internos), no todas las órdenes de mesa
+que el empleado atendió como mesero.
 
 **Gotcha de `Styles/FlatStyles.swift` (compartido):** `FlatCard`,
 `FlatCardTinted`, `FlatPill`, `FlatSection` son `ViewModifier` structs, NO
@@ -153,6 +182,46 @@ drift de columnas/tablas que ya existen en la DB real pero nunca se
 statements realmente nuevos directo contra `DATABASE_URL` (p.ej. un script
 Node con `@neondatabase/serverless`), no con `db:migrate`.
 
+## Modo Práctica (Bruma POS Mobile)
+
+Deja que cualquier empleado practique comandar con el flujo REAL (mismo
+catálogo, asientos, tiempos, impresión y Pase) sin afectar caja. Botón
+"🎓 Práctica" en el header de `ComandasTableGridView.swift` (Mobile). Diseño
+clave: la orden usa una **mesa oculta real** (`tables.number = 'PRACTICA'`,
+`active = false`, creada una sola vez por `scripts/add-is-practice.ts` /
+`drizzle/manual_is_practice.sql`) en vez de un `tableId` inventado — un id
+falso truena por FK real a `tables`, y omitir `tableId` por completo hace que
+la orden caiga en el bucket de "para llevar" y aparezca como fantasma en las
+pantallas reales de todos los dispositivos. Al ser `active = false` nunca
+sale en el grid de Mesas (ahí y en TableMapView el filtro ya es
+`.filter { $0.active }`), pero como es una fila real de verdad, el resto del
+flujo (`handleSendToKitchen`, impresión, Pase) no necesita ningún caso
+especial.
+
+`POSViewModel.isPracticeMode` (compartido, default `false`, inofensivo en
+iPad) es el único flag: en `handleSendToKitchen` agrega `isPractice: true` al
+body de `createOrder`; `handleBackToTables` lo resetea a `false` (red de
+seguridad para que no se cuele en una orden real después). `orders.is_practice`
+(boolean, default false) viaja desde ahí hasta impresión (`kitchenPrint.ts` →
+`print-server/server.js`, letrero "MODO PRACTICA" arriba de todo en la
+comanda física) y hasta BRUMA_Dispatch (`Order.isPractice` → `OrderBatch.isPractice`
+→ franja morada en `BatchCardView`). Pagar una orden de práctica está
+bloqueado server-side (`POST /orders/:id/pay` en `orders.ts`) como defensa
+extra, además de excluirse de las queries de corte/`dashboard/stats` (ver
+gotcha de "dos copias de schema" abajo). Se auto-borran solas
+(`cleanupPracticeOrders` en `orders.ts`, cron cada 30 min en `index.ts`,
+retención de 2h) — `order_items` se va con `onDelete: cascade`.
+
+**Gotcha — `orders` tiene DOS copias de schema que hay que mantener en
+sync a mano:** `lib/db/schema.ts` (la usa el panel Next.js `app/`) y
+`api-server/src/schema.ts` (la usa el backend Express, conexión a Neon
+separada). No hay una sola fuente de verdad — cualquier columna nueva en
+`orders` se agrega a los dos archivos o el panel y el backend divergen en
+silencio. Mismo patrón aplica a las queries de caja/reportes: existen
+copias espejo entre `api-server/src/routes/cash-register.ts` y
+`app/api/cash-register/[id]/{corte,close}/route.ts` — un filtro nuevo (como
+`is_practice`) hay que replicarlo en ambos lados.
+
 ## Stripe: test vs live
 
 `customer_stripe_accounts.stripe_customer_id` no es válido entre modo test y
@@ -164,6 +233,32 @@ valida el customer contra Stripe antes de usarlo y lo recrea (actualizando la
 fila) si ya no existe. Si aparece ese error de nuevo, típicamente es porque
 falta actualizar la publishable key del lado del frontend (ver nota de la web
 pública arriba), no porque falte volver a aplicar este fix.
+
+## WhatsApp (notificaciones de pedidos + auto-respuesta)
+
+`api-server/src/lib/whatsapp.ts` manda plantillas aprobadas de Meta Cloud API en
+5 momentos del pedido en línea: `notifyOrderReceived`/`Confirmed`/`Ready`/
+`OutForDelivery`/`Cancelled` → plantillas `pedido_recibido` / `pedido_confirmado`
+/ `pedido_listo` / `pedido_en_camino` / `pedido_cancelado` (nombres exactos,
+idioma código **`es`** NO `es_MX`). Se disparan desde `online-orders.ts` (webhook
+de Stripe, accept/reject) y `orders.ts` (marcar listo/en camino). Guía completa
+de plantillas y variables: `docs/WHATSAPP_SETUP.md`.
+
+Credenciales (env): `META_WA_PHONE_ID`, `META_WA_TOKEN` (las MISMAS que usa
+`reservations.ts` para `reservacion_confirmada` — cambiarlas afecta ambos flujos),
+`META_WA_VERIFY_TOKEN` (handshake del webhook). Si falta phone id o token,
+`sendTemplate` hace **no-op silencioso**; el error de Meta queda en logs
+(`❌ WhatsApp error (...)`). El envío es un POST nuestro hacia Meta — el webhook
+NO interviene ahí.
+
+**Auto-respuesta "este chat es solo para avisos":** `handleInboundWhatsApp` en
+`whatsapp.ts`, llamado desde `routes/whatsapp.ts` por cada mensaje ENTRANTE real
+del cliente. Manda texto libre (permitido dentro de la ventana de 24h que abre
+el cliente al escribir — no necesita plantilla), con rate-limit de 6h por número
+(Map en memoria, se pierde al reiniciar). Texto configurable con
+`WHATSAPP_AUTO_REPLY` (acepta `\n` literal → salto de línea real). **Requiere
+suscribir el webhook al campo `messages` en Meta** (Meta → app → WhatsApp →
+Configuración → Webhook fields).
 
 ## Backend: rooms de socket
 
@@ -190,13 +285,18 @@ schema pero **no se usa** (legacy del backend Next viejo). Consecuencia: para
 corregir una venta basta con actualizar la fila de `orders` — todo lo que
 depende se recalcula solo, en caja abierta o cerrada.
 
-`POST /api/orders/:id/payment-details` hace justo eso desde el historial de caja
-(dashboard `/cash-register` y `OrdersHistoryModal` del POS): corrige
-`paymentMethod`, `tip`, `tipPaymentMethod`, recalcula `total = subtotal + tip`,
-sincroniza la transacción `type:'sale'` ligada y deja audit log. No aplica a
-órdenes con pago dividido (`order_payments`), web/online ni plataforma. Emite
-`order:updated` + `order:paid`. (`POST /api/orders/:id/tip` es el hermano viejo,
-solo propina — sigue existiendo.)
+`POST /api/orders/:id/payment-details` hace justo eso: corrige `paymentMethod`,
+`tip`, `tipPaymentMethod`, recalcula `total = subtotal + tip`, sincroniza la
+transacción `type:'sale'` ligada y deja audit log. No aplica a órdenes con pago
+dividido (`order_payments`), web/online ni plataforma. Emite `order:updated` +
+`order:paid`. (`POST /api/orders/:id/tip` es el hermano viejo, solo propina —
+sigue existiendo.)
+
+UI: en el dashboard, botón "Editar pago" en el modal de historial de
+`/cash-register`. En el POS, al tocar una orden en la tab de Caja se abre
+`CashRegisterView.orderDetailSheet` (NO `OrdersHistoryModal.swift`, que es
+**código muerto** — no se presenta en ningún lado) → botón "Editar método de
+pago y propina" → `EditOrderPaymentSheet` (archivo propio, reusable).
 
 ## Pedidos en línea: que nunca quede uno "en el aire"
 
@@ -204,7 +304,7 @@ Un pedido web con pago confirmado (`paymentStatus` `authorized`/`paid`) y
 `status='pending'` = esperando que el POS lo acepte o rechace en la pantalla
 verde. Antes, si el POS se perdía el evento de socket `order:online` (reconexión,
 app en background), el pedido quedaba pendiente sin forma de atenderlo. Ahora
-hay 3 capas, todas independientes:
+hay 4 capas, todas independientes:
 
 1. **Socket** `order:online` → pantalla verde + sonido en loop (como siempre).
    `emitOnlineOrder` se RE-emite cada 60s para los que llevan >90s sin atender

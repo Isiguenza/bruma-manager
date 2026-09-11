@@ -33,6 +33,7 @@ interface PrintKitchenComandaOptions {
   customerName?: string | null;
   guestCount?: number | null;
   isDelivery?: boolean;
+  isPractice?: boolean;
   items: PrintableItem[];
 }
 
@@ -183,6 +184,7 @@ export async function printKitchenComanda(opts: PrintKitchenComandaOptions): Pro
     orderNumber: String(opts.orderNumber),
     items,
     isDelivery: opts.isDelivery ?? !opts.tableNumber,
+    ...(opts.isPractice ? { isPractice: true } : {}),
     ...(opts.tableNumber ? { tableNumber: opts.tableNumber } : {}),
     ...(opts.customerName ? { customerName: opts.customerName } : {}),
     ...(opts.guestCount ? { guestCount: opts.guestCount } : {}),

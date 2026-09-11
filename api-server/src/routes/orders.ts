@@ -238,6 +238,7 @@ router.post("/orders", async (req, res) => {
         total: "0",
         tip: "0",
         source: req.body.source || "pos",
+        isPractice: req.body.isPractice === true,
       })
       .returning();
     
@@ -327,6 +328,7 @@ router.post("/orders", async (req, res) => {
         customerName: customerName || null,
         guestCount: req.body.guestCount || null,
         isDelivery: !tableId,
+        isPractice: completeOrder.isPractice,
         items: items.map((item: any) => ({
           productId: item.productId,
           productName: item.productName,
@@ -451,6 +453,7 @@ router.post("/orders/:id/items", async (req, res) => {
       customerName: order.customerName,
       guestCount: order.guestCount,
       isDelivery: !order.tableId,
+      isPractice: order.isPractice,
       items: items.map((item: any) => ({
         productId: item.productId,
         productName: item.productName,
@@ -1017,6 +1020,7 @@ router.post("/orders/:id/reprint-comanda", async (req, res) => {
       customerName: order.customerName,
       guestCount: order.guestCount,
       isDelivery: !order.tableId,
+      isPractice: order.isPractice,
       items: activeItems.map((item: any) => ({
         productId: item.productId,
         productName: item.productName,
@@ -1075,6 +1079,11 @@ router.post("/orders/:id/pay", async (req, res) => {
     // transacción de caja (protege contra doble tap / reintentos de red).
     if (order.paymentStatus === "paid") {
       return res.status(409).json({ error: "La orden ya está pagada", code: "ALREADY_PAID" });
+    }
+
+    // Órdenes de Modo Práctica nunca se cobran — son solo entrenamiento.
+    if (order.isPractice) {
+      return res.status(400).json({ error: "Esta orden es de Modo Práctica y no se puede cobrar", code: "PRACTICE_ORDER" });
     }
 
     // Find open cash register
@@ -2211,5 +2220,36 @@ router.patch("/order-items/:id/guest", async (req, res) => {
     res.status(500).json({ error: "Error al actualizar item" });
   }
 });
+
+// Barre órdenes de Modo Práctica viejas — son reales (imprimen, aparecen en
+// el Pase) a propósito, pero no deben acumularse para siempre en la BD.
+// order_items tiene onDelete: cascade, así que se van solos con la orden;
+// por fila individual por si alguna llegara a tener una fila ligada sin
+// cascade (no debería pasar en el flujo normal de creación de orden).
+const PRACTICE_ORDER_RETENTION_HOURS = 2;
+
+export async function cleanupPracticeOrders() {
+  try {
+    const cutoff = new Date(Date.now() - PRACTICE_ORDER_RETENTION_HOURS * 60 * 60 * 1000);
+    const oldPracticeOrders = await db.query.orders.findMany({
+      where: and(eq(schema.orders.isPractice, true), sql`${schema.orders.createdAt} < ${cutoff}`),
+      columns: { id: true, orderNumber: true },
+    });
+    let deleted = 0;
+    for (const order of oldPracticeOrders) {
+      try {
+        await db.delete(schema.orders).where(eq(schema.orders.id, order.id));
+        deleted++;
+      } catch (error) {
+        console.error(`[cleanup] error borrando orden de práctica #${order.orderNumber}:`, error);
+      }
+    }
+    if (deleted > 0) {
+      console.log(`[cleanup] ${deleted} orden(es) de Modo Práctica borradas (>${PRACTICE_ORDER_RETENTION_HOURS}h)`);
+    }
+  } catch (error) {
+    console.error("[cleanup] error limpiando órdenes de práctica:", error);
+  }
+}
 
 export default router;

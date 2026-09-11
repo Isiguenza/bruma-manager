@@ -317,6 +317,9 @@ export const orders = pgTable("orders", {
   discountName: varchar("discount_name", { length: 255 }),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   source: varchar("source", { length: 50 }).default("pos"), // "pos", "uber_eats", "rappi", "web", etc.
+  // Modo Práctica (Bruma POS Mobile): orden real (imprime, aparece en el
+  // Pase) pero excluida de caja/reportes/dashboard. Ver drizzle/manual_is_practice.sql.
+  isPractice: boolean("is_practice").notNull().default(false),
   deliveryOrderId: uuid("delivery_order_id"),
   tipPaymentMethod: paymentMethodEnum("tip_payment_method"),
   // Pedidos en línea (web + Stripe)

@@ -36,7 +36,13 @@ class POSViewModel: ObservableObject {
     @Published var cashRegisterOpen = false
     @Published var checkingRegister = false
     @Published var lastActivity = Date()
-    
+
+    // Modo Práctica (Bruma POS Mobile) — orden real (imprime, aparece en el
+    // Pase) etiquetada como entrenamiento, ver handleSendToKitchen(). Se
+    // resetea en handleBackToTables(). Siempre false en POS (nadie la activa
+    // ahí), así que es inofensivo en ese target.
+    @Published var isPracticeMode = false
+
     // MARK: - Config
     @Published var config = POSConfig.load()
     @Published var showSettings = false
@@ -305,6 +311,7 @@ class POSViewModel: ObservableObject {
     /// Volver a la selección de mesa parqueando el cobro en progreso (si aplica),
     /// para no perderlo al salir a comandar otra mesa.
     func handleBackToTables() {
+        isPracticeMode = false
         parkCurrentPaymentIfNeeded()
         showingPayment = false
         currentScreen = .tableSelection
@@ -3033,7 +3040,8 @@ class POSViewModel: ObservableObject {
                     body["guestCount"] = guestCount
                     if isEmployeeOrder { body["source"] = "employee" }
                     if isEmployeeOrder, let empId = selectedEmployee?.id { body["userId"] = empId }
-                    
+                    if isPracticeMode { body["isPractice"] = true }
+
                     let order = try await APIService.shared.createOrder(body: body)
                     currentOrderId = order.id
                     currentOrderNumber = order.orderNumber

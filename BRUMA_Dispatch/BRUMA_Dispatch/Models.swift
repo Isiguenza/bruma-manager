@@ -27,6 +27,7 @@ struct Order: Codable, Identifiable {
     let onHold: Bool?
     let holdStartedAt: String?
     let holdAccumulatedSeconds: Int?
+    let isPractice: Bool?      // Modo Práctica (Bruma POS Mobile) — orden real, solo entrenamiento
 }
 
 // MARK: - OrderItem
@@ -103,6 +104,7 @@ struct OrderBatch: Identifiable {
     var isRush: Bool = false
     var isOnHold: Bool = false
     var holdAccumulatedSeconds: Int = 0
+    var isPractice: Bool = false
     
     // Effective elapsed minutes excluding hold time
     var effectiveElapsedMinutes: Double {

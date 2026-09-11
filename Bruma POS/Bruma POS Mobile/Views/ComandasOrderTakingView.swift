@@ -20,6 +20,9 @@ struct ComandasOrderTakingView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
+                if vm.isPracticeMode {
+                    practiceBanner
+                }
                 header
                 Divider().background(Color.white.opacity(0.1))
 
@@ -160,6 +163,23 @@ struct ComandasOrderTakingView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .animation(.easeInOut(duration: 0.2), value: vm.currentStepIndex)
+    }
+
+    /// Recordatorio persistente de que esto SÍ imprime y SÍ aparece en el
+    /// Pase real (solo excluido de caja) — para que el mesero nunca lo
+    /// confunda con un pedido de verdad a medio tomar.
+    private var practiceBanner: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "graduationcap.fill")
+            Text("MODO PRÁCTICA — se imprime igual que un pedido real")
+                .font(.caption.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .foregroundColor(.white)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Color.purple.opacity(0.85))
     }
 
     private var orderTitle: String {
