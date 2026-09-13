@@ -8,25 +8,11 @@ struct LoginView: View {
             Color.black.ignoresSafeArea()
             
             VStack(spacing: 24) {
-                // Logo
-                VStack(spacing: 12) {
-                    Image(systemName: "fish.fill")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.blue)
-                    
-                    Text("BRUMA")
-                        .font(.system(size: 36, weight: .bold))
-                        .foregroundColor(.white)
-                    
-                    Text("Marisquería")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.blue)
-                        .frame(width: 60, height: 4)
-                }
-                
+                Image("LogoBruma")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 130)
+
                 if vm.authStep == .idle {
                     idleView
                 } else if vm.authStep == .pin {
@@ -35,12 +21,8 @@ struct LoginView: View {
             }
             .frame(maxWidth: 400)
             .padding(40)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(white: 0.1))
-                    .shadow(color: .black.opacity(0.5), radius: 20)
-            )
         }
+        .onAppear { vm.refreshCashRegisterStatus() }
     }
     
     // MARK: - Idle
@@ -78,13 +60,12 @@ struct LoginView: View {
                             .tint(.white)
                     }
                     Text("Iniciar Sesión")
-                        .font(.headline)
+                        .font(.title3.bold())
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(Color.blue)
+                .frame(height: 64)
+                .background(Capsule().fill(Color.blue))
                 .foregroundColor(.white)
-                .cornerRadius(12)
             }
             .disabled(vm.checkingRegister)
         }
@@ -102,89 +83,32 @@ struct LoginView: View {
                 .font(.subheadline)
                 .foregroundColor(.gray)
             
-            // Display
+            // Display — mete el PIN solo, sin botón de "Ingresar": se
+            // auto-envía al llegar a 4 dígitos (POSViewModel.handleNumberClick).
             HStack(spacing: 20) {
                 ForEach(0..<4, id: \.self) { i in
                     Circle()
-                        .fill(i < vm.pin.count ? Color.white : Color(white: 0.3))
+                        .fill(i < vm.pin.count ? Color.blue : Color(white: 0.3))
                         .frame(width: 20, height: 20)
                 }
             }
-            .frame(height: 60)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(white: 0.05))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(white: 0.2)))
-            )
-            
-            NumpadView(
+            .frame(height: 40)
+
+            PinNumpadView(
                 onNumber: vm.handleNumberClick,
                 onClear: vm.handleClear,
                 onBackspace: vm.handleBackspace
             )
-            
-            Button(action: vm.handlePinSubmit) {
-                HStack {
-                    if vm.authenticating {
-                        ProgressView().tint(.white)
-                    }
-                    Text(vm.authenticating ? "Verificando..." : "Ingresar")
-                        .font(.headline)
+            .disabled(vm.authenticating)
+            .opacity(vm.authenticating ? 0.4 : 1)
+            .overlay {
+                if vm.authenticating {
+                    ProgressView().tint(.white)
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(vm.pin.count == 4 ? Color.blue : Color.gray.opacity(0.3))
-                .foregroundColor(.white)
-                .cornerRadius(12)
             }
-            .disabled(vm.pin.count != 4 || vm.authenticating)
-            
+
             Button("Cancelar", action: vm.handleCancel)
                 .foregroundColor(.gray)
-        }
-    }
-}
-
-// MARK: - Numpad
-
-struct NumpadView: View {
-    let onNumber: (String) -> Void
-    let onClear: () -> Void
-    let onBackspace: () -> Void
-    
-    private let keys = [
-        ["1", "2", "3"],
-        ["4", "5", "6"],
-        ["7", "8", "9"],
-        ["C", "0", "←"]
-    ]
-    
-    var body: some View {
-        VStack(spacing: 10) {
-            ForEach(keys, id: \.self) { row in
-                HStack(spacing: 10) {
-                    ForEach(row, id: \.self) { key in
-                        Button(action: {
-                            if key == "C" { onClear() }
-                            else if key == "←" { onBackspace() }
-                            else { onNumber(key) }
-                        }) {
-                            Text(key)
-                                .font(.title2.bold())
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 60)
-                                .background(Color(white: 0.15))
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(Color(white: 0.25), lineWidth: 1)
-                                )
-                        }
-                    }
-                }
-            }
         }
     }
 }

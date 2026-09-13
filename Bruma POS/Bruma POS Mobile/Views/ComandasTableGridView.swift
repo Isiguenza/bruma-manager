@@ -93,7 +93,7 @@ struct ComandasTableGridView: View {
             Spacer()
             Button {
                 Haptics.tap()
-                startPracticeSession()
+                Task { await startPracticeSession() }
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "graduationcap.fill")
@@ -132,8 +132,13 @@ struct ComandasTableGridView: View {
     /// tronaría en el backend (FK real a `tables`). `vm.isPracticeMode`
     /// etiqueta la orden para que imprima/aparezca en el Pase con el
     /// letrero "MODO PRÁCTICA" y quede excluida de caja/reportes.
-    private func startPracticeSession() {
-        guard let practiceTable = vm.tables.first(where: { $0.number == "PRACTICA" }) else {
+    private func startPracticeSession() async {
+        // No se busca en `vm.tables`: esa lista sale filtrada a solo mesas
+        // `active` (ver POSViewModel.fetchData/refreshTables), y la mesa de
+        // práctica es `active = false` a propósito (para no aparecer en el
+        // grid real) — por eso se pide directo al backend, que sí la incluye.
+        guard let allTables = try? await APIService.shared.fetchTables(),
+              let practiceTable = allTables.first(where: { $0.number == "PRACTICA" }) else {
             vm.showToast("Pide a un admin que configure la Mesa de Práctica", isError: true)
             return
         }

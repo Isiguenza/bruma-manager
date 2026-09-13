@@ -91,30 +91,29 @@ struct CashRegisterView: View {
             }
             
             // Numpad
-            VStack(spacing: 12) {
-                ForEach(0..<3) { row in
-                    HStack(spacing: 12) {
-                        ForEach(1...3, id: \.self) { col in
-                            let number = row * 3 + col
-                            pinNumpadButton(String(number))
+            PinNumpadView(
+                onNumber: { digit in
+                    guard pinInput.count < 4 else { return }
+                    pinInput += digit
+                    vm.pinError = ""
+                    if pinInput.count == 4 {
+                        Task {
+                            _ = await vm.verifyPin(pinInput)
+                            pinInput = ""
                         }
                     }
-                }
-                
-                HStack(spacing: 12) {
-                    pinNumpadButton("", systemImage: "xmark") {
-                        pinInput = ""
+                },
+                onClear: {
+                    pinInput = ""
+                    vm.pinError = ""
+                },
+                onBackspace: {
+                    if !pinInput.isEmpty {
+                        pinInput.removeLast()
                         vm.pinError = ""
                     }
-                    pinNumpadButton("0")
-                    pinNumpadButton("", systemImage: "delete.left") {
-                        if !pinInput.isEmpty {
-                            pinInput.removeLast()
-                            vm.pinError = ""
-                        }
-                    }
                 }
-            }
+            )
             .padding(.horizontal, 40)
             
             Spacer()
@@ -129,39 +128,6 @@ struct CashRegisterView: View {
                     .tint(.white)
             }
         }
-    }
-    
-    private func pinNumpadButton(_ text: String, systemImage: String? = nil, action: (() -> Void)? = nil) -> some View {
-        Button {
-            if let customAction = action {
-                customAction()
-            } else if pinInput.count < 4 {
-                pinInput += text
-                vm.pinError = ""
-                
-                if pinInput.count == 4 {
-                    Task {
-                        _ = await vm.verifyPin(pinInput)
-                        pinInput = ""
-                    }
-                }
-            }
-        } label: {
-            Group {
-                if let image = systemImage {
-                    Image(systemName: image)
-                        .font(.title2)
-                } else {
-                    Text(text)
-                        .font(.title.bold())
-                }
-            }
-            .foregroundColor(.white)
-            .frame(width: 80, height: 80)
-        }
-        .buttonStyle(.flatCircleNeutral)
-        .disabled(text.isEmpty && systemImage == nil)
-        .opacity(text.isEmpty && systemImage == nil ? 0 : 1)
     }
     
     private var closedRegisterView: some View {

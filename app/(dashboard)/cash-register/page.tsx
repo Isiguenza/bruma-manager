@@ -38,6 +38,7 @@ import {
   ArrowUp,
   ArrowDown,
   Printer,
+  ClipboardText,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -72,7 +73,13 @@ export default function CashRegisterPage() {
   const [paidOrders, setPaidOrders] = useState<any[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [actualTotalSales, setActualTotalSales] = useState<number>(0);
-  
+  const [employeeNames, setEmployeeNames] = useState<Record<string, string>>({});
+
+  // Auditoría: quién comandó/cobró qué, a qué orden, y cuándo.
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditEntries, setAuditEntries] = useState<any[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+
   // Delete order modal
   const [deleteOrderModalOpen, setDeleteOrderModalOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<any>(null);
@@ -109,6 +116,16 @@ export default function CashRegisterPage() {
         setRegister(data);
       } else if (registerRes.status === 404) {
         setRegister(null);
+      }
+
+      // Trazabilidad: nombres de empleados para mostrar "quién" en el
+      // historial de órdenes (orders.userId solo trae el id).
+      const employeesRes = await fetch("/api/employees");
+      if (employeesRes.ok) {
+        const employees = await employeesRes.json();
+        setEmployeeNames(
+          Object.fromEntries(employees.map((e: any) => [e.id, e.name]))
+        );
       }
     } catch (error) {
       console.error("Error loading data:", error);
@@ -220,6 +237,20 @@ export default function CashRegisterPage() {
   function handleShowOrders() {
     setOrdersHistoryOpen(true);
     loadPaidOrders();
+  }
+
+  async function handleShowAudit() {
+    setAuditOpen(true);
+    setLoadingAudit(true);
+    try {
+      const res = await fetch("/api/audit-log?limit=200");
+      if (res.ok) setAuditEntries(await res.json());
+    } catch (error) {
+      console.error("Error loading audit log:", error);
+      toast.error("Error cargando auditoría");
+    } finally {
+      setLoadingAudit(false);
+    }
   }
   
   // Cargar órdenes al montar el componente para calcular el total real
@@ -605,6 +636,10 @@ export default function CashRegisterPage() {
           <Printer className="mr-1 size-4" />
           {printingSummary ? "Imprimiendo..." : "Imprimir Resumen"}
         </Button>
+        <Button variant="outline" onClick={handleShowAudit}>
+          <ClipboardText className="mr-1 size-4" />
+          Auditoría
+        </Button>
         <div className="flex-1" />
         <Button variant="destructive" onClick={handleCloseModalOpen}>
           <Lock className="mr-1 size-4" />
@@ -695,6 +730,9 @@ export default function CashRegisterPage() {
                       </div>
                       <div className="text-sm text-muted-foreground">
                         {format(new Date(order.createdAt), "dd/MM/yyyy HH:mm", { locale: es })}
+                        {order.userId && employeeNames[order.userId] && (
+                          <> · {employeeNames[order.userId]}</>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -742,6 +780,64 @@ export default function CashRegisterPage() {
                       >
                         Eliminar
                       </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Auditoría: quién comandó/cobró qué, a qué orden, y cuándo */}
+      <Dialog open={auditOpen} onOpenChange={setAuditOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Auditoría</DialogTitle>
+            <DialogDescription>
+              Quién comandó y quién cobró, con hora y detalle — últimas 200 acciones
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingAudit ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner className="size-8 animate-spin" />
+            </div>
+          ) : auditEntries.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No hay acciones registradas todavía
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {auditEntries.map((entry) => (
+                <Card key={entry.id} className="p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={entry.action === "order.paid" ? "default" : "outline"}>
+                          {entry.action === "order.sent_to_kitchen" ? "Comandó" : entry.action === "order.paid" ? "Cobró" : entry.action}
+                        </Badge>
+                        <span className="font-medium">{entry.employeeName || "Empleado desconocido"}</span>
+                        {entry.details?.orderNumber && (
+                          <span className="text-sm text-muted-foreground">Orden #{entry.details.orderNumber}</span>
+                        )}
+                        {entry.details?.tableNumber && (
+                          <span className="text-sm text-muted-foreground">· Mesa {entry.details.tableNumber}</span>
+                        )}
+                      </div>
+                      {entry.details?.itemNames && (
+                        <div className="text-sm text-muted-foreground mt-1">
+                          {entry.details.itemNames.join(", ")}
+                        </div>
+                      )}
+                      {entry.details?.paymentMethod && (
+                        <div className="text-sm text-muted-foreground mt-1">
+                          {entry.details.paymentMethod} · {formatCurrency(entry.details.total || 0)}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground whitespace-nowrap">
+                      {format(new Date(entry.createdAt), "dd/MM HH:mm", { locale: es })}
                     </div>
                   </div>
                 </Card>

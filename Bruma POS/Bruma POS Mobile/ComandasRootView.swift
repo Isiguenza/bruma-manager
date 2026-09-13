@@ -6,6 +6,7 @@ import SwiftUI
 /// un push suave en vez de un corte seco.
 struct ComandasRootView: View {
     @ObservedObject var vm: POSViewModel
+    @StateObject private var sessionLock = SessionLockMonitor()
     @State private var selectedTab: ComandasTab = .tables
 
     enum ComandasTab {
@@ -40,6 +41,10 @@ struct ComandasRootView: View {
             ComandasToastOverlay(vm: vm)
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: vm.currentScreen)
+        // Re-bloqueo por inactividad (3 min), igual que en Bruma POS — mismo
+        // propósito de trazabilidad de auditoría, ver SessionLockMonitor.swift.
+        .sessionAutoLock(sessionLock, vm: vm) { [weak vm] in vm?.employeeId != nil }
+        .onAppear { sessionLock.timeout = 180 }
         .onAppear {
             // POSViewModel.restoreSession() (llamado en su init) ya recupera
             // la sesión guardada y refresca datos, pero NO reinicia el poll

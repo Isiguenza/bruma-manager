@@ -106,7 +106,9 @@ patrón que `canEditLayout` en POS) gatea el botón "Imprimir Cuenta" del
 carrito (`ComandasCartView.footer`) y el tab "Empleados" completo
 (`ComandasRootView.tabsContainer`, con un `onChange(of: vm.employeeRole)` que
 regresa a la tab de Mesas si el rol deja de ser admin en la misma sesión de
-la app). El tab de Empleados de Mobile (`ComandasEmployeesView.swift`, propio
+la app — incluye el caso del auto-relock, si otro empleado sin admin
+desbloquea la sesión). "Lealtad" es visible para cualquier rol. El tab de
+Empleados de Mobile (`ComandasEmployeesView.swift`, propio
 de Mobile, no reusa `EmployeeSelectionView` de iPad) es una lista simple en
 vez del grid de iPad, con historial de órdenes por empleado vía
 `APIService.fetchEmployeeOrders(userId:)` en una hoja aparte — ese endpoint
@@ -221,6 +223,67 @@ silencio. Mismo patrón aplica a las queries de caja/reportes: existen
 copias espejo entre `api-server/src/routes/cash-register.ts` y
 `app/api/cash-register/[id]/{corte,close}/route.ts` — un filtro nuevo (como
 `is_practice`) hay que replicarlo en ambos lados.
+
+## Login, numpad compartido, gate de caja y auto-relock (Bruma POS/Mobile)
+
+**Numpad único:** `Styles/PinNumpadView.swift` (compartido, en
+`membershipExceptions` de Mobile) es el único numpad de PIN de toda la app —
+círculos `.flatCircleNeutral` 80x80, el mismo look que ya tenía el acceso a
+Caja. Reemplazó 3 implementaciones independientes (`NumpadView` en
+`LoginView.swift`, `ComandasNumpad` privado en `ComandasLoginView.swift`,
+`pinNumpadButton` inline en `CashRegisterView.swift`). Cualquier pantalla de
+PIN nueva debe reusar este componente, no reinventar el numpad.
+
+**Gate de caja movido de login a "enviar a cocina":** `handleOpenComanda()`
+ya NO bloquea el login si la caja está cerrada (solo informa via banner) —
+antes cortaba el flujo antes de llegar al PIN. El bloqueo real está en
+`handleSendToKitchen` (`guard cashRegisterOpen || isPracticeMode`), y como
+vive en código compartido aplica a POS y Mobile por igual. Hay un espejo
+defensivo en el backend (`POST /api/orders` con `status:"preparing"` y
+`POST /orders/:id/send-to-kitchen`, ambos en `orders.ts`) que devuelve 409
+si no hay caja abierta, salvo `isPractice`. **Gotcha:** `cashRegisterOpen`
+solo se seedea en `handleOpenComanda()` (login manual) o vía eventos de
+socket (`onCashRegisterOpened`/`Closed`) — una sesión restaurada al
+relanzar la app (`restoreSession()`) NO pasaba por ninguno de los dos, así
+que quedaba en `false` para siempre tras un relaunch con sesión guardada;
+`restoreSession()` ahora también llama `checkCashRegister()`.
+
+**Auto-relock por inactividad (3 min), separado del dim de pantalla:**
+`Styles/SessionLockMonitor.swift` (compartido) bloquea la pantalla actual
+con un overlay de PIN tras 3 min sin tocar nada — a diferencia de un
+logout, NO navega ni toca `currentScreen`/carrito/mesa seleccionada, así
+que una comanda a medio armar sobrevive. Cualquier PIN de empleado válido
+desbloquea (no tiene que ser el mismo que estaba activo) vía
+`POSViewModel.handleRelockPinSuccess`, y ese empleado queda como operador
+actual — el objetivo es puramente de trazabilidad: evitar que una sesión
+abierta por horas le atribuya a un solo empleado todo lo que pasó en Caja.
+Wireado en `ContentView.swift` (POS, excluye `customerDisplay`) y
+`ComandasRootView.swift` (Mobile). Es un mecanismo aparte de `IdleMonitor`
+(`IdleDimmer.swift`, dim de pantalla + reposo, exclusivo de POS/iPad) —
+comparten la técnica de detección de toques a nivel ventana pero están
+duplicados a propósito porque son features con alcance distinto.
+
+**Bug de brillo pegado en bajo — causa real:** `IdleMonitor.savedBrightness`
+se inicializaba leyendo `UIScreen.main.brightness` tal cual. En un iPad de
+kiosko (una sola app corriendo, nada más resetea el brillo del sistema),
+matar/relanzar la app mientras la pantalla ya estaba atenuada hace que el
+siguiente arranque lea el brillo ya en ~0, y ese valor queda congelado como
+objetivo de restauración — `wake()` "restauraba" fielmente a ese 0. Fix:
+`IdleMonitor.sanitize(_:)` aplica un piso (`> 0.15 ? valor : 1.0`) en toda
+lectura de `UIScreen.main.brightness` que se vaya a usar como restauración.
+
+**Auditoría de "quién comandó/cobró qué":** reusa la tabla `auditLog` ya
+existente (sin columnas nuevas en `orders`/`order_items`) con dos acciones
+nuevas — `order.sent_to_kitchen` (`orders.ts`, tanto en `POST /api/orders`
+para la primera ronda como en `POST /orders/:id/send-to-kitchen` para
+rondas siguientes de una orden existente) y `order.paid` (en `pay` y
+`pay-split`). `POST /orders/:id/send-to-kitchen` ahora acepta
+`employeeId`/`itemNames`/`itemCount`/`course` en el body porque
+`order_items` no tiene timestamp de "cuándo se mandó esta ronda" — es la
+misma limitación que ya tenía `printComanda`. Lectura desde el dashboard:
+`GET /api/audit-log` (Next.js, `app/api/audit-log/route.ts`, lee
+directo de `lib/db/schema.ts` — no tiene espejo en `api-server` porque nada
+más lo consume), panel "Auditoría" en `/cash-register`.
 
 ## Stripe: test vs live
 

@@ -10,6 +10,7 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var vm = POSViewModel()
     @StateObject private var idle = IdleMonitor()
+    @StateObject private var sessionLock = SessionLockMonitor()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -57,6 +58,13 @@ struct ContentView: View {
         // battery, except on the customer-facing display.
         .idleScreenRest(idle, enabled: vm.currentScreen != .customerDisplay)
         .onAppear { idle.timeout = 300 }
+        // Re-bloqueo por inactividad (3 min) para trazabilidad de auditoría —
+        // separado del dim de arriba. No aplica en customerDisplay (pantalla
+        // de cara al cliente, no debe pedirle un PIN a mitad de un cobro).
+        .sessionAutoLock(sessionLock, vm: vm) { [weak vm] in
+            vm?.employeeId != nil && vm?.currentScreen != .customerDisplay
+        }
+        .onAppear { sessionLock.timeout = 180 }
     }
 }
 

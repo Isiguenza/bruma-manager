@@ -20,7 +20,17 @@ final class IdleMonitor: ObservableObject {
 
     private var lastTouch = Date()
     private var timer: Timer?
-    private var savedBrightness: CGFloat = UIScreen.main.brightness
+    // No confiar en UIScreen.main.brightness tal cual si está sospechosamente
+    // bajo: en un iPad de kiosko (una sola app corriendo, nada más resetea el
+    // brillo del sistema) matar/relanzar la app mientras la pantalla ya
+    // estaba atenuada hace que el siguiente arranque lea el brillo ya en ~0,
+    // y ese valor quedaría "congelado" como objetivo de restauración para
+    // siempre — wake() restauraría fielmente a ese 0.
+    private var savedBrightness: CGFloat = IdleMonitor.sanitize(UIScreen.main.brightness)
+
+    private static func sanitize(_ brightness: CGFloat) -> CGFloat {
+        brightness > 0.15 ? brightness : 1.0
+    }
 
     func start() {
         timer?.invalidate()
@@ -44,7 +54,7 @@ final class IdleMonitor: ObservableObject {
         case .inactive, .background:
             // Never leave the *system* brightness dimmed for other apps / the
             // home screen if we get backgrounded while resting.
-            if isSleeping { UIScreen.main.brightness = savedBrightness }
+            if isSleeping { UIScreen.main.brightness = IdleMonitor.sanitize(savedBrightness) }
         @unknown default:
             break
         }
@@ -58,13 +68,13 @@ final class IdleMonitor: ObservableObject {
     }
 
     private func sleep() {
-        savedBrightness = UIScreen.main.brightness
+        savedBrightness = IdleMonitor.sanitize(UIScreen.main.brightness)
         UIScreen.main.brightness = 0.0
         withAnimation(.easeInOut(duration: 0.6)) { isSleeping = true }
     }
 
     private func wake() {
-        UIScreen.main.brightness = savedBrightness
+        UIScreen.main.brightness = IdleMonitor.sanitize(savedBrightness)
         lastTouch = Date()
         withAnimation(.easeInOut(duration: 0.3)) { isSleeping = false }
     }
@@ -125,19 +135,16 @@ struct ScreensaverView: View {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 18) {
-                Image(systemName: "fork.knife.circle.fill")
-                    .font(.system(size: 40))
-                    .foregroundColor(.white.opacity(0.5))
+                Image("LogoBruma")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 44)
+                    .opacity(0.6)
 
                 Text(now, style: .time)
                     .font(.system(size: 68, weight: .thin, design: .rounded))
                     .foregroundColor(.white.opacity(0.75))
                     .contentTransition(.numericText())
-
-                Text("BRUMA")
-                    .font(.system(size: 20, weight: .bold))
-                    .tracking(10)
-                    .foregroundColor(.white.opacity(0.4))
 
                 Text("Toca la pantalla para continuar")
                     .font(.caption)

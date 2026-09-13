@@ -540,7 +540,10 @@ class APIService {
         return try await request(url, method: "POST", body: ["items": items])
     }
     
-    func sendToKitchen(orderId: String) async throws {
+    /// `employeeId`/`itemNames`/`itemCount`/`course` alimentan el audit log de
+    /// trazabilidad (quién comandó qué ronda, a qué orden, y cuándo) — ver
+    /// `POST /orders/:id/send-to-kitchen` en el backend.
+    func sendToKitchen(orderId: String, employeeId: String? = nil, itemNames: [String]? = nil, itemCount: Int? = nil, course: Int? = nil) async throws {
         guard isConnected else {
             OfflineQueueService.shared.enqueue(type: .sendToKitchen, payload: ["orderId": orderId])
             throw APIError.offlineQueued
@@ -549,6 +552,12 @@ class APIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [:]
+        if let employeeId { body["employeeId"] = employeeId }
+        if let itemNames { body["itemNames"] = itemNames }
+        if let itemCount { body["itemCount"] = itemCount }
+        if let course { body["course"] = course }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {

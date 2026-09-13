@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { EmployeePinModal } from "@/components/employee-pin-modal";
+import { EmployeeNumpadModal } from "@/components/employee-numpad-modal";
 
 interface WithdrawModalProps {
   open: boolean;
@@ -32,8 +32,7 @@ export function WithdrawModal({
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
-  // TEMPORAL: Bypass PIN - usar empleado test
-  const employeeId = "b0faa020-4757-4018-b6d6-a97ef5a5851f";
+  const [pinModalOpen, setPinModalOpen] = useState(false);
 
   const formatCurrency = (num: number) =>
     new Intl.NumberFormat("es-MX", {
@@ -41,7 +40,7 @@ export function WithdrawModal({
       currency: "MXN",
     }).format(num);
 
-  async function handleWithdraw() {
+  function handleWithdraw() {
     const amountNum = parseFloat(amount);
 
     if (!amountNum || amountNum <= 0) {
@@ -49,6 +48,13 @@ export function WithdrawModal({
       return;
     }
 
+    // Trazabilidad: exige identificar al empleado antes de registrar el
+    // retiro (antes esto mandaba un employeeId de prueba hardcodeado).
+    setPinModalOpen(true);
+  }
+
+  async function submitWithdraw(employeeId: string) {
+    const amountNum = parseFloat(amount);
     setLoading(true);
 
     try {
@@ -136,6 +142,17 @@ export function WithdrawModal({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EmployeeNumpadModal
+        open={pinModalOpen}
+        onClose={() => setPinModalOpen(false)}
+        onSuccess={(employeeId) => {
+          setPinModalOpen(false);
+          submitWithdraw(employeeId);
+        }}
+        title="Identificación de Empleado"
+        subtitle="Para registrar el retiro"
+      />
     </>
   );
 }

@@ -2,11 +2,10 @@ import SwiftUI
 
 /// Login de "Bruma Comandas" — reusa el PIN real de `POSViewModel`
 /// (`vm.pin`/`vm.handleNumberClick`/`vm.handleBackspace`/`vm.handleClear`/
-/// `vm.handlePinSubmit`), pero A PROPÓSITO nunca llama
-/// `vm.handleOpenComanda()` — ese es el único candado de "caja abierta" en
-/// todo el flujo de login, y esta app no cobra ni maneja caja, así que no
-/// tiene sentido bloquear a un mesero por eso. En vez de eso, el botón
-/// "Iniciar Sesión" manda directo a `vm.authStep = .pin`.
+/// `vm.handlePinSubmit`). `handleOpenComanda()` ya no bloquea el login si la
+/// caja está cerrada (solo informa vía el banner de `idleView`), así que este
+/// botón ahora llama lo mismo que Bruma POS — el bloqueo real de "caja
+/// cerrada" vive en `handleSendToKitchen`, no aquí.
 struct ComandasLoginView: View {
     @ObservedObject var vm: POSViewModel
 
@@ -14,20 +13,11 @@ struct ComandasLoginView: View {
         VStack(spacing: 0) {
             Spacer()
 
-            VStack(spacing: 8) {
-                Text("BRUMA")
-                    .font(.system(size: 40, weight: .black))
-                    .foregroundColor(.white)
-                Text("Comandas")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.gray)
-                Rectangle()
-                    .fill(Color.blue)
-                    .frame(width: 60, height: 3)
-                    .cornerRadius(2)
-                    .padding(.top, 4)
-            }
-            .padding(.bottom, 32)
+            Image("LogoBruma")
+                .resizable()
+                .scaledToFit()
+                .frame(height: 110)
+                .padding(.bottom, 32)
 
             if vm.authStep == .pin {
                 pinEntry
@@ -44,6 +34,7 @@ struct ComandasLoginView: View {
         }
         .padding(.horizontal, 32)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.authStep)
+        .onAppear { vm.refreshCashRegisterStatus() }
     }
 
     private var idleView: some View {
@@ -52,20 +43,41 @@ struct ComandasLoginView: View {
                 .font(.subheadline)
                 .foregroundColor(.gray)
 
+            if !vm.cashRegisterOpen && !vm.checkingRegister {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.red)
+                    Text("Caja cerrada — podrás iniciar sesión, pero no comandar")
+                        .font(.footnote.bold())
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.red.opacity(0.15))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.red.opacity(0.3)))
+                )
+            }
+
             Button {
                 Haptics.tap()
-                vm.authStep = .pin
+                vm.handleOpenComanda()
             } label: {
                 HStack(spacing: 10) {
+                    if vm.checkingRegister {
+                        ProgressView().tint(.white)
+                    }
                     Image(systemName: "person.crop.circle")
                         .font(.title3)
                     Text("Iniciar Sesión")
-                        .font(.headline)
+                        .font(.title3.bold())
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 54)
+                .frame(height: 64)
             }
             .buttonStyle(.flatCapsule(.blue))
+            .disabled(vm.checkingRegister)
         }
     }
 
@@ -80,11 +92,11 @@ struct ComandasLoginView: View {
                     .foregroundColor(.gray)
             }
 
-            // Puntos — mismo lenguaje que Bruma POS: blanco lleno, gris hueco.
+            // Puntos — mismo lenguaje que Bruma POS: azul lleno, gris hueco.
             HStack(spacing: 14) {
                 ForEach(0..<4, id: \.self) { i in
                     Circle()
-                        .fill(i < vm.pin.count ? Color.white : Color(white: 0.3))
+                        .fill(i < vm.pin.count ? Color.blue : Color(white: 0.3))
                         .frame(width: 16, height: 16)
                         .overlay(
                             Circle().stroke(Color.gray.opacity(0.5), lineWidth: i < vm.pin.count ? 0 : 1)
@@ -94,10 +106,10 @@ struct ComandasLoginView: View {
                 }
             }
 
-            ComandasNumpad(
+            PinNumpadView(
                 onNumber: { vm.handleNumberClick($0) },
-                onBackspace: { vm.handleBackspace() },
-                onClear: { vm.handleClear() }
+                onClear: { vm.handleClear() },
+                onBackspace: { vm.handleBackspace() }
             )
             .disabled(vm.authenticating)
             .opacity(vm.authenticating ? 0.4 : 1)
@@ -118,46 +130,5 @@ struct ComandasLoginView: View {
             }
             .buttonStyle(.flatCapsuleNeutral)
         }
-    }
-}
-
-/// Numpad propio de Comandas (no el de POS — ese archivo no se comparte).
-/// Botones circulares con el mismo estilo `FlatCircleStyle` que el resto de
-/// la app comparte vía `Styles/FlatStyles.swift`.
-private struct ComandasNumpad: View {
-    let onNumber: (String) -> Void
-    let onBackspace: () -> Void
-    let onClear: () -> Void
-
-    private let rows = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["C", "0", "⌫"]]
-
-    var body: some View {
-        VStack(spacing: 14) {
-            ForEach(rows, id: \.self) { row in
-                HStack(spacing: 14) {
-                    ForEach(row, id: \.self) { key in
-                        numpadKey(key)
-                    }
-                }
-            }
-        }
-    }
-
-    private func numpadKey(_ key: String) -> some View {
-        Button {
-            Haptics.tap()
-            switch key {
-            case "⌫": onBackspace()
-            case "C": onClear()
-            default: onNumber(key)
-            }
-        } label: {
-            Text(key)
-                .font(.title2.weight(.semibold))
-                .frame(width: 72, height: 72)
-        }
-        // FlatCircleStyle no tiene un factory con color propio (solo
-        // .flatCircleNeutral) — se construye directo con el fill deseado.
-        .buttonStyle(FlatCircleStyle(fill: key == "C" ? Color.red.opacity(0.85) : FlatCapsuleStyle.neutralFill))
     }
 }

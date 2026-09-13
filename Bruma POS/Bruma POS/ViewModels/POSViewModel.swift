@@ -1348,6 +1348,12 @@ class POSViewModel: ObservableObject {
             lastActivity = Date()
             Task {
                 await fetchData()
+                // cashRegisterOpen solo se seedea en handleOpenComanda() (login
+                // manual) o vía eventos de socket — una sesión restaurada al
+                // relanzar la app se saltea ambos, así que sin esto quedaría
+                // atorado en `false` y handleSendToKitchen bloquearía aunque la
+                // caja sí esté abierta.
+                cashRegisterOpen = (try? await APIService.shared.checkCashRegister()) ?? false
                 // Sessions saved before the role was tracked (or restored from
                 // an older app version) won't have pos_employeeRole yet — back
                 // it off the employees list so "Editar mapa" isn't stuck hidden.
@@ -1386,15 +1392,29 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Auth Actions
     
+    /// Refresco silencioso de `cashRegisterOpen` para la pantalla de login —
+    /// sin esto, `cashRegisterOpen` arranca en `false` por default y el
+    /// banner de "Caja cerrada" se mostraría de entrada aunque la caja SÍ
+    /// esté abierta, simplemente porque todavía no se ha consultado nada.
+    func refreshCashRegisterStatus() {
+        checkingRegister = true
+        Task {
+            cashRegisterOpen = (try? await APIService.shared.checkCashRegister()) ?? false
+            checkingRegister = false
+        }
+    }
+
     func handleOpenComanda() {
         checkingRegister = true
         Task {
             let isOpen = (try? await APIService.shared.checkCashRegister()) ?? false
             cashRegisterOpen = isOpen
             checkingRegister = false
+            // Ya no bloquea el login si la caja está cerrada — solo informa
+            // (banner en idleView). El bloqueo real pasa a handleSendToKitchen,
+            // para permitir iniciar sesión pero no comandar sin caja abierta.
             if !isOpen {
-                showToast("Caja cerrada. Abre la caja desde el dashboard.", isError: true)
-                return
+                showToast("Caja cerrada. Podrás iniciar sesión, pero no comandar hasta abrirla.", isError: true)
             }
             authStep = .pin
         }
@@ -1451,6 +1471,22 @@ class POSViewModel: ObservableObject {
     func handleCancel() {
         authStep = .idle
         pin = ""
+    }
+
+    /// Desbloqueo del re-lock por inactividad (`SessionLockMonitor`) — a
+    /// diferencia de `handlePinSuccess`, NO navega ni toca `currentScreen`/
+    /// `pin`/`authStep`/carrito: la pantalla y la mesa/orden en progreso
+    /// siguen exactamente donde estaban. Cualquier empleado válido puede
+    /// desbloquear (no tiene que ser el mismo que estaba activo) y queda
+    /// como operador actual, para que las acciones siguientes (comandar,
+    /// cobrar) se atribuyan correctamente en los reportes de auditoría.
+    func handleRelockPinSuccess(empId: String, empName: String, empRole: String? = nil) {
+        employeeId = empId
+        employeeName = empName
+        employeeRole = empRole
+        lastActivity = Date()
+        saveSession()
+        showToast("Sesión reanudada por \(empName)")
     }
     
     // MARK: - Polling (backup only, WebSocket is primary)
@@ -2980,6 +3016,14 @@ class POSViewModel: ObservableObject {
             return
         }
 
+        // Modo Práctica es la única excepción: por diseño nunca toca caja
+        // (no se cobra, no aparece en corte), así que no tiene sentido
+        // bloquearlo por esto.
+        guard cashRegisterOpen || isPracticeMode else {
+            showToast("Caja cerrada. Abre la caja para poder comandar.", isError: true)
+            return
+        }
+
         let unsentItems = cart.filter { !$0.sentToKitchen && (course == nil || $0.course == course) }
         guard !unsentItems.isEmpty else { return }
         
@@ -2994,7 +3038,13 @@ class POSViewModel: ObservableObject {
                     let updated = try await APIService.shared.addItemsToOrder(orderId: orderId, items: itemDicts)
                     
                     // Send to kitchen (mark as preparing)
-                    try await APIService.shared.sendToKitchen(orderId: orderId)
+                    try await APIService.shared.sendToKitchen(
+                        orderId: orderId,
+                        employeeId: employeeId,
+                        itemNames: unsentItems.map { $0.productName },
+                        itemCount: unsentItems.count,
+                        course: course
+                    )
                     
                     // Mark only the items just sent (respeta el filtro de tiempo)
                     for i in cart.indices {

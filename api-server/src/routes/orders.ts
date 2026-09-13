@@ -215,6 +215,20 @@ router.post("/orders", async (req, res) => {
 
     console.log("🛎️ [POST /api/orders] status:", status, "tableId:", tableId, "items count:", items?.length);
 
+    // Defensa server-side: si el pedido va directo a cocina (status
+    // "preparing"), exigir caja abierta — protege contra clientes
+    // desincronizados (offline queue, versión vieja de la app) que se
+    // saltaron el gate del lado del cliente en handleSendToKitchen. Modo
+    // Práctica nunca toca caja, así que queda exento.
+    if (status === "preparing" && req.body.isPractice !== true) {
+      const openRegister = await db.query.cashRegisters.findFirst({
+        where: eq(schema.cashRegisters.status, "open"),
+      });
+      if (!openRegister) {
+        return res.status(409).json({ error: "Caja cerrada. Abre la caja para poder comandar.", code: "REGISTER_CLOSED" });
+      }
+    }
+
     // Generate order number (max existing + 1)
     const maxOrderResult = await db
       .select({ max: sql<number>`COALESCE(MAX(${schema.orders.orderNumber}), 0)` })
@@ -312,6 +326,26 @@ router.post("/orders", async (req, res) => {
         tableNumber = updatedTable.number;
         emitTableUpdated(updatedTable);
       }
+    }
+
+    // Trazabilidad: quién comandó qué, a qué mesa/orden, y cuándo — el primer
+    // envío a cocina pasa por aquí (rondas siguientes de la misma orden pasan
+    // por POST /orders/:id/send-to-kitchen).
+    if (status === "preparing" && (req.body.userId || employeeId)) {
+      db.insert(schema.auditLog)
+        .values({
+          userId: req.body.userId || employeeId,
+          action: "order.sent_to_kitchen",
+          entityType: "order",
+          entityId: newOrder.id,
+          details: JSON.stringify({
+            orderNumber: newOrder.orderNumber,
+            tableNumber,
+            itemCount: items?.length ?? 0,
+            itemNames: (items ?? []).map((item: any) => item.productName),
+          }),
+        })
+        .catch((e: unknown) => console.error("[order.sent_to_kitchen] audit log falló:", e));
     }
 
     emitOrderNew(completeOrder);
@@ -941,6 +975,25 @@ router.post("/orders/:id/payment-details", async (req, res) => {
 router.post("/orders/:id/send-to-kitchen", async (req, res) => {
   try {
     const { id } = req.params;
+    const { employeeId, itemNames, itemCount, course } = req.body;
+
+    const existingOrder = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, id),
+    });
+    if (!existingOrder) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
+
+    // Misma defensa que en POST /api/orders: exige caja abierta salvo Modo
+    // Práctica, para clientes desincronizados que se saltaron el gate local.
+    if (!existingOrder.isPractice) {
+      const openRegister = await db.query.cashRegisters.findFirst({
+        where: eq(schema.cashRegisters.status, "open"),
+      });
+      if (!openRegister) {
+        return res.status(409).json({ error: "Caja cerrada. Abre la caja para poder comandar.", code: "REGISTER_CLOSED" });
+      }
+    }
 
     // Update order status to preparing
     const [updatedOrder] = await db
@@ -963,6 +1016,27 @@ router.post("/orders/:id/send-to-kitchen", async (req, res) => {
 
     console.log("📦 send-to-kitchen: completeOrder.id=", completeOrder?.id, "tableId=", completeOrder?.tableId, "status=", completeOrder?.status);
     emitOrderUpdated(completeOrder);
+
+    // Trazabilidad: ronda adicional a una orden ya existente (la primera
+    // ronda se audita en POST /api/orders). itemNames/itemCount los manda el
+    // cliente porque order_items no trae un timestamp de "cuándo se mandó
+    // esta ronda" — es la misma limitación que ya tiene printComanda.
+    if (employeeId) {
+      db.insert(schema.auditLog)
+        .values({
+          userId: employeeId,
+          action: "order.sent_to_kitchen",
+          entityType: "order",
+          entityId: id,
+          details: JSON.stringify({
+            orderNumber: completeOrder?.orderNumber,
+            itemCount: itemCount ?? null,
+            itemNames: itemNames ?? null,
+            course: course ?? null,
+          }),
+        })
+        .catch((e: unknown) => console.error("[order.sent_to_kitchen] audit log falló:", e));
+    }
 
     // Emit table:updated if dine-in so all POS clients refresh the table
     if (completeOrder?.tableId) {
@@ -1146,6 +1220,24 @@ router.post("/orders/:id/pay", async (req, res) => {
         userId: employeeId || order.userId,
         description: `Venta orden #${order.orderNumber}`,
       });
+    }
+
+    // Trazabilidad: quién cerró/cobró esta cuenta.
+    if (employeeId || order.userId) {
+      db.insert(schema.auditLog)
+        .values({
+          userId: employeeId || order.userId,
+          action: "order.paid",
+          entityType: "order",
+          entityId: id,
+          details: JSON.stringify({
+            orderNumber: order.orderNumber,
+            paymentMethod,
+            total: totalWithTip,
+            tip: tip || "0",
+          }),
+        })
+        .catch((e: unknown) => console.error("[order.paid] audit log falló:", e));
     }
 
     const completeOrder = await db.query.orders.findFirst({
@@ -1344,6 +1436,24 @@ router.post("/orders/:id/pay-split", async (req, res) => {
         });
       }
       console.log(`[pay-split] Cash register transactions created`);
+    }
+
+    // Trazabilidad: quién cerró/cobró esta cuenta (pago dividido).
+    if (employeeId || order.userId) {
+      db.insert(schema.auditLog)
+        .values({
+          userId: employeeId || order.userId,
+          action: "order.paid",
+          entityType: "order",
+          entityId: id,
+          details: JSON.stringify({
+            orderNumber: order.orderNumber,
+            paymentMethod: "split",
+            total: totalWithTip,
+            tip: totalTips.toString(),
+          }),
+        })
+        .catch((e: unknown) => console.error("[order.paid] audit log falló:", e));
     }
 
     const completeOrder = await db.query.orders.findFirst({

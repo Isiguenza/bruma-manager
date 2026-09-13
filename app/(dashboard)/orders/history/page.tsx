@@ -44,12 +44,24 @@ export default function OrderHistoryPage() {
   const [editingPayment, setEditingPayment] = useState(false);
   const [newPaymentMethod, setNewPaymentMethod] = useState<string>("");
   const [showManualOrderDialog, setShowManualOrderDialog] = useState(false);
+  const [employeeNames, setEmployeeNames] = useState<Record<string, string>>({});
   // Auditoría: ver órdenes canceladas (no cuentan en el historial normal).
   const [showCancelled, setShowCancelled] = useState(false);
 
   useEffect(() => {
     fetchOrders();
   }, [showCancelled]);
+
+  useEffect(() => {
+    // Trazabilidad: nombres de empleados para mostrar "quién" en el detalle
+    // de cada orden (order.userId solo trae el id).
+    fetch("/api/employees")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((employees) =>
+        setEmployeeNames(Object.fromEntries(employees.map((e: any) => [e.id, e.name])))
+      )
+      .catch(() => {});
+  }, []);
 
   async function fetchOrders() {
     setLoading(true);
@@ -385,8 +397,11 @@ export default function OrderHistoryPage() {
                   <span>
                     {format(new Date(selectedOrder.createdAt), "EEEE d 'de' MMMM, HH:mm", { locale: es })}
                   </span>
+                  {selectedOrder.userId && employeeNames[selectedOrder.userId] && (
+                    <Badge variant="outline">{employeeNames[selectedOrder.userId]}</Badge>
+                  )}
                 </div>
-                
+
                 {/* Payment Method Editor */}
                 <div className="space-y-2">
                   <span className="text-sm font-medium">Método de pago:</span>
