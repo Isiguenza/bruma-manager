@@ -417,17 +417,33 @@ export default function CashRegisterPage() {
       
       // Agrupar productos vendidos
       const productSales: Record<string, number> = {};
+      const productPromotions: Record<string, boolean> = {};
+      const promotionSales: Record<string, { name: string; count: number }> = {};
       for (const order of paidOrders) {
         for (const item of order.items || []) {
           const productName = item.productName;
-          productSales[productName] = (productSales[productName] || 0) + item.quantity;
+          const quantity = Number(item.quantity) || 0;
+          productSales[productName] = (productSales[productName] || 0) + quantity;
+
+          if (item.promotionId != null) {
+            productPromotions[productName] = true;
+
+            const promotionKey = String(item.promotionId);
+            const promotion = promotionSales[promotionKey] || {
+              name: item.promotionName || "Promoción",
+              count: 0
+            };
+            promotion.count += quantity;
+            promotionSales[promotionKey] = promotion;
+          }
         }
       }
       
       // Convertir a array y ordenar por cantidad
       const productList = Object.entries(productSales)
-        .map(([name, qty]) => ({ name, qty }))
+        .map(([name, qty]) => ({ name, qty, hasPromo: productPromotions[name] || false }))
         .sort((a, b) => b.qty - a.qty);
+      const promotionSummary = Object.values(promotionSales);
 
       const summaryData = {
         date: new Date().toISOString(),
@@ -438,7 +454,8 @@ export default function CashRegisterPage() {
         transferTotal,
         totalTips,
         grandTotal: actualTotalSales,
-        products: productList
+        products: productList,
+        promotionSummary
       };
 
       const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.160:3001";

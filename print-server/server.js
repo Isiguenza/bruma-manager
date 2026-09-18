@@ -562,7 +562,8 @@ app.post('/print-summary', async (req, res) => {
       totalOrders,
       takeoutCount,
       tableCount,
-      products
+      products,
+      promotionSummary
     } = req.body;
 
     let content = "";
@@ -641,12 +642,28 @@ app.post('/print-summary', async (req, res) => {
       content += commands.feedLine;
       
       for (const product of products) {
-        const qtyName = `${product.qty}x ${product.name}`;
+        const productName = product.hasPromo ? `*${product.name}` : product.name;
+        const qtyName = `${product.qty}x ${productName}`;
         // Limitar longitud del nombre si es muy largo
         const displayName = qtyName.length > 48 ? qtyName.slice(0, 45) + "..." : qtyName;
         content += displayName + "\n";
       }
       
+      content += commands.feedLine;
+    }
+
+    if (promotionSummary && promotionSummary.length > 0) {
+      content += solidLine() + commands.feedLine;
+      content += commands.feedLine;
+      content += commands.bold;
+      content += "PROMOCIONES APLICADAS\n";
+      content += commands.boldOff;
+      content += commands.feedLine;
+
+      for (const promotion of promotionSummary) {
+        content += `${promotion.name} x${promotion.count}\n`;
+      }
+
       content += commands.feedLine;
     }
     
