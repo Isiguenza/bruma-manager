@@ -1,4 +1,4 @@
-import type { Promotion, CartItem } from "@/lib/types";
+import type { Promotion, CartItem, Product } from "@/lib/types";
 
 /**
  * Apply promotions to cart items
@@ -6,7 +6,8 @@ import type { Promotion, CartItem } from "@/lib/types";
  */
 export function applyPromotions(
   cartItems: CartItem[],
-  promotions: Promotion[]
+  promotions: Promotion[],
+  products: Product[] = []
 ): CartItem[] {
   if (promotions.length === 0) return cartItems;
 
@@ -37,7 +38,31 @@ export function applyPromotions(
   itemsByProduct.forEach((items, groupKey) => {
     // Extract real productId from composite key (productId_price)
     const realProductId = items[0]?.productId || groupKey.split('_')[0];
-    
+
+    // Producto real (para categoryId y para resolver el id de variante puntual)
+    const matchedProduct = products.find((p) => p.id === realProductId);
+
+    // Si el producto tiene variantes, resolver a qué variante corresponde este
+    // item de carrito (formato "${productId}-variant-${idx}", igual que en el
+    // creador de promociones) comparando el nombre "Producto - Variante".
+    let variantMatchId: string | null = null;
+    if (matchedProduct?.hasVariants && matchedProduct.variants) {
+      try {
+        const variants = JSON.parse(matchedProduct.variants) as { name: string }[];
+        const productName = items[0]?.productName || "";
+        const prefix = `${matchedProduct.name} - `;
+        if (productName.startsWith(prefix)) {
+          const variantName = productName.slice(prefix.length);
+          const idx = variants.findIndex((v) => v.name === variantName);
+          if (idx !== -1) {
+            variantMatchId = `${matchedProduct.id}-variant-${idx}`;
+          }
+        }
+      } catch (e) {
+        console.error('❌ Error parseando variants:', e);
+      }
+    }
+
     // Find applicable promotions for this product
     const applicablePromos = promotions.filter((promo) => {
       // Check if promotion applies to this product
@@ -45,11 +70,18 @@ export function applyPromotions(
         console.log(`✅ Promo "${promo.name}" aplica a todos los productos`);
         return true;
       }
-      
+
       if (promo.applyTo === "specific_products" && promo.productIds) {
         try {
-          const productIds = JSON.parse(promo.productIds);
-          const applies = productIds.includes(realProductId);
+          const productIds: string[] = JSON.parse(promo.productIds);
+          // Si la promo trae ids de variante para este producto, el item solo
+          // aplica si es justo esa variante (no otras variantes del mismo producto).
+          const hasVariantEntriesForThisProduct = productIds.some((id) =>
+            id.startsWith(`${realProductId}-variant-`)
+          );
+          const applies = hasVariantEntriesForThisProduct
+            ? variantMatchId !== null && productIds.includes(variantMatchId)
+            : productIds.includes(realProductId);
           console.log(`${applies ? '✅' : '❌'} Promo "${promo.name}" ${applies ? 'aplica' : 'NO aplica'} a producto ${realProductId} (precio: ${items[0]?.unitPrice})`);
           console.log('   ProductIds en promo:', productIds);
           return applies;
@@ -60,9 +92,9 @@ export function applyPromotions(
       }
 
       if (promo.applyTo === "category" && promo.categoryId) {
-        // Would need to check product's categoryId
-        // For now, skip category-based promos in cart
-        return false;
+        const applies = matchedProduct?.categoryId === promo.categoryId;
+        console.log(`${applies ? '✅' : '❌'} Promo "${promo.name}" (categoría) ${applies ? 'aplica' : 'NO aplica'} a producto ${realProductId}`);
+        return applies;
       }
 
       return false;

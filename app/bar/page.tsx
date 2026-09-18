@@ -474,7 +474,7 @@ export default function BarPage() {
       return;
     }
     
-    const cartWithPromotions = applyPromotions(cart, activePromotions);
+    const cartWithPromotions = applyPromotions(cart, activePromotions, products);
     
     // Comparar si realmente hay cambios en las promociones
     const hasPromotionChanges = cartWithPromotions.some((item, index) => {
@@ -2668,9 +2668,13 @@ export default function BarPage() {
     new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(amount);
 
   // Calcular subtotal sin descuentos
+  // OJO: item.unitPrice ya viene neto de promoción (mutado por applyPromotions),
+  // así que hay que usar item.originalPrice (precio pre-promo) cuando exista —
+  // de lo contrario el descuento se resta dos veces más abajo.
   const cartSubtotalBeforeDiscounts = cart.reduce((sum, item) => {
     if (item.isGuest) return sum;
-    return sum + (item.unitPrice * item.quantity);
+    const basePrice = item.originalPrice ?? item.unitPrice;
+    return sum + (basePrice * item.quantity);
   }, 0);
   
   // Calcular descuento total de promociones

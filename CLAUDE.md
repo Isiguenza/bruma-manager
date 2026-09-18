@@ -361,6 +361,29 @@ UI: en el dashboard, botón "Editar pago" en el modal de historial de
 **código muerto** — no se presenta en ningún lado) → botón "Editar método de
 pago y propina" → `EditOrderPaymentSheet` (archivo propio, reusable).
 
+## Promociones en `app/bar` (venta web/POS de bar)
+
+`lib/utils/promotions.ts` (`applyPromotions`) **muta `item.unitPrice` al precio
+YA con descuento aplicado** y deja el precio original en `item.originalPrice`.
+**Gotcha ya corregido una vez, cuidado si se toca de nuevo:** cualquier cálculo
+de subtotal en `app/bar/page.tsx` que sume `unitPrice * quantity` y LUEGO reste
+`promotionDiscount` otra vez está descontando dos veces (afecta caja real —
+sobrescribe `orders.subtotal` vía `POST /api/orders/:id/pay`). El subtotal
+"antes de descuentos" debe sumar `item.originalPrice ?? item.unitPrice` (fallback
+al precio actual solo si el item nunca tuvo promoción), y restar
+`totalPromotionDiscount` una sola vez sobre eso.
+
+`applyPromotions(cartItems, promotions, products)` recibe `products` (tercer
+parámetro, antes no existía) porque necesita `categoryId` para
+`applyTo:"category"` y para resolver el id de variante puntual — el creador de
+promociones (`app/(dashboard)/promotions/page.tsx`) guarda ids de variante como
+`${productId}-variant-${idx}` en `productIds`, pero el `CartItem` de
+`app/bar/page.tsx` NUNCA guarda ese id compuesto (solo el `productId` base +
+`productName` tipo `"Producto - Variante"`). La resolución de variante en
+`applyPromotions` compara el nombre del item contra `product.variants[idx].name`
+para reconstruir el id compuesto — si se cambia el formato de `productName` al
+armar variantes (`handleAddVariant`), este matching se rompe silenciosamente.
+
 ## Pedidos en línea: que nunca quede uno "en el aire"
 
 Un pedido web con pago confirmado (`paymentStatus` `authorized`/`paid`) y
