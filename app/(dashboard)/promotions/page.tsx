@@ -23,7 +23,18 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X } from "lucide-react";
 import { Tag, CheckCircle, XCircle, TrendUp } from "@phosphor-icons/react";
+import { PromotionProductPicker } from "@/components/promotion-product-picker";
 import type { Promotion, Product, Category } from "@/lib/types";
+
+const WEEKDAYS = [
+  { value: 1, label: "Lun" },
+  { value: 2, label: "Mar" },
+  { value: 3, label: "Mié" },
+  { value: 4, label: "Jue" },
+  { value: 5, label: "Vie" },
+  { value: 6, label: "Sáb" },
+  { value: 0, label: "Dom" },
+];
 
 export default function PromotionsPage() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
@@ -772,151 +783,41 @@ export default function PromotionsPage() {
             <div className="space-y-2">
               <Label>Aplicar a *</Label>
               <Select
-                value={formData.applyTo}
-                onValueChange={(value: any) => setFormData({ ...formData, applyTo: value })}
+                value={formData.applyTo === "category" ? "specific_products" : formData.applyTo}
+                onValueChange={(value: any) =>
+                  setFormData({ ...formData, applyTo: value, productIds: [], categoryId: "" })
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all_products">Todos los productos</SelectItem>
-                  <SelectItem value="specific_products">Productos específicos</SelectItem>
-                  <SelectItem value="category">Categoría</SelectItem>
+                  <SelectItem value="specific_products">Productos o categorías específicas</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {formData.applyTo === "specific_products" && (
+            {(formData.applyTo === "specific_products" || formData.applyTo === "category") && (
               <div className="space-y-2">
-                <Label>Productos (selecciona uno o más)</Label>
-                <div className="border rounded-lg p-3 max-h-60 overflow-y-auto space-y-3">
-                  {products.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No hay productos disponibles</p>
-                  ) : (
-                    products.map((product) => {
-                      const hasVariants = product.hasVariants && product.variants;
-                      let variants: Array<{ name: string; price: string }> = [];
-                      
-                      if (hasVariants) {
-                        try {
-                          variants = JSON.parse(product.variants as string);
-                        } catch (e) {
-                          console.error('Error parsing variants:', e);
-                        }
-                      }
-
-                      return (
-                        <div key={product.id} className="space-y-1">
-                          {/* Producto sin variantes */}
-                          {!hasVariants && (
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                id={`product-${product.id}`}
-                                checked={formData.productIds.includes(product.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setFormData({ 
-                                      ...formData, 
-                                      productIds: [...formData.productIds, product.id] 
-                                    });
-                                  } else {
-                                    setFormData({ 
-                                      ...formData, 
-                                      productIds: formData.productIds.filter(id => id !== product.id) 
-                                    });
-                                  }
-                                }}
-                                className="h-4 w-4 rounded border-gray-300"
-                              />
-                              <label 
-                                htmlFor={`product-${product.id}`}
-                                className="text-sm cursor-pointer flex-1"
-                              >
-                                {product.name}
-                                <span className="text-xs text-muted-foreground ml-2">
-                                  ${product.price}
-                                </span>
-                              </label>
-                            </div>
-                          )}
-
-                          {/* Producto con variantes */}
-                          {hasVariants && variants.length > 0 && (
-                            <div className="space-y-1">
-                              <div className="text-sm font-medium text-foreground">
-                                {product.name}
-                              </div>
-                              <div className="ml-4 space-y-1">
-                                {variants.map((variant, idx) => {
-                                  const variantId = `${product.id}-variant-${idx}`;
-                                  return (
-                                    <div key={variantId} className="flex items-center gap-2">
-                                      <input
-                                        type="checkbox"
-                                        id={variantId}
-                                        checked={formData.productIds.includes(variantId)}
-                                        onChange={(e) => {
-                                          if (e.target.checked) {
-                                            setFormData({ 
-                                              ...formData, 
-                                              productIds: [...formData.productIds, variantId] 
-                                            });
-                                          } else {
-                                            setFormData({ 
-                                              ...formData, 
-                                              productIds: formData.productIds.filter(id => id !== variantId) 
-                                            });
-                                          }
-                                        }}
-                                        className="h-4 w-4 rounded border-gray-300"
-                                      />
-                                      <label 
-                                        htmlFor={variantId}
-                                        className="text-sm cursor-pointer flex-1"
-                                      >
-                                        {variant.name}
-                                        <span className="text-xs text-muted-foreground ml-2">
-                                          ${variant.price}
-                                        </span>
-                                      </label>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
+                <Label>Productos o categorías</Label>
+                <PromotionProductPicker
+                  products={products}
+                  categories={categories}
+                  value={{
+                    applyTo: formData.applyTo === "category" ? "category" : "specific_products",
+                    productIds: formData.productIds,
+                    categoryId: formData.categoryId,
+                  }}
+                  onChange={(next) =>
+                    setFormData({
+                      ...formData,
+                      applyTo: next.applyTo,
+                      productIds: next.productIds,
+                      categoryId: next.categoryId,
                     })
-                  )}
-                </div>
-                {formData.productIds.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {formData.productIds.length} producto(s)/variante(s) seleccionado(s)
-                  </p>
-                )}
-              </div>
-            )}
-
-            {formData.applyTo === "category" && (
-              <div className="space-y-2">
-                <Label>Categoría</Label>
-                <Select
-                  value={formData.categoryId}
-                  onValueChange={(value) => setFormData({ ...formData, categoryId: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  }
+                />
               </div>
             )}
 
@@ -938,6 +839,39 @@ export default function PromotionsPage() {
                   onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Días de la semana</Label>
+              <div className="flex flex-wrap gap-3">
+                {WEEKDAYS.map((day) => {
+                  const checked = formData.daysOfWeek.includes(day.value);
+                  return (
+                    <label
+                      key={day.value}
+                      className="flex items-center gap-1.5 text-sm cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setFormData({
+                            ...formData,
+                            daysOfWeek: e.target.checked
+                              ? [...formData.daysOfWeek, day.value]
+                              : formData.daysOfWeek.filter((d) => d !== day.value),
+                          });
+                        }}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      {day.label}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Sin días seleccionados = aplica todos los días
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
