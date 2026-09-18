@@ -883,6 +883,7 @@ class POSViewModel: ObservableObject {
             Task { @MainActor in
                 if let pr = try? await APIService.shared.fetchActivePromotions() {
                     self?.activePromotions = pr
+                    self?.applyPromotions()
                 }
             }
         }
