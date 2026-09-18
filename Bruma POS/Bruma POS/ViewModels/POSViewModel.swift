@@ -878,6 +878,14 @@ class POSViewModel: ObservableObject {
                 self?.pendingReservationsCount += 1
             }
         }
+
+        socketService.onPromotionsUpdated = { [weak self] in
+            Task { @MainActor in
+                if let pr = try? await APIService.shared.fetchActivePromotions() {
+                    self?.activePromotions = pr
+                }
+            }
+        }
     }
     
     private func refreshTable(tableId: String) async {
