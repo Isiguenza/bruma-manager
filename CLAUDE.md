@@ -390,9 +390,12 @@ real las convierte usando el orden actual (sin `--apply` solo muestra el plan).
 
 **Tiempo real de promociones:** el CRUD del dashboard vive en rutas Next.js y
 Socket.IO vive en el proceso `api-server`, por lo que las rutas Next notifican
-fire-and-forget a `POST /internal/promotions/notify`. `API_SERVER_URL` debe
-estar configurada en el deployment del dashboard para apuntar al api-server;
-una falla de esa notificación nunca revierte una escritura ya confirmada.
+`POST /internal/promotions/notify` y esperan a que termine antes de responder
+(sin propagar el error). No convertirlo en fire-and-forget: un runtime
+serverless puede terminar la invocación antes de despachar ese fetch.
+`API_SERVER_URL` debe estar configurada en el deployment del dashboard para
+apuntar al api-server; una falla de esa notificación nunca revierte una
+escritura ya confirmada.
 
 `app/bar` no es cliente de Socket.IO: para que una promoción creada en otra
 sesión alcance un carrito ya abierto, refresca `/api/promotions/active` con

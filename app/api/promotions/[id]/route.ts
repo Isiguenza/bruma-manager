@@ -102,7 +102,7 @@ export async function PATCH(
       );
     }
 
-    notifyPromotionsUpdated();
+    await notifyPromotionsUpdated();
     return NextResponse.json(updatedPromotion);
   } catch (error: any) {
     console.error("Error updating promotion:", error);
@@ -134,7 +134,7 @@ export async function DELETE(
       );
     }
 
-    notifyPromotionsUpdated();
+    await notifyPromotionsUpdated();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting promotion:", error);

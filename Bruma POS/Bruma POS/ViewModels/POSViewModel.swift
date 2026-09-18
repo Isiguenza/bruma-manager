@@ -1355,6 +1355,10 @@ class POSViewModel: ObservableObject {
             }
             currentScreen = .tableSelection
             lastActivity = Date()
+            // A restored session bypasses handlePinSuccess(), which is normally
+            // where this backup timer starts. Without it, an already logged-in
+            // terminal never reconciles promotions (or tables) after launch.
+            startPolling()
             Task {
                 await fetchData()
                 // cashRegisterOpen solo se seedea en handleOpenComanda() (login
@@ -1531,6 +1535,7 @@ class POSViewModel: ObservableObject {
         // 60s backup poll as tables so they show up without either.
         if let pr = try? await APIService.shared.fetchActivePromotions() {
             activePromotions = pr
+            applyPromotions()
         }
     }
 
@@ -2721,7 +2726,6 @@ class POSViewModel: ObservableObject {
     // MARK: - Promotions
     
     func applyPromotions() {
-        guard !activePromotions.isEmpty else { return }
         // Reset promotions first
         for i in cart.indices {
             if let origPrice = cart[i].originalPrice {
@@ -2732,6 +2736,10 @@ class POSViewModel: ObservableObject {
             cart[i].originalPrice = nil
             cart[i].promotionDiscount = nil
         }
+        // A dashboard update can remove or deactivate the last promotion.
+        // The reset above must still run so an already-open cart returns to
+        // its regular prices before there is nothing left to apply.
+        guard !activePromotions.isEmpty else { return }
         let productCategoryMap = Dictionary(uniqueKeysWithValues: products.map { ($0.id, $0.categoryId) })
         // Only items the user hasn't opted out of participate in the engine;
         // excluded items stay at full price and are merged back untouched.

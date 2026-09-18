@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
-    notifyPromotionsUpdated();
+    await notifyPromotionsUpdated();
     return NextResponse.json(newPromotion, { status: 201 });
   } catch (error) {
     console.error("Error creating promotion:", error);
