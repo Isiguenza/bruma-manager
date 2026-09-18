@@ -504,7 +504,8 @@ export default function BarPage() {
   }, [
     // Crear una clave que cambie cuando cambian cantidades o productos
     cart.map(item => `${item.productId}-${item.quantity}-${item.unitPrice}`).join(','),
-    activePromotions.length
+    activePromotions.length,
+    products,
   ])
 
   // Polling para actualizar estado de items del carrito automáticamente

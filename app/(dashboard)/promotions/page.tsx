@@ -792,9 +792,16 @@ export default function PromotionsPage() {
               <Label>Aplicar a *</Label>
               <Select
                 value={formData.applyTo === "category" ? "specific_products" : formData.applyTo}
-                onValueChange={(value: any) =>
-                  setFormData({ ...formData, applyTo: value, productIds: [], categoryId: "" })
-                }
+                onValueChange={(value: "all_products" | "specific_products") => {
+                  // "category" is rendered as the same visual choice as
+                  // "specific_products". Radix still calls this handler when
+                  // that already-selected option is clicked, so compare the
+                  // visible value before clearing the picker selection.
+                  const visibleApplyTo =
+                    formData.applyTo === "category" ? "specific_products" : formData.applyTo;
+                  if (value === visibleApplyTo) return;
+                  setFormData({ ...formData, applyTo: value, productIds: [], categoryId: "" });
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />

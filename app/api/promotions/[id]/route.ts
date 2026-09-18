@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { promotions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { notifyPromotionsUpdated } from "@/lib/notify-promotions-updated";
 
 // GET /api/promotions/[id] - Get a single promotion
 export async function GET(
@@ -101,6 +102,7 @@ export async function PATCH(
       );
     }
 
+    notifyPromotionsUpdated();
     return NextResponse.json(updatedPromotion);
   } catch (error: any) {
     console.error("Error updating promotion:", error);
@@ -132,6 +134,7 @@ export async function DELETE(
       );
     }
 
+    notifyPromotionsUpdated();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting promotion:", error);

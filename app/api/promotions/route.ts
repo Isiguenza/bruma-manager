@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { promotions } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+import { notifyPromotionsUpdated } from "@/lib/notify-promotions-updated";
 
 // GET /api/promotions - List all promotions
 export async function GET(request: NextRequest) {
@@ -137,6 +138,7 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
+    notifyPromotionsUpdated();
     return NextResponse.json(newPromotion, { status: 201 });
   } catch (error) {
     console.error("Error creating promotion:", error);

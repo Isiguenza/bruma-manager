@@ -3,6 +3,55 @@ import { db } from "@/lib/db";
 import { promotions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
+type PromotionSchedule = {
+  startDate?: string | null;
+  endDate?: string | null;
+  daysOfWeek?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+};
+
+// Kept in sync with api-server/src/lib/promotionSchedule.ts. These are two
+// independently built apps, and schedules are business-local process time.
+function isPromotionWithinSchedule(
+  promotion: PromotionSchedule,
+  now = new Date()
+): boolean {
+  const currentDate = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+  const currentTime = now.toTimeString().split(" ")[0].substring(0, 5);
+  const currentDay = now.getDay();
+
+  if (promotion.startDate && currentDate < promotion.startDate) return false;
+  if (promotion.endDate && currentDate > promotion.endDate) return false;
+
+  if (promotion.daysOfWeek) {
+    try {
+      const allowedDays = JSON.parse(promotion.daysOfWeek);
+      if (
+        Array.isArray(allowedDays) &&
+        allowedDays.length > 0 &&
+        !allowedDays.includes(currentDay)
+      ) {
+        return false;
+      }
+    } catch {
+      // Invalid legacy restrictions preserve the existing permissive behavior.
+    }
+  }
+
+  // PostgreSQL time values may include seconds; schedules are minute-precise.
+  const startTime = promotion.startTime?.slice(0, 5);
+  const endTime = promotion.endTime?.slice(0, 5);
+  if (startTime && currentTime < startTime) return false;
+  if (endTime && currentTime > endTime) return false;
+
+  return true;
+}
+
 // GET /api/promotions/active - Get active promotions (with date/time validation)
 export async function GET(request: NextRequest) {
   try {
@@ -15,57 +64,10 @@ export async function GET(request: NextRequest) {
     console.log('📋 Total promociones con active=true:', allPromotions.length);
     console.log('📋 Promociones:', allPromotions.map(p => ({ id: p.id, name: p.name, active: p.active, startDate: p.startDate, endDate: p.endDate })));
 
-    const now = new Date();
-    const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const currentTime = now.toTimeString().split(' ')[0].substring(0, 5); // HH:mm
-    const currentDay = now.getDay(); // 0 = Sunday, 6 = Saturday
-    
-    console.log('🕐 Fecha/hora actual:', { currentDate, currentTime, currentDay });
-
     // Filter promotions based on date/time restrictions
-    const activePromotions = allPromotions.filter((promo) => {
-      console.log(`\n🔍 Evaluando promo "${promo.name}":`);
-      
-      // Check date range
-      if (promo.startDate && currentDate < promo.startDate) {
-        console.log(`  ❌ Rechazada: currentDate (${currentDate}) < startDate (${promo.startDate})`);
-        return false;
-      }
-      if (promo.endDate && currentDate > promo.endDate) {
-        console.log(`  ❌ Rechazada: currentDate (${currentDate}) > endDate (${promo.endDate})`);
-        return false;
-      }
-      console.log(`  ✅ Fechas OK`);
-
-      // Check days of week
-      if (promo.daysOfWeek) {
-        try {
-          const allowedDays = JSON.parse(promo.daysOfWeek);
-          console.log(`  📅 daysOfWeek: ${promo.daysOfWeek}, parsed:`, allowedDays, `currentDay: ${currentDay}`);
-          if (Array.isArray(allowedDays) && allowedDays.length > 0 && !allowedDays.includes(currentDay)) {
-            console.log(`  ❌ Rechazada: día ${currentDay} no está en`, allowedDays);
-            return false;
-          }
-          console.log(`  ✅ Días OK`);
-        } catch (e) {
-          console.error("Error parsing daysOfWeek:", e);
-        }
-      }
-
-      // Check time range
-      if (promo.startTime && currentTime < promo.startTime) {
-        console.log(`  ❌ Rechazada: currentTime (${currentTime}) < startTime (${promo.startTime})`);
-        return false;
-      }
-      if (promo.endTime && currentTime > promo.endTime) {
-        console.log(`  ❌ Rechazada: currentTime (${currentTime}) > endTime (${promo.endTime})`);
-        return false;
-      }
-      console.log(`  ✅ Horario OK`);
-
-      console.log(`  ✅✅✅ PROMOCIÓN ACEPTADA!`);
-      return true;
-    });
+    const activePromotions = allPromotions.filter((promo) =>
+      isPromotionWithinSchedule(promo)
+    );
 
     console.log('\n🎉 Total promociones activas después de filtros:', activePromotions.length);
 

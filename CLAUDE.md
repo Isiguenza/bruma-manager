@@ -383,6 +383,16 @@ por índice heredado para promociones ya guardadas. El `CartItem` de
 `productName` tipo `"Producto - Variante"`), así que `applyPromotions` compara
 ese nombre contra las variantes para reconstruir el id — si se cambia ese
 formato al armar variantes (`handleAddVariant`), el matching se rompe en silencio.
+Las promos antiguas que todavía guardan `${productId}-variant-${idx}` no pueden
+reconstruirse de forma determinista si alguien ya reordenó las variantes: ejecutar
+una vez `npx tsx scripts/migrate-promotion-variant-ids.ts --apply` contra la DB
+real las convierte usando el orden actual (sin `--apply` solo muestra el plan).
+
+**Tiempo real de promociones:** el CRUD del dashboard vive en rutas Next.js y
+Socket.IO vive en el proceso `api-server`, por lo que las rutas Next notifican
+fire-and-forget a `POST /internal/promotions/notify`. `API_SERVER_URL` debe
+estar configurada en el deployment del dashboard para apuntar al api-server;
+una falla de esa notificación nunca revierte una escritura ya confirmada.
 
 ## Pedidos en línea: que nunca quede uno "en el aire"
 

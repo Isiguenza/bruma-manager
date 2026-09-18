@@ -15,7 +15,13 @@ export function isPromotionWithinSchedule(
   promotion: PromotionSchedule,
   now = new Date()
 ): boolean {
-  const currentDate = now.toISOString().split("T")[0];
+  // Schedules are business-local values from the dashboard, so every part of
+  // the comparison intentionally uses the Node process's local timezone.
+  const currentDate = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
   const currentTime = now.toTimeString().split(" ")[0].substring(0, 5);
   const currentDay = now.getDay();
 

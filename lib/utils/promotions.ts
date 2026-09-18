@@ -14,11 +14,13 @@ export function applyPromotions(
   console.log('🎯 Aplicando promociones:', promotions.length, 'promociones activas');
   console.log('🛒 Items en carrito:', cartItems.length);
 
-  // Group items by product AND price (same product at different prices = different group)
-  // e.g. "Tacos Ensenada pieza" ($25) vs "Tacos Ensenada orden" ($60) should NOT mix
+  // Group items by product, price, AND displayed product name. Variants can
+  // intentionally share a price, but a promotion may target only one of them.
+  // CartItem names include the variant ("Producto - Variante"), so this keeps
+  // eligibility and buy-X quantities isolated per actual variant.
   const itemsByProduct = new Map<string, CartItem[]>();
   cartItems.forEach((item, index) => {
-    const key = `${item.productId}_${item.unitPrice}`;
+    const key = `${item.productId}_${item.unitPrice}_${item.productName}`;
     if (!itemsByProduct.has(key)) {
       itemsByProduct.set(key, []);
     }
