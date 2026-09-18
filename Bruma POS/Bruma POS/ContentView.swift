@@ -52,6 +52,10 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 Task { await vm.reconcilePendingOnlineOrders() }
+            } else if phase == .background {
+                // Se fue al Home del iPad — al volver a abrir la app debe
+                // pedir el PIN de nuevo, sin esperar los 3 min de inactividad.
+                sessionLock.lockNow()
             }
         }
         // Rest the screen (dim + clock) after 5 min of inactivity to save

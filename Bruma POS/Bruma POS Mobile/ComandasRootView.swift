@@ -8,9 +8,10 @@ struct ComandasRootView: View {
     @ObservedObject var vm: POSViewModel
     @StateObject private var sessionLock = SessionLockMonitor()
     @State private var selectedTab: ComandasTab = .tables
+    @Environment(\.scenePhase) private var scenePhase
 
     enum ComandasTab {
-        case tables, loyalty, employees
+        case tables, loyalty, promotions, employees
     }
 
     var body: some View {
@@ -45,6 +46,13 @@ struct ComandasRootView: View {
         // propósito de trazabilidad de auditoría, ver SessionLockMonitor.swift.
         .sessionAutoLock(sessionLock, vm: vm) { [weak vm] in vm?.employeeId != nil }
         .onAppear { sessionLock.timeout = 180 }
+        .onChange(of: scenePhase) { _, phase in
+            // Se fue al Home del iPhone — al volver a abrir la app debe
+            // pedir el PIN de nuevo, sin esperar los 3 min de inactividad.
+            if phase == .background {
+                sessionLock.lockNow()
+            }
+        }
         .onAppear {
             // POSViewModel.restoreSession() (llamado en su init) ya recupera
             // la sesión guardada y refresca datos, pero NO reinicia el poll
@@ -74,6 +82,10 @@ struct ComandasRootView: View {
             // en la misma sesión de la app) el tab desaparece del TabView,
             // por eso el onChange de abajo regresa la selección a Mesas.
             if vm.employeeRole == "admin" {
+                ComandasPromotionsView(vm: vm)
+                    .tabItem { Label("Promociones", systemImage: "tag.fill") }
+                    .tag(ComandasTab.promotions)
+
                 ComandasEmployeesView(vm: vm)
                     .tabItem { Label("Empleados", systemImage: "person.2.fill") }
                     .tag(ComandasTab.employees)
@@ -81,7 +93,7 @@ struct ComandasRootView: View {
         }
         .tint(.blue)
         .onChange(of: vm.employeeRole) { _, newRole in
-            if newRole != "admin" && selectedTab == .employees {
+            if newRole != "admin" && (selectedTab == .employees || selectedTab == .promotions) {
                 selectedTab = .tables
             }
         }

@@ -286,7 +286,7 @@ struct TableSelectionView: View {
     // MARK: - Header (clean style)
     
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 16) {
             HStack(spacing: 6) {
                 Image(systemName: "fork.knife.circle.fill")
                     .font(.system(size: 20))
@@ -296,8 +296,7 @@ struct TableSelectionView: View {
                     .foregroundColor(.white)
             }
 
-            viewModeToggle
-            filterMenu
+            viewControlsGroup
 
             Spacer(minLength: 12)
 
@@ -305,36 +304,84 @@ struct TableSelectionView: View {
                 nuevaOrdenMenu
             }
 
-            Rectangle()
-                .fill(Color.white.opacity(0.12))
-                .frame(width: 1, height: 24)
-
-            HStack(spacing: 10) {
-                HStack(spacing: 6) {
-                    Image(systemName: "person.circle.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(.white.opacity(0.7))
-                    Text(vm.employeeName ?? "Usuario")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                }
-
-                headerIconButton(systemImage: "calendar", tint: .white, badge: vm.pendingReservationsCount) {
-                    vm.showReservations = true
-                }
-
-                headerIconButton(systemImage: "gearshape.fill", tint: .white) {
-                    vm.showSettings = true
-                }
-
-                headerIconButton(systemImage: "rectangle.portrait.and.arrow.right", tint: .red) {
-                    vm.clearSession()
-                }
-            }
+            profileMenu
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 14)
+    }
+
+    // MARK: - Perfil (reservas + ajustes + logout, un solo chip con menú)
+
+    private var profileMenu: some View {
+        Menu {
+            Section(vm.employeeName ?? "Usuario") {
+                Button {
+                    vm.showReservations = true
+                } label: {
+                    if vm.pendingReservationsCount > 0 {
+                        Label("Reservas (\(vm.pendingReservationsCount))", systemImage: "calendar")
+                    } else {
+                        Label("Reservas", systemImage: "calendar")
+                    }
+                }
+
+                Button {
+                    vm.showSettings = true
+                } label: {
+                    Label("Ajustes", systemImage: "gearshape.fill")
+                }
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                vm.clearSession()
+            } label: {
+                Label("Cerrar sesión", systemImage: "rectangle.portrait.and.arrow.right")
+            }
+        } label: {
+            HStack(spacing: 8) {
+                ZStack(alignment: .topTrailing) {
+                    Circle()
+                        .fill(Color.white.opacity(0.1))
+                        .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                        .frame(width: 32, height: 32)
+                        .overlay {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.75))
+                        }
+
+                    if vm.pendingReservationsCount > 0 {
+                        Text("\(vm.pendingReservationsCount)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.purple)
+                            .clipShape(Capsule())
+                            .offset(x: 5, y: -3)
+                    }
+                }
+
+                Text(vm.employeeName ?? "Usuario")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            .padding(.leading, 5)
+            .padding(.trailing, 14)
+            .frame(height: 46)
+            .background {
+                Capsule()
+                    .fill(Color.white.opacity(0.08))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+            }
+        }
     }
 
     // MARK: - Merge mode banner (shown in both Cards and Mapa while combining tables)
@@ -377,39 +424,21 @@ struct TableSelectionView: View {
         .animation(.snappy, value: vm.isMerging)
     }
 
-    private func headerIconButton(systemImage: String, tint: Color, badge: Int = 0, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 16))
-                    .foregroundColor(tint == .red ? tint.opacity(0.8) : tint.opacity(0.7))
-                    .padding(8)
-                    .background((tint == .red ? Color.red : Color.white).opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+    // MARK: - Cards / Mapa toggle + filtro (una sola cápsula agrupada)
 
-                if badge > 0 {
-                    Text("\(badge)")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.purple)
-                        .clipShape(Capsule())
-                        .offset(x: 6, y: -6)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Cards / Mapa toggle
-
-    private var viewModeToggle: some View {
+    private var viewControlsGroup: some View {
         HStack(spacing: 2) {
             viewModeButton(mode: .cards, systemImage: "square.grid.2x2.fill")
             viewModeButton(mode: .mapa, systemImage: "map.fill")
+
+            Rectangle()
+                .fill(Color.white.opacity(0.1))
+                .frame(width: 1, height: 18)
+                .padding(.horizontal, 4)
+
+            filterMenu
         }
-        .padding(3)
+        .padding(4)
         .background {
             Capsule().fill(Color.white.opacity(0.08))
         }
@@ -464,11 +493,8 @@ struct TableSelectionView: View {
                     .font(.system(size: 10, weight: .bold))
             }
             .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background {
-                Capsule().fill(Color.white.opacity(0.08))
-            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
     }
 
@@ -490,20 +516,24 @@ struct TableSelectionView: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Image(systemName: "plus")
-                    .font(.caption.weight(.bold))
+                    .font(.subheadline.weight(.bold))
                 Text("Nueva Orden")
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-        
+            .padding(.horizontal, 16)
+            .frame(height: 46)
+            .background {
+                Capsule().fill(Color.blue)
+            }
         }
-        
+
+        // Fondo armado a mano (en vez de .buttonStyle(.glassProminent), que
+        // agrega su propio padding interno encima del frame(height:) de
+        // arriba) para que mida exactamente los mismos 46pt que profileMenu.
         menuContent
-            .buttonStyle(.glassProminent)
-            .clipShape(Capsule())
     }
     
     // MARK: - Delivery Row (horizontal scroll)

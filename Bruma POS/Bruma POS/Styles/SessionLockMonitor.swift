@@ -43,6 +43,15 @@ final class SessionLockMonitor: ObservableObject {
         withAnimation(.easeInOut(duration: 0.25)) { isLocked = false }
     }
 
+    /// Bloqueo inmediato, sin esperar `timeout` — para cuando la app pasa a
+    /// segundo plano (el usuario se fue al Home del iPad/iPhone). Así, al
+    /// volver a abrir la app, ya está esperando el PIN en vez de dejar
+    /// seguir usándola tal cual se dejó.
+    func lockNow() {
+        guard shouldLock() else { return }
+        isLocked = true
+    }
+
     private func tick() {
         guard !isLocked, shouldLock() else { return }
         if Date().timeIntervalSince(lastTouch) >= timeout {
