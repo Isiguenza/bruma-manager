@@ -461,7 +461,9 @@ export default function BarPage() {
     localStorage.setItem('barActiveSeat', activeSeat);
   }, [activeSeat]);
 
-  // Aplicar promociones automáticamente cuando cambia el carrito
+  // Aplicar promociones automáticamente cuando cambia el carrito o la lista
+  // de promociones. Recalcular siempre desde el precio base evita acumular
+  // descuentos cuando una promoción se actualiza o expira.
   useEffect(() => {
     console.log('🔄 useEffect promociones ejecutado:', { 
       cartLength: cart.length, 
@@ -469,18 +471,28 @@ export default function BarPage() {
       activePromotions: activePromotions.map(p => ({ id: p.id, name: p.name, type: p.type, applyTo: p.applyTo }))
     });
     
-    if (cart.length === 0 || activePromotions.length === 0) {
-      console.log('⚠️ No se aplican promociones: cart.length =', cart.length, 'activePromotions.length =', activePromotions.length);
+    if (cart.length === 0) {
+      console.log('⚠️ No se aplican promociones: cart.length =', cart.length);
       return;
     }
     
-    const cartWithPromotions = applyPromotions(cart, activePromotions, products);
+    const cartAtBasePrice = cart.map((item) => ({
+      ...item,
+      unitPrice: item.originalPrice ?? item.unitPrice,
+      originalPrice: undefined,
+      promotionId: undefined,
+      promotionName: undefined,
+      promotionDiscount: undefined,
+    }));
+    const cartWithPromotions = applyPromotions(cartAtBasePrice, activePromotions, products);
     
     // Comparar si realmente hay cambios en las promociones
     const hasPromotionChanges = cartWithPromotions.some((item, index) => {
       const original = cart[index];
       if (!original) return false;
-      return item.promotionId !== original.promotionId ||
+      return item.unitPrice !== original.unitPrice ||
+             item.originalPrice !== original.originalPrice ||
+             item.promotionId !== original.promotionId ||
              item.promotionDiscount !== original.promotionDiscount ||
              item.promotionName !== original.promotionName;
     });
@@ -504,7 +516,7 @@ export default function BarPage() {
   }, [
     // Crear una clave que cambie cuando cambian cantidades o productos
     cart.map(item => `${item.productId}-${item.quantity}-${item.unitPrice}`).join(','),
-    activePromotions.length,
+    activePromotions,
     products,
   ])
 
@@ -776,7 +788,9 @@ export default function BarPage() {
 
   async function fetchActivePromotions() {
     try {
-      const res = await fetch("/api/promotions/active");
+      // Do not let a browser cache keep an already-open POS from seeing a
+      // promotion that was just created in the dashboard.
+      const res = await fetch("/api/promotions/active", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setActivePromotions(data);
@@ -786,6 +800,28 @@ export default function BarPage() {
       console.error('Error fetching active promotions:', error);
     }
   }
+
+  // The dashboard creates promotions in another session, so the one-time
+  // initial fetch above leaves an already-open bar unaware of new rules.
+  // Refresh promptly when returning to the POS and periodically while it is
+  // in use; the cart promotion effect will reprice the existing cart.
+  useEffect(() => {
+    const refreshPromotions = () => {
+      if (document.visibilityState === "visible") {
+        fetchActivePromotions();
+      }
+    };
+
+    const interval = window.setInterval(refreshPromotions, 60_000);
+    window.addEventListener("focus", refreshPromotions);
+    document.addEventListener("visibilitychange", refreshPromotions);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshPromotions);
+      document.removeEventListener("visibilitychange", refreshPromotions);
+    };
+  }, []);
 
   async function fetchAvailableDiscounts() {
     try {

@@ -394,6 +394,12 @@ fire-and-forget a `POST /internal/promotions/notify`. `API_SERVER_URL` debe
 estar configurada en el deployment del dashboard para apuntar al api-server;
 una falla de esa notificación nunca revierte una escritura ya confirmada.
 
+`app/bar` no es cliente de Socket.IO: para que una promoción creada en otra
+sesión alcance un carrito ya abierto, refresca `/api/promotions/active` con
+`cache: "no-store"` al volver a enfocar/visibilizar la página y cada minuto.
+No volver a depender solo del fetch de montaje, o el carrito seguirá usando la
+lista anterior hasta una recarga manual.
+
 ## Pedidos en línea: que nunca quede uno "en el aire"
 
 Un pedido web con pago confirmado (`paymentStatus` `authorized`/`paid`) y
