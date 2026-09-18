@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, schema } from "../db";
 import { eq, and, lte, gte, or, isNull } from "drizzle-orm";
 import { emitPromotionsUpdated } from "../sockets/events";
+import { isPromotionWithinSchedule } from "../lib/promotionSchedule";
 
 const router = Router();
 
@@ -10,17 +11,19 @@ router.get("/promotions", async (req, res) => {
   try {
     const { active } = req.query;
 
-    let whereConditions: any[] = [];
-
-    if (active === "true") {
-      whereConditions.push(eq(schema.promotions.active, true));
-    }
+    const activeOnly = active === "true";
 
     const promotions = await db.query.promotions.findMany({
-      where: whereConditions.length > 0 ? whereConditions[0] : undefined,
+      where: activeOnly ? eq(schema.promotions.active, true) : undefined,
     });
 
-    res.json(promotions);
+    // iPad and iPhone POS clients call this endpoint with active=true. Filter
+    // their response here so every POS uses the same server-side schedule.
+    res.json(
+      activeOnly
+        ? promotions.filter((promotion) => isPromotionWithinSchedule(promotion))
+        : promotions
+    );
   } catch (error) {
     console.error("Error fetching promotions:", error);
     res.status(500).json({ error: "Error al obtener promociones" });

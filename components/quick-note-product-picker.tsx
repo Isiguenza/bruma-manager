@@ -18,41 +18,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import { Check, Minus, ListChecks, X, FolderOpen } from "@phosphor-icons/react";
+import { ListChecks, X, FolderOpen } from "@phosphor-icons/react";
 import type { Product, ProductVariant, Category } from "@/lib/types";
-
-// Variant-scoped ids are stored as `${productId}::${variantName}`.
-// A bare productId means "applies to the whole product / all its variants".
-function variantId(productId: string, variantName: string) {
-  return `${productId}::${variantName}`;
-}
-
-function parseVariants(raw: string | null): ProductVariant[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function TriState({ state }: { state: "checked" | "partial" | "unchecked" }) {
-  return (
-    <div
-      className={cn(
-        "h-4 w-4 shrink-0 rounded-sm border flex items-center justify-center transition-colors",
-        state === "unchecked"
-          ? "border-primary"
-          : "bg-primary border-primary text-primary-foreground"
-      )}
-    >
-      {state === "checked" && <Check className="h-3 w-3" weight="bold" />}
-      {state === "partial" && <Minus className="h-3 w-3" weight="bold" />}
-    </div>
-  );
-}
+import { parseVariants, TriState, variantId } from "@/components/product-picker-utils";
 
 interface QuickNoteProductPickerProps {
   products: Product[];

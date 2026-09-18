@@ -376,13 +376,13 @@ al precio actual solo si el item nunca tuvo promoción), y restar
 `applyPromotions(cartItems, promotions, products)` recibe `products` (tercer
 parámetro, antes no existía) porque necesita `categoryId` para
 `applyTo:"category"` y para resolver el id de variante puntual — el creador de
-promociones (`app/(dashboard)/promotions/page.tsx`) guarda ids de variante como
-`${productId}-variant-${idx}` en `productIds`, pero el `CartItem` de
+promociones guarda ids de variante como `${productId}::${variantName}` en
+`productIds` (estable aunque se reordenen); el motor también lee el formato
+por índice heredado para promociones ya guardadas. El `CartItem` de
 `app/bar/page.tsx` NUNCA guarda ese id compuesto (solo el `productId` base +
-`productName` tipo `"Producto - Variante"`). La resolución de variante en
-`applyPromotions` compara el nombre del item contra `product.variants[idx].name`
-para reconstruir el id compuesto — si se cambia el formato de `productName` al
-armar variantes (`handleAddVariant`), este matching se rompe silenciosamente.
+`productName` tipo `"Producto - Variante"`), así que `applyPromotions` compara
+ese nombre contra las variantes para reconstruir el id — si se cambia ese
+formato al armar variantes (`handleAddVariant`), el matching se rompe en silencio.
 
 ## Pedidos en línea: que nunca quede uno "en el aire"
 

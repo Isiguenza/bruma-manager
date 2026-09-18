@@ -162,6 +162,14 @@ export default function PromotionsPage() {
   }
 
   async function handleSubmit() {
+    if (
+      (formData.applyTo === "specific_products" && formData.productIds.length === 0) ||
+      (formData.applyTo === "category" && !formData.categoryId)
+    ) {
+      toast.error("Selecciona al menos un producto o categoría para la promoción");
+      return;
+    }
+
     try {
       const url = editingPromotion
         ? `/api/promotions/${editingPromotion.id}`
@@ -918,7 +926,14 @@ export default function PromotionsPage() {
             <Button variant="outline" onClick={() => setShowDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSubmit}>
+            <Button
+              onClick={handleSubmit}
+              disabled={
+                (formData.applyTo === "specific_products" &&
+                  formData.productIds.length === 0) ||
+                (formData.applyTo === "category" && !formData.categoryId)
+              }
+            >
               {editingPromotion ? "Actualizar" : "Crear"}
             </Button>
           </DialogFooter>

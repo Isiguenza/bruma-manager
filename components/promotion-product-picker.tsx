@@ -18,26 +18,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import { Check, Minus, ListChecks, X, FolderOpen, Tag } from "@phosphor-icons/react";
+import { ListChecks, X, FolderOpen, Tag } from "@phosphor-icons/react";
 import type { Product, ProductVariant, Category } from "@/lib/types";
-
-// Variant-scoped ids are stored as `${productId}::${variantName}` — robust to
-// variant reordering, unlike the legacy `${productId}-variant-${idx}` format
-// (still produced by old saved promotions, migrated on open below).
-function variantId(productId: string, variantName: string) {
-  return `${productId}::${variantName}`;
-}
-
-function parseVariants(raw: string | null): ProductVariant[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
+import { parseVariants, TriState, variantId } from "@/components/product-picker-utils";
 
 // Best-effort upgrade of ids saved by the old flat checkbox list
 // (`${productId}-variant-${idx}`) to the `::variantName` format. Anything
@@ -53,22 +36,6 @@ function migrateLegacyId(id: string, products: Product[]): string {
   const variant = variants[parseInt(idxStr, 10)];
   if (!variant) return id;
   return variantId(productId, variant.name);
-}
-
-function TriState({ state }: { state: "checked" | "partial" | "unchecked" }) {
-  return (
-    <div
-      className={cn(
-        "h-4 w-4 shrink-0 rounded-sm border flex items-center justify-center transition-colors",
-        state === "unchecked"
-          ? "border-primary"
-          : "bg-primary border-primary text-primary-foreground"
-      )}
-    >
-      {state === "checked" && <Check className="h-3 w-3" weight="bold" />}
-      {state === "partial" && <Minus className="h-3 w-3" weight="bold" />}
-    </div>
-  );
 }
 
 function isProductFullySelected(product: Product, variantIds: string[], draft: string[]) {
@@ -207,12 +174,12 @@ export function PromotionProductPicker({
   }
 
   function apply() {
+    if (draft.length === 0) return;
     onChange(resolve(draft));
     setOpen(false);
   }
 
   const committedCount = committedIds.length;
-  const totalProducts = products.length;
   const summaryLabel =
     value.applyTo === "category" && value.categoryId
       ? categories.find((c) => c.id === value.categoryId)?.name ?? "Categoría"
@@ -390,13 +357,13 @@ export function PromotionProductPicker({
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">
                 {draft.length === 0
-                  ? `Aplica a los ${totalProducts} productos`
+                  ? "Selecciona al menos un producto o categoría"
                   : `${draft.length} seleccionado(s)`}
               </span>
               <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
                 Cancelar
               </Button>
-              <Button size="sm" onClick={apply}>
+              <Button size="sm" onClick={apply} disabled={draft.length === 0}>
                 Aplicar
               </Button>
             </div>
