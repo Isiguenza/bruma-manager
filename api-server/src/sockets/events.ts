@@ -144,3 +144,10 @@ export function emitOrderHold(order: any) {
   io.to("room:pos").emit("order:hold", order);
   console.log(`📡 Emitted order:hold - ${order.id}`);
 }
+
+export function emitPromotionsUpdated(promotion?: any) {
+  if (!io) return;
+  io.to("room:pos").emit("promotions:updated", promotion || {});
+  io.to("room:waitress").emit("promotions:updated", promotion || {});
+  console.log(`📡 Emitted promotions:updated`);
+}

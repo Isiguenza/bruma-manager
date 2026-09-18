@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, schema } from "../db";
 import { eq, and, lte, gte, or, isNull } from "drizzle-orm";
+import { emitPromotionsUpdated } from "../sockets/events";
 
 const router = Router();
 
@@ -110,6 +111,7 @@ router.post("/promotions", async (req, res) => {
       })
       .returning();
 
+    emitPromotionsUpdated(newPromotion);
     res.json(newPromotion);
   } catch (error) {
     console.error("Error creating promotion:", error);
@@ -133,6 +135,7 @@ router.patch("/promotions/:id", async (req, res) => {
       return res.status(404).json({ error: "Promoción no encontrada" });
     }
 
+    emitPromotionsUpdated(updatedPromotion);
     res.json(updatedPromotion);
   } catch (error) {
     console.error("Error updating promotion:", error);
@@ -154,6 +157,7 @@ router.delete("/promotions/:id", async (req, res) => {
       return res.status(404).json({ error: "Promoción no encontrada" });
     }
 
+    emitPromotionsUpdated(deletedPromotion);
     res.json({ success: true });
   } catch (error) {
     console.error("Error deleting promotion:", error);
