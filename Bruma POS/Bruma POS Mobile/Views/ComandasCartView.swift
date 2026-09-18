@@ -271,6 +271,32 @@ private struct ComandasCartItemRow: View {
             if item.sentToKitchen {
                 Text("Item ya enviado a cocina").foregroundColor(.gray)
             } else {
+                let promoExcluded = vm.isPromoExcluded(item)
+                let groupItemIds = promoGroupItemIds
+
+                // Promotion actions stay on the flat Mobile row even though
+                // this target intentionally does not render promo groups.
+                if item.promotionId != nil || promoExcluded {
+                    Button {
+                        vm.togglePromoExclusion(for: item)
+                    } label: {
+                        Label(
+                            promoExcluded ? "Aplicar promoción" : "Quitar de promoción",
+                            systemImage: promoExcluded ? "tag.fill" : "person.crop.circle.badge.xmark"
+                        )
+                    }
+
+                    if !promoExcluded && groupItemIds.count > 1 {
+                        Button(role: .destructive) {
+                            vm.excludePromoGroup(groupItemIds)
+                        } label: {
+                            Label("Quitar toda la promoción", systemImage: "xmark.circle")
+                        }
+                    }
+
+                    Divider()
+                }
+
                 if vm.selectedTable != nil && vm.guestCount > 0 {
                     Menu {
                         ForEach(1...vm.guestCount, id: \.self) { seatNum in
@@ -317,6 +343,20 @@ private struct ComandasCartItemRow: View {
                 }
             }
         }
+    }
+
+    /// IDs of the currently promoted items in this item's promo group. The
+    /// iPad renders this as `PromotionGroup`; Mobile keeps the same grouping
+    /// key while presenting a flat list.
+    private var promoGroupItemIds: [UUID] {
+        guard let promotionId = item.promotionId else { return [] }
+        return vm.cart
+            .filter {
+                $0.promotionId == promotionId &&
+                $0.course == item.course &&
+                $0.seat == item.seat
+            }
+            .map(\.id)
     }
 
     private func modifierLine(_ text: String) -> some View {
