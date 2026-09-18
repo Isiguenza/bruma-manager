@@ -725,6 +725,34 @@ class APIService {
         let url = URL(string: "\(baseURL)/api/promotions?active=true")!
         return try await request(url)
     }
+
+    /// Returns every promotion, including inactive and future-dated ones. This
+    /// is intentionally separate from `fetchActivePromotions()` because the
+    /// admin editor must be able to manage promotions which are not sellable
+    /// right now.
+    func fetchPromotions() async throws -> [Promotion] {
+        let url = URL(string: "\(baseURL)/api/promotions")!
+        return try await request(url)
+    }
+
+    func createPromotion(body: [String: Any]) async throws -> Promotion {
+        let url = URL(string: "\(baseURL)/api/promotions")!
+        return try await request(url, method: "POST", body: body)
+    }
+
+    func updatePromotion(id: String, body: [String: Any]) async throws -> Promotion {
+        let url = URL(string: "\(baseURL)/api/promotions/\(id)")!
+        return try await request(url, method: "PATCH", body: body)
+    }
+
+    func deletePromotion(id: String) async throws {
+        let url = URL(string: "\(baseURL)/api/promotions/\(id)")!
+        let (_, http) = try await requestRaw(url, method: "DELETE")
+        guard (200...299).contains(http.statusCode) else {
+            if http.statusCode == 404 { throw APIError.notFound }
+            throw APIError.serverError
+        }
+    }
     
     func fetchAvailableDiscounts() async throws -> [Discount] {
         let url = URL(string: "\(baseURL)/api/discounts?active=true")!
