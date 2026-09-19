@@ -1628,10 +1628,11 @@ class POSViewModel: ObservableObject {
 
         if let pr = try? await APIService.shared.fetchActivePromotions() {
             activePromotions = pr
+            applyPromotions()
         } else {
             print("[POS] Error fetching promotions")
         }
-        
+
         if let d = try? await APIService.shared.fetchAvailableDiscounts() {
             availableDiscounts = d
         } else {
@@ -1661,7 +1662,11 @@ class POSViewModel: ObservableObject {
         if let empOrders = try? await APIService.shared.fetchAllEmployeeOrders() {
             employeeIdsWithActiveOrders = Set(empOrders.compactMap { $0.userId })
         }
-        
+
+        // Reapply in case a table was selected mid-fetch (handleSelectTable runs
+        // concurrently) and priced its cart before activePromotions was populated.
+        applyPromotions()
+
         loading = false
     }
     

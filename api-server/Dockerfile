@@ -13,6 +13,7 @@ COPY api-server/ .
 COPY lib/db/schema.ts ./src/schema.ts
 
 ENV NODE_ENV=production
+ENV TZ=America/Mexico_City
 
 EXPOSE 4000
 
