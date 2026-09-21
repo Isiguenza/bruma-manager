@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { suppliers, categories } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import type { SupplierCalculationLine } from "../calculate/route";
+import { calculateSupplierTotals } from "@/lib/suppliers/calculate";
+import type { SupplierCalculationLine } from "@/lib/types";
 
 // POST /api/suppliers/print-data
 // { scope: "supplier" | "category" | "all", supplierId?, categoryId?, dateFrom, dateTo }
@@ -25,15 +26,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const calcRes = await fetch(new URL("/api/suppliers/calculate", request.url), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ supplierId: scope === "all" ? undefined : supplierId, dateFrom, dateTo }),
+    const calc = await calculateSupplierTotals({
+      supplierId: scope === "all" ? undefined : supplierId,
+      dateFrom,
+      dateTo,
     });
-    if (!calcRes.ok) {
-      return NextResponse.json({ error: "Error al calcular" }, { status: 500 });
-    }
-    const calc = await calcRes.json();
     let lines: SupplierCalculationLine[] = calc.lines;
 
     let supplierName: string | null = null;
