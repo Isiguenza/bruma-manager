@@ -1056,7 +1056,16 @@ export const supplierItems = pgTable("supplier_items", {
     .notNull()
     .references(() => products.id, { onDelete: "cascade" }),
   variantName: varchar("variant_name", { length: 255 }), // null = todas las variantes del producto bajo un solo costo
-  costPrice: decimal("cost_price", { precision: 10, scale: 2 }).notNull(),
+  // "fixed_cost": le pagamos costPrice por unidad vendida (modelo original).
+  // "percentage": no hay costo fijo — el proveedor no nos vende el insumo,
+  // se queda con un % de lo vendido (ej. "los cafés de Bruma: nosotros nos
+  // quedamos 10%, el proveedor se lleva el 90% restante"). costPrice queda
+  // en "0" y se ignora cuando pricingType es "percentage".
+  pricingType: varchar("pricing_type", { length: 20 }).notNull().default("fixed_cost"),
+  costPrice: decimal("cost_price", { precision: 10, scale: 2 }).notNull().default("0"),
+  // % que se queda EL NEGOCIO (Bruma) — el proveedor recibe (100 - este %)
+  // del total vendido. Solo aplica/se usa cuando pricingType = "percentage".
+  businessCutPercent: decimal("business_cut_percent", { precision: 5, scale: 2 }),
   sourceCategoryId: uuid("source_category_id").references(() => categories.id, { onDelete: "set null" }),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),

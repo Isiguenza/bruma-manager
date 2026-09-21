@@ -56,6 +56,7 @@ export default function SupplierDetailPage() {
   const [calculating, setCalculating] = useState(false);
   const [printScope, setPrintScope] = useState("supplier");
   const [printing, setPrinting] = useState(false);
+  const [groupPercentDraft, setGroupPercentDraft] = useState<Record<string, string>>({});
 
   const emptyPickerValue: PromotionProductSelection = { applyTo: "specific_products", productIds: [], categoryId: "" };
 
@@ -128,10 +129,14 @@ export default function SupplierDetailPage() {
     fetchSupplier();
   }
 
-  async function handleCostChange(itemId: string, value: string) {
+  function patchLocalItem(itemId: string, patch: Partial<SupplierDetail["items"][number]>) {
     setSupplier((prev) =>
-      prev ? { ...prev, items: prev.items.map((i) => (i.id === itemId ? { ...i, costPrice: value } : i)) } : prev
+      prev ? { ...prev, items: prev.items.map((i) => (i.id === itemId ? { ...i, ...patch } : i)) } : prev
     );
+  }
+
+  function handleCostChange(itemId: string, value: string) {
+    patchLocalItem(itemId, { costPrice: value });
   }
 
   async function handleCostBlur(itemId: string, value: string) {
@@ -143,9 +148,63 @@ export default function SupplierDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ costPrice: num }),
       });
-    } catch {
+    } catch (error) {
+      console.error(error);
       toast.error("Error al guardar costo");
     }
+  }
+
+  async function handlePricingTypeChange(itemId: string, pricingType: "fixed_cost" | "percentage") {
+    patchLocalItem(itemId, { pricingType });
+    try {
+      await fetch(`/api/suppliers/${supplierId}/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pricingType }),
+      });
+    } catch (error) {
+      console.error(error);
+      toast.error("Error al cambiar el modelo de costo");
+    }
+  }
+
+  function handlePercentChange(itemId: string, value: string) {
+    patchLocalItem(itemId, { businessCutPercent: value });
+  }
+
+  async function handlePercentBlur(itemId: string, value: string) {
+    const num = value === "" ? null : parseFloat(value);
+    if (num !== null && (isNaN(num) || num < 0 || num > 100)) return;
+    try {
+      await fetch(`/api/suppliers/${supplierId}/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessCutPercent: num }),
+      });
+    } catch (error) {
+      console.error(error);
+      toast.error("Error al guardar el porcentaje");
+    }
+  }
+
+  async function handleApplyPercentToGroup(groupKey: string, items: SupplierDetail["items"]) {
+    const raw = groupPercentDraft[groupKey];
+    const num = parseFloat(raw);
+    if (isNaN(num) || num < 0 || num > 100) {
+      toast.error("Escribe un porcentaje válido (0-100)");
+      return;
+    }
+    await Promise.all(
+      items.map((item) =>
+        fetch(`/api/suppliers/${supplierId}/items/${item.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pricingType: "percentage", businessCutPercent: num }),
+        })
+      )
+    );
+    toast.success(`Reparto aplicado a ${items.length} producto(s): Bruma ${num}% / proveedor ${100 - num}%`);
+    fetchSupplier();
   }
 
   async function handleRemoveItem(itemId: string) {
@@ -154,7 +213,8 @@ export default function SupplierDetailPage() {
       if (!res.ok) throw new Error();
       toast.success("Producto quitado");
       fetchSupplier();
-    } catch {
+    } catch (error) {
+      console.error(error);
       toast.error("Error al quitar producto");
     }
   }
@@ -175,7 +235,8 @@ export default function SupplierDetailPage() {
       if (!res.ok) throw new Error(data.error);
       setCalcLines(data.lines);
       setCalcTotal(data.grandTotal);
-    } catch {
+    } catch (error) {
+      console.error(error);
       toast.error("Error al calcular");
     } finally {
       setCalculating(false);
@@ -215,7 +276,8 @@ export default function SupplierDetailPage() {
       });
       if (!res.ok) throw new Error();
       toast.success("Ticket enviado a impresora");
-    } catch {
+    } catch (error) {
+      console.error(error);
       toast.error("Error al imprimir ticket");
     } finally {
       setPrinting(false);
@@ -230,7 +292,8 @@ export default function SupplierDetailPage() {
       if (!data) return;
       const doc = generateSupplierInvoicePDF(data);
       doc.save(supplierInvoiceFilename(data));
-    } catch {
+    } catch (error) {
+      console.error(error);
       toast.error("Error al generar PDF");
     } finally {
       setPrinting(false);
@@ -289,20 +352,33 @@ export default function SupplierDetailPage() {
           )}
           {Array.from(groups.entries()).map(([key, group]) => (
             <div key={key} className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <Badge variant="outline">{group.label}</Badge>
-                {group.categoryId && (
-                  <Button variant="ghost" size="sm" onClick={() => handleResync(group.categoryId!)}>
-                    <ArrowsClockwise className="size-3.5 mr-1" />
-                    Resincronizar categoría
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    placeholder="% Bruma"
+                    className="h-8 w-24"
+                    value={groupPercentDraft[key] ?? ""}
+                    onChange={(e) => setGroupPercentDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                  />
+                  <Button variant="ghost" size="sm" onClick={() => handleApplyPercentToGroup(key, group.items)}>
+                    Aplicar % a todos
                   </Button>
-                )}
+                  {group.categoryId && (
+                    <Button variant="ghost" size="sm" onClick={() => handleResync(group.categoryId!)}>
+                      <ArrowsClockwise className="size-3.5 mr-1" />
+                      Resincronizar categoría
+                    </Button>
+                  )}
+                </div>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Producto</TableHead>
-                    <TableHead className="w-40">Costo proveedor</TableHead>
+                    <TableHead className="w-40">Modelo</TableHead>
+                    <TableHead className="w-32">Valor</TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -314,14 +390,47 @@ export default function SupplierDetailPage() {
                         {item.variantName && <span className="text-muted-foreground"> — {item.variantName}</span>}
                       </TableCell>
                       <TableCell>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          className="h-8 w-32"
-                          value={item.costPrice}
-                          onChange={(e) => handleCostChange(item.id, e.target.value)}
-                          onBlur={(e) => handleCostBlur(item.id, e.target.value)}
-                        />
+                        <Select
+                          value={item.pricingType}
+                          onValueChange={(v) => handlePricingTypeChange(item.id, v as "fixed_cost" | "percentage")}
+                        >
+                          <SelectTrigger className="h-8 w-36">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="fixed_cost">Costo fijo</SelectItem>
+                            <SelectItem value="percentage">% reparto</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        {item.pricingType === "percentage" ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="% Bruma"
+                              className="h-8 w-24"
+                              value={item.businessCutPercent ?? ""}
+                              onChange={(e) => handlePercentChange(item.id, e.target.value)}
+                              onBlur={(e) => handlePercentBlur(item.id, e.target.value)}
+                            />
+                            {item.businessCutPercent && (
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                prov. {(100 - parseFloat(item.businessCutPercent)).toFixed(0)}%
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="h-8 w-28"
+                            value={item.costPrice}
+                            onChange={(e) => handleCostChange(item.id, e.target.value)}
+                            onBlur={(e) => handleCostBlur(item.id, e.target.value)}
+                          />
+                        )}
                       </TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => handleRemoveItem(item.id)}>
@@ -371,8 +480,9 @@ export default function SupplierDetailPage() {
                     <TableRow>
                       <TableHead>Producto</TableHead>
                       <TableHead className="text-right">Cant. vendida</TableHead>
-                      <TableHead className="text-right">Costo</TableHead>
-                      <TableHead className="text-right">Subtotal</TableHead>
+                      <TableHead className="text-right">Vendido</TableHead>
+                      <TableHead className="text-right">Reparto</TableHead>
+                      <TableHead className="text-right">Le corresponde</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -383,7 +493,12 @@ export default function SupplierDetailPage() {
                           {l.variantName && <span className="text-muted-foreground"> — {l.variantName}</span>}
                         </TableCell>
                         <TableCell className="text-right">{l.quantitySold}</TableCell>
-                        <TableCell className="text-right">${l.costPrice.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">${l.revenue.toFixed(2)}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {l.pricingType === "percentage" && l.businessCutPercent !== null
+                            ? `Bruma ${l.businessCutPercent}% / Prov. ${(100 - l.businessCutPercent).toFixed(0)}%`
+                            : `$${l.costPrice.toFixed(2)} c/u`}
+                        </TableCell>
                         <TableCell className="text-right">${l.lineTotal.toFixed(2)}</TableCell>
                       </TableRow>
                     ))}

@@ -376,12 +376,16 @@ export interface Supplier {
   items?: SupplierItem[];
 }
 
+export type SupplierPricingType = "fixed_cost" | "percentage";
+
 export interface SupplierItem {
   id: string;
   supplierId: string;
   productId: string;
   variantName: string | null;
+  pricingType: SupplierPricingType;
   costPrice: string;
+  businessCutPercent: string | null;
   sourceCategoryId: string | null;
   active: boolean;
   createdAt: Date;
@@ -399,8 +403,11 @@ export interface SupplierCalculationLine {
   variantName: string | null;
   categoryId: string | null;
   categoryName: string | null;
+  pricingType: SupplierPricingType;
   costPrice: number;
+  businessCutPercent: number | null;
   quantitySold: number;
+  revenue: number;
   lineTotal: number;
 }
 

@@ -58,6 +58,7 @@ export async function calculateSupplierTotals(params: {
     const [row] = await db
       .select({
         qty: sql<string>`COALESCE(SUM(${orderItems.quantity}), 0)`,
+        revenue: sql<string>`COALESCE(SUM(${orderItems.subtotal}), 0)`,
       })
       .from(orderItems)
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
@@ -74,7 +75,18 @@ export async function calculateSupplierTotals(params: {
       );
 
     const quantitySold = Number(row?.qty ?? 0);
+    const revenue = Number(row?.revenue ?? 0);
     const costPrice = Number(item.costPrice);
+    const businessCutPercent = item.businessCutPercent !== null ? Number(item.businessCutPercent) : null;
+    const pricingType = (item.pricingType ?? "fixed_cost") as "fixed_cost" | "percentage";
+
+    // "percentage": el proveedor no vende el insumo a costo fijo, se queda
+    // con lo que sobra de nuestro % (ej. Bruma se queda 10% -> proveedor 90%
+    // de lo vendido). "fixed_cost": le pagamos costPrice por unidad vendida.
+    const lineTotal =
+      pricingType === "percentage" && businessCutPercent !== null
+        ? revenue * ((100 - businessCutPercent) / 100)
+        : quantitySold * costPrice;
 
     lines.push({
       supplierItemId: item.id,
@@ -85,9 +97,12 @@ export async function calculateSupplierTotals(params: {
       variantName: item.variantName,
       categoryId: item.product.categoryId,
       categoryName: item.product.category?.name ?? null,
+      pricingType,
       costPrice,
+      businessCutPercent,
       quantitySold,
-      lineTotal: quantitySold * costPrice,
+      revenue,
+      lineTotal,
     });
   }
 

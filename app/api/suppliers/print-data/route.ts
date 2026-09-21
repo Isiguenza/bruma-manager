@@ -5,6 +5,23 @@ import { eq } from "drizzle-orm";
 import { calculateSupplierTotals } from "@/lib/suppliers/calculate";
 import type { SupplierCalculationLine } from "@/lib/types";
 
+const BRUMA_LOGO_URL = "https://cdn.cocinabruma.com.mx/assets/bruma-logo.png";
+
+// Server-side (no hay problema de CORS ni de canvas "tainted" como en el
+// browser) para no depender de un base64 gigante pegado en el bundle del
+// cliente — eso fue justo lo que se corrompió una vez al editarlo a mano.
+async function fetchLogoBase64(): Promise<string | null> {
+  try {
+    const res = await fetch(BRUMA_LOGO_URL);
+    if (!res.ok) return null;
+    const buffer = await res.arrayBuffer();
+    return Buffer.from(buffer).toString("base64");
+  } catch (err) {
+    console.error("No se pudo obtener el logo de R2:", err);
+    return null;
+  }
+}
+
 // POST /api/suppliers/print-data
 // { scope: "supplier" | "category" | "all", supplierId?, categoryId?, dateFrom, dateTo }
 // Payload único que consumen tanto el botón de ticket térmico como el PDF.
@@ -54,6 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     const grandTotal = lines.reduce((sum, l) => sum + l.lineTotal, 0);
+    const logoBase64 = await fetchLogoBase64();
 
     return NextResponse.json({
       scope,
@@ -64,6 +82,7 @@ export async function POST(request: NextRequest) {
       lines,
       bySupplier: scope === "all" ? calc.bySupplier : undefined,
       grandTotal,
+      logoBase64,
     });
   } catch (error) {
     console.error("Error building print data:", error);

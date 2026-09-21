@@ -15,6 +15,10 @@ export async function PATCH(
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (body.costPrice !== undefined) updateData.costPrice = body.costPrice.toString();
     if (body.active !== undefined) updateData.active = body.active;
+    if (body.pricingType !== undefined) updateData.pricingType = body.pricingType;
+    if (body.businessCutPercent !== undefined) {
+      updateData.businessCutPercent = body.businessCutPercent === null ? null : body.businessCutPercent.toString();
+    }
 
     const [updated] = await db
       .update(supplierItems)

@@ -50,7 +50,8 @@ export default function AllSuppliersPage() {
       if (!res.ok) throw new Error(data.error);
       setBySupplier(data.bySupplier);
       setGrandTotal(data.grandTotal);
-    } catch {
+    } catch (error) {
+      console.error(error);
       toast.error("Error al calcular");
     } finally {
       setLoading(false);
@@ -88,7 +89,8 @@ export default function AllSuppliersPage() {
       });
       if (!res.ok) throw new Error();
       toast.success("Ticket enviado a impresora");
-    } catch {
+    } catch (error) {
+      console.error(error);
       toast.error("Error al imprimir ticket");
     } finally {
       setPrinting(false);
@@ -102,7 +104,8 @@ export default function AllSuppliersPage() {
       if (!data) return;
       const doc = generateSupplierInvoicePDF(data);
       doc.save(supplierInvoiceFilename(data));
-    } catch {
+    } catch (error) {
+      console.error(error);
       toast.error("Error al generar PDF");
     } finally {
       setPrinting(false);
@@ -164,7 +167,7 @@ export default function AllSuppliersPage() {
                           <TableRow>
                             <TableHead>Producto</TableHead>
                             <TableHead className="text-right">Cant.</TableHead>
-                            <TableHead className="text-right">Costo</TableHead>
+                            <TableHead className="text-right">Reparto</TableHead>
                             <TableHead className="text-right">Subtotal</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -176,7 +179,11 @@ export default function AllSuppliersPage() {
                                 {l.variantName && <span className="text-muted-foreground"> — {l.variantName}</span>}
                               </TableCell>
                               <TableCell className="text-right">{l.quantitySold}</TableCell>
-                              <TableCell className="text-right">${l.costPrice.toFixed(2)}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">
+                                {l.pricingType === "percentage" && l.businessCutPercent !== null
+                                  ? `Bruma ${l.businessCutPercent}% / Prov. ${(100 - l.businessCutPercent).toFixed(0)}%`
+                                  : `$${l.costPrice.toFixed(2)} c/u`}
+                              </TableCell>
                               <TableCell className="text-right">${l.lineTotal.toFixed(2)}</TableCell>
                             </TableRow>
                           ))}

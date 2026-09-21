@@ -1630,8 +1630,12 @@ app.post('/print-supplier', async (req, res) => {
 
     function printLine(l) {
       const label = l.variantName ? `${l.productName} - ${l.variantName}` : l.productName;
+      const detail =
+        l.pricingType === "percentage" && l.businessCutPercent != null
+          ? `Bruma ${l.businessCutPercent}% / Prov ${100 - l.businessCutPercent}%`
+          : `$${l.costPrice} c/u`;
       content += `${l.quantitySold}x ${label}\n`;
-      content += `   $${l.costPrice} c/u = $${Math.round(l.lineTotal)}\n`;
+      content += `   ${detail} = $${Math.round(l.lineTotal)}\n`;
     }
 
     if (scope === "all" && Array.isArray(bySupplier)) {

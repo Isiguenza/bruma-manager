@@ -313,9 +313,23 @@ correctamente y reporta a quién ya pertenece cada producto.
 variante es exactamente `"${product.name} - ${variantName}"`** (sin invertir,
 sin prefijo de categoría — la inversión de `comandaItemName()` en
 `kitchenPrint.ts` es solo cosmética para la comanda impresa). El join de
-ventas por rango de fechas (`app/api/suppliers/calculate/route.ts`) usa
+ventas por rango de fechas (`lib/suppliers/calculate.ts`, función pura
+`calculateSupplierTotals` — NO vive en la route handler para poder llamarse
+directo desde dos endpoints distintos, ver gotcha de self-fetch abajo) usa
 siempre `orderItems.productId` y, si hay `variantName`, además filtra por ese
 string exacto — probado contra ventas reales de "Espresso - Doble/Sencillo".
+
+**Dos modelos de pricing por línea** (`supplierItems.pricingType`:
+`"fixed_cost"` | `"percentage"`): el original es costo fijo por unidad
+(`costPrice`); el segundo es para productos donde el proveedor no vende un
+insumo a costo fijo sino que se reparte lo vendido (ej. "los cafés de Bruma:
+nosotros nos quedamos 10%, el proveedor se lleva el resto") —
+`businessCutPercent` guarda el % que se queda EL NEGOCIO, y
+`calculateSupplierTotals` calcula `lineTotal = revenue * (100 -
+businessCutPercent) / 100` usando `SUM(order_items.subtotal)` del rango en
+vez de `quantitySold * costPrice`. Configurable por línea individual (select
++ input en el detalle del proveedor) o de un jalón para todo un grupo/categoría
+con "Aplicar % a todos".
 
 Impresión: ticket térmico vía print-server (`POST /print-supplier`, calcado
 de `/print-corte`) Y PDF con `jsPDF` puro (`components/supplier-invoice-pdf.ts`,
@@ -323,6 +337,36 @@ sin `jspdf-autotable`, tabla dibujada a mano) — ambos alimentados por el mismo
 endpoint `app/api/suppliers/print-data/route.ts` para que ticket y PDF nunca
 diverjan en las cifras. Alcance: proveedor completo, una categoría dentro de
 un proveedor, o consolidado de todos los proveedores (`/suppliers/all`).
+
+**Gotcha ya corregido — nunca pegar un blob base64 grande a mano dentro de un
+archivo de código:** la primera versión traía el logo BRUMA incrustado como
+literal base64 (~15KB) directo en `components/supplier-invoice-pdf.ts`. Al
+transcribirlo se corrompió a la mitad (quedó en ~10KB, un PNG inválido) sin
+que ningún linter/build lo detectara — compila perfecto porque sigue siendo
+un string JS válido, solo truena en runtime al llamar `jsPDF.addImage()`, y
+como el catch de la UI no logueaba el error, se veía como "no pasa nada".
+Fix definitivo: el logo se subió una sola vez a R2
+(`assets/bruma-logo.png`, público en `https://cdn.cocinabruma.com.mx/assets/bruma-logo.png`,
+mismo bucket/CDN que ya usa `app/api/menu/upload/route.ts`) y
+`app/api/suppliers/print-data/route.ts` lo trae con `fetch()` **server-side**
+(sin problema de CORS/canvas-tainting, a diferencia de hacerlo desde el
+browser) y lo manda como `logoBase64` en el payload — `generateSupplierInvoicePDF`
+ya no tiene NINGÚN base64 hardcodeado, y su `doc.addImage` está en un
+try/catch que si falla el logo, no tumba el PDF completo. Regla general: un
+asset binario (logo, ícono) siempre se sube a R2 y se referencia por URL,
+nunca se pega como base64 en un archivo `.ts`/`.tsx`.
+
+**Gotcha ya corregido — self-fetch entre route handlers de Next.js es
+frágil:** la primera versión de `print-data` llamaba a
+`fetch(new URL("/api/suppliers/calculate", request.url))` para reusar el
+cálculo. En producción eso murió con `ERR_SSL_WRONG_VERSION_NUMBER` (un
+route handler haciéndose fetch a sí mismo por HTTP(S) depende de cómo esté
+desplegado el server, y no es confiable). Fix: la lógica se movió a
+`lib/suppliers/calculate.ts` como función pura (`calculateSupplierTotals`),
+llamada directo (sin red) tanto desde `calculate/route.ts` como desde
+`print-data/route.ts`. Regla general: si dos route handlers de Next.js
+necesitan la misma lógica, extraerla a una función en `lib/`, nunca hacer que
+un handler le pegue por HTTP a otro handler del mismo proceso.
 
 **Gotcha del entorno: `scripts/*.ts` que usan `import { config } from
 "dotenv"` no corren tal cual con `npx tsx`/`pnpm exec tsx` en este repo** —
