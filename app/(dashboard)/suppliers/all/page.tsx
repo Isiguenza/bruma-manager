@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { ArrowLeft, Printer, FilePdf, Stack } from "@phosphor-icons/react";
-import { generateSupplierInvoicePDF, supplierInvoiceFilename } from "@/components/supplier-invoice-pdf";
 import type { SupplierCalculationLine } from "@/lib/types";
 
 interface SupplierBucket {
@@ -97,19 +96,13 @@ export default function AllSuppliersPage() {
     }
   }
 
-  async function handleDownloadPdf() {
-    setPrinting(true);
-    try {
-      const data = await fetchPrintData();
-      if (!data) return;
-      const doc = generateSupplierInvoicePDF(data);
-      doc.save(supplierInvoiceFilename(data));
-    } catch (error) {
-      console.error(error);
-      toast.error("Error al generar PDF");
-    } finally {
-      setPrinting(false);
+  function handleDownloadPdf() {
+    if (!dateFrom || !dateTo) {
+      toast.error("Elige un rango de fechas");
+      return;
     }
+    const qs = new URLSearchParams({ scope: "all", dateFrom, dateTo });
+    window.location.href = `/api/suppliers/pdf?${qs.toString()}`;
   }
 
   return (

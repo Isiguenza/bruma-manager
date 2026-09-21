@@ -33,7 +33,6 @@ import {
   Calculator,
 } from "@phosphor-icons/react";
 import { PromotionProductPicker, type PromotionProductSelection } from "@/components/promotion-product-picker";
-import { generateSupplierInvoicePDF, supplierInvoiceFilename } from "@/components/supplier-invoice-pdf";
 import type { Supplier, SupplierItem, Product, Category, SupplierCalculationLine } from "@/lib/types";
 
 interface SupplierDetail extends Supplier {
@@ -284,20 +283,15 @@ export default function SupplierDetailPage() {
     }
   }
 
-  async function handleDownloadPdf() {
-    const scope = printScope === "supplier" ? "supplier" : "category";
-    setPrinting(true);
-    try {
-      const data = await fetchPrintData(scope);
-      if (!data) return;
-      const doc = generateSupplierInvoicePDF(data);
-      doc.save(supplierInvoiceFilename(data));
-    } catch (error) {
-      console.error(error);
-      toast.error("Error al generar PDF");
-    } finally {
-      setPrinting(false);
+  function handleDownloadPdf() {
+    if (!dateFrom || !dateTo) {
+      toast.error("Elige un rango de fechas");
+      return;
     }
+    const scope = printScope === "supplier" ? "supplier" : "category";
+    const qs = new URLSearchParams({ scope, supplierId, dateFrom, dateTo });
+    if (scope === "category") qs.set("categoryId", printScope);
+    window.location.href = `/api/suppliers/pdf?${qs.toString()}`;
   }
 
   if (loading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;

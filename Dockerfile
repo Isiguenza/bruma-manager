@@ -25,6 +25,17 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV TZ=America/Mexico_City
 
+# Chromium para generar los PDF de proveedores con Puppeteer (headless) —
+# puppeteer-core no descarga su propio Chromium, usa este binario del sistema.
+# `chromium` en Debian trae como dependencias de apt las libs compartidas que
+# necesita (libnss3, libatk*, libx11-xcb1, libgbm1, etc.), así que no hace
+# falta listarlas a mano.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium \
+      fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 # Copy standalone output
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static

@@ -332,41 +332,70 @@ vez de `quantitySold * costPrice`. Configurable por línea individual (select
 con "Aplicar % a todos".
 
 Impresión: ticket térmico vía print-server (`POST /print-supplier`, calcado
-de `/print-corte`) Y PDF con `jsPDF` puro (`components/supplier-invoice-pdf.ts`,
-sin `jspdf-autotable`, tabla dibujada a mano) — ambos alimentados por el mismo
-endpoint `app/api/suppliers/print-data/route.ts` para que ticket y PDF nunca
-diverjan en las cifras. Alcance: proveedor completo, una categoría dentro de
-un proveedor, o consolidado de todos los proveedores (`/suppliers/all`).
+de `/print-corte`) Y PDF vía **Chromium headless (Puppeteer)** — ambos leen
+del mismo builder (`lib/suppliers/print-data.ts`, función `buildSupplierPrintData`)
+para que ticket y PDF nunca diverjan en las cifras. Alcance: proveedor
+completo, una categoría dentro de un proveedor, o consolidado de todos los
+proveedores (`/suppliers/all`).
+
+**El PDF es HTML/CSS real renderizado por un browser, no dibujado a mano.**
+Se probó primero con `jsPDF` (texto/líneas dibujados con primitivas) y el
+resultado no se parecía en nada al mockup de diseño aprobado — tipografía,
+colores y layout de un documento real no son razonables de replicar a mano
+con `doc.text()`/`doc.line()`. Se probó después `jsPDF.html()` +
+`html2canvas` corriendo en el browser del cliente, pero se abandonó también
+en favor de generarlo 100% server-side. Arquitectura final:
+`lib/suppliers/invoice-html.ts` (`buildInvoiceDocumentHtml`) es el ÚNICO
+lugar con el HTML/CSS del invoice (mismo diseño del mockup: Fraunces+Inter,
+paleta teal+gold, tabla agrupada por categoría con subtotales, status pill);
+`app/api/suppliers/pdf/route.ts` (GET, `?scope=&supplierId=&categoryId=&dateFrom=&dateTo=`)
+llama a `buildSupplierPrintData` (mismo builder que el ticket), arma el HTML,
+lo manda a un Chromium headless vía Puppeteer (`lib/suppliers/pdf-browser.ts`,
+`puppeteer-core` — NO el paquete `puppeteer` completo, para no arrastrar su
+propio Chromium bundleado en el output `standalone` de Next) y devuelve
+`page.pdf()` con `Content-Disposition: attachment`. El botón "Descargar PDF"
+del dashboard ya NO genera nada en el cliente — solo navega a esa URL
+(`window.location.href`), el navegador hace la descarga solo por el header.
+
+**Chromium vive en el contenedor, no en `node_modules`:** el `Dockerfile`
+(stage `runner`, `node:22-slim`) instala `chromium` vía `apt-get` y setea
+`ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium` — `puppeteer-core` apunta
+ahí (`lib/suppliers/pdf-browser.ts` también prueba rutas típicas de
+Chrome/Chromium en Mac/Linux como fallback para poder probar en local sin
+Docker). El browser se lanza una sola vez y se reusa entre requests
+(`getBrowser()`, singleton a nivel de módulo) — el server de Next corre de
+forma larga bajo Docker Compose, no es una función serverless de un solo uso,
+así que relanzar Chromium en cada PDF sería lento e innecesario.
+`page.setContent()` no soporta `waitUntil: "networkidle0"` en esta versión de
+`puppeteer-core` (tira error de tipos) — se usa `waitUntil: "load"` +
+`await page.evaluate(() => document.fonts.ready)` explícito, porque las
+Google Fonts (`@font-face`) no bloquean el evento `load` y sin ese `await` el
+PDF sale con la fuente de respaldo en vez de Fraunces/Inter.
 
 **Gotcha ya corregido — nunca pegar un blob base64 grande a mano dentro de un
-archivo de código:** la primera versión traía el logo BRUMA incrustado como
-literal base64 (~15KB) directo en `components/supplier-invoice-pdf.ts`. Al
-transcribirlo se corrompió a la mitad (quedó en ~10KB, un PNG inválido) sin
-que ningún linter/build lo detectara — compila perfecto porque sigue siendo
-un string JS válido, solo truena en runtime al llamar `jsPDF.addImage()`, y
-como el catch de la UI no logueaba el error, se veía como "no pasa nada".
-Fix definitivo: el logo se subió una sola vez a R2
-(`assets/bruma-logo.png`, público en `https://cdn.cocinabruma.com.mx/assets/bruma-logo.png`,
-mismo bucket/CDN que ya usa `app/api/menu/upload/route.ts`) y
-`app/api/suppliers/print-data/route.ts` lo trae con `fetch()` **server-side**
-(sin problema de CORS/canvas-tainting, a diferencia de hacerlo desde el
-browser) y lo manda como `logoBase64` en el payload — `generateSupplierInvoicePDF`
-ya no tiene NINGÚN base64 hardcodeado, y su `doc.addImage` está en un
-try/catch que si falla el logo, no tumba el PDF completo. Regla general: un
-asset binario (logo, ícono) siempre se sube a R2 y se referencia por URL,
-nunca se pega como base64 en un archivo `.ts`/`.tsx`.
+archivo de código:** una versión intermedia traía el logo BRUMA incrustado
+como literal base64 (~15KB) directo en un archivo `.ts`. Al transcribirlo se
+corrompió a la mitad (quedó en ~10KB, un PNG inválido) sin que ningún
+linter/build lo detectara — compila perfecto porque sigue siendo un string JS
+válido, solo truena en runtime al decodificar la imagen. Fix: el logo se
+subió una sola vez a R2 (`assets/bruma-logo.png`, público en
+`https://cdn.cocinabruma.com.mx/assets/bruma-logo.png`, mismo bucket/CDN que
+ya usa `app/api/menu/upload/route.ts`) y `buildSupplierPrintData` lo trae con
+`fetch()` server-side, sin ningún base64 hardcodeado en el repo. Regla
+general: un asset binario (logo, ícono) siempre se sube a R2 y se referencia
+por URL, nunca se pega como base64 en un archivo `.ts`/`.tsx`.
 
 **Gotcha ya corregido — self-fetch entre route handlers de Next.js es
-frágil:** la primera versión de `print-data` llamaba a
+frágil:** una versión intermedia de `print-data` llamaba a
 `fetch(new URL("/api/suppliers/calculate", request.url))` para reusar el
-cálculo. En producción eso murió con `ERR_SSL_WRONG_VERSION_NUMBER` (un
-route handler haciéndose fetch a sí mismo por HTTP(S) depende de cómo esté
-desplegado el server, y no es confiable). Fix: la lógica se movió a
+cálculo. En producción eso murió con `ERR_SSL_WRONG_VERSION_NUMBER` (un route
+handler haciéndose fetch a sí mismo por HTTP(S) depende de cómo esté
+desplegado el server, y no es confiable). Fix: la lógica vive en
 `lib/suppliers/calculate.ts` como función pura (`calculateSupplierTotals`),
-llamada directo (sin red) tanto desde `calculate/route.ts` como desde
-`print-data/route.ts`. Regla general: si dos route handlers de Next.js
-necesitan la misma lógica, extraerla a una función en `lib/`, nunca hacer que
-un handler le pegue por HTTP a otro handler del mismo proceso.
+llamada directo (sin red) desde `calculate/route.ts`, `print-data.ts` y
+`pdf/route.ts`. Regla general: si varias route handlers de Next.js necesitan
+la misma lógica, extraerla a una función en `lib/`, nunca hacer que un
+handler le pegue por HTTP a otro handler del mismo proceso.
 
 **Gotcha del entorno: `scripts/*.ts` que usan `import { config } from
 "dotenv"` no corren tal cual con `npx tsx`/`pnpm exec tsx` en este repo** —
