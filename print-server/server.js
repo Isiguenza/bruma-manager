@@ -1595,6 +1595,77 @@ app.post('/print-corte', async (req, res) => {
   }
 });
 
+// Ticket de "cuánto le debemos a un proveedor" — módulo Proveedores del
+// dashboard. scope: "supplier" | "category" | "all". Para "all" las líneas
+// vienen agrupadas por proveedor en `bySupplier`; para los otros dos casos
+// vienen planas en `lines`.
+app.post('/print-supplier', async (req, res) => {
+  try {
+    const { scope, supplierName, categoryName, dateFrom, dateTo, lines, grandTotal, bySupplier } = req.body;
+
+    let content = "";
+    content += commands.init;
+    content += commands.alignCenter;
+    content += commands.bold;
+    content += commands.textSizeDouble;
+    content += "BRUMA\n";
+    content += commands.textSizeNormal;
+    content += commands.boldOff;
+    content += commands.feedLine;
+
+    content += commands.bold;
+    content += commands.textSizeDouble;
+    content += "NOTA PROVEEDOR\n";
+    content += commands.textSizeNormal;
+    content += commands.boldOff;
+    content += commands.feedLine;
+
+    if (scope === "supplier") content += `Proveedor: ${supplierName}\n`;
+    if (scope === "category") content += `Proveedor: ${supplierName}\nCategoria: ${categoryName}\n`;
+    if (scope === "all") content += "Consolidado: TODOS LOS PROVEEDORES\n";
+    content += `Periodo: ${dateFrom} a ${dateTo}\n`;
+    content += commands.feedLine;
+
+    content += commands.alignLeft;
+
+    function printLine(l) {
+      const label = l.variantName ? `${l.productName} - ${l.variantName}` : l.productName;
+      content += `${l.quantitySold}x ${label}\n`;
+      content += `   $${l.costPrice} c/u = $${Math.round(l.lineTotal)}\n`;
+    }
+
+    if (scope === "all" && Array.isArray(bySupplier)) {
+      for (const s of bySupplier) {
+        content += commands.bold + `${s.supplierName}\n` + commands.boldOff;
+        content += solidLine() + commands.feedLine;
+        for (const l of s.lines) printLine(l);
+        content += `Subtotal: $${Math.round(s.total)}\n`;
+        content += commands.feedLine;
+      }
+    } else {
+      content += solidLine() + commands.feedLine;
+      for (const l of lines || []) printLine(l);
+    }
+
+    content += solidLine() + commands.feedLine;
+    content += commands.bold;
+    content += commands.textSizeDouble;
+    content += `TOTAL: $${Math.round(grandTotal)}\n`;
+    content += commands.textSizeNormal;
+    content += commands.boldOff;
+    content += commands.feedLine;
+    content += commands.feedLine;
+    content += commands.feed;
+    content += commands.cut;
+
+    await sendToPrinter(content);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error printing supplier ticket:", error);
+    res.status(500).json({ error: "Error al imprimir ticket de proveedor" });
+  }
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ 

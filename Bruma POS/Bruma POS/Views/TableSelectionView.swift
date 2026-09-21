@@ -95,6 +95,7 @@ struct TableSelectionView: View {
                                             TableCardView(
                                                 table: table,
                                                 hasReadyItems: vm.tablesWithReadyItems.contains(table.id),
+                                                hasDraft: vm.tablesWithDraft.contains(table.id),
                                                 currentTime: currentTime,
                                                 mergeMode: vm.mergeModeActive,
                                                 isSelectedForMerge: vm.selectedForMerge.contains(table.id),
@@ -814,6 +815,7 @@ struct DeliveryCompactCard: View {
 struct TableCardView: View {
     let table: Table
     let hasReadyItems: Bool
+    let hasDraft: Bool
     let currentTime: Date
     var mergeMode: Bool = false
     var isSelectedForMerge: Bool = false
@@ -874,6 +876,24 @@ struct TableCardView: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
                             .background(.green)
+                            .clipShape(Capsule())
+                        }
+
+                        // Se estaba comandando esta mesa (o se creó "para
+                        // llevar" desde aquí) y se salió sin mandar a
+                        // cocina — el borrador quedó guardado, ver
+                        // `POSViewModel.persistDraftIfNeeded`.
+                        if hasDraft {
+                            HStack(spacing: 3) {
+                                Image(systemName: "square.and.pencil")
+                                    .font(.system(size: 9))
+                                Text("Borrador")
+                                    .font(.system(size: 9, weight: .black))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.blue.opacity(0.85))
                             .clipShape(Capsule())
                         }
                         if table.isAvailable {

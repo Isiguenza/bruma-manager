@@ -6,36 +6,36 @@ struct MainTabView: View {
     
     var body: some View {
         TabView(selection: $vm.selectedTab) {
-            // Tab 1: Mesas (Table Selection) — la única visible para un
-            // empleado sin rol admin.
+            // Tab 1: Mesas (Table Selection) — visible para cualquier empleado.
             TableSelectionView(vm: vm)
                 .tabItem {
                     Label("Mesas", systemImage: "table.furniture.fill")
                 }
                 .tag(0)
 
-            // Tabs admin-only: Caja, Reservas, Promociones y Empleados desaparecen del
+            // Tab 2: Reservas — igual que Mesas, visible para cualquier
+            // empleado (no requiere admin).
+            ReservationsView()
+                .tabItem {
+                    Label("Reservas", systemImage: "calendar")
+                }
+                .tag(1)
+
+            // Tabs admin-only: Caja, Promociones y Empleados desaparecen del
             // TabView si el rol deja de ser admin (el onChange de abajo
             // regresa la selección a Mesas en ese caso).
             if vm.employeeRole == "admin" {
-                // Tab 2: Caja (Cash Register)
+                // Tab 3: Caja (Cash Register)
                 CashRegisterView(vm: cashVM, posVM: vm)
                     .tabItem {
                         Label("Caja", systemImage: "dollarsign.circle.fill")
                     }
-                    .tag(1)
+                    .tag(2)
                     .onChange(of: vm.selectedTab) { _, newValue in
-                        if newValue != 1 {
+                        if newValue != 2 {
                             cashVM.isAuthenticated = false
                         }
                     }
-
-                // Tab 3: Reservas
-                ReservationsView()
-                    .tabItem {
-                        Label("Reservas", systemImage: "calendar")
-                    }
-                    .tag(2)
 
                 // Tab 4: Promociones
                 PromotionsView(vm: vm)
@@ -54,7 +54,10 @@ struct MainTabView: View {
         }
         .accentColor(.blue)
         .onChange(of: vm.employeeRole) { _, newRole in
-            if newRole != "admin" && vm.selectedTab != 0 {
+            // Mesas (0) y Reservas (1) siguen disponibles para cualquier rol —
+            // solo hay que regresar a Mesas si el empleado estaba en una tab
+            // admin-only (Caja/Promociones/Empleados) cuando perdió el rol.
+            if newRole != "admin" && vm.selectedTab > 1 {
                 vm.selectedTab = 0
                 cashVM.isAuthenticated = false
             }

@@ -19,6 +19,7 @@ import {
   Storefront,
   Tag,
   Percent,
+  Truck,
   Sun,
   Moon,
   CaretDown,
@@ -102,6 +103,14 @@ const inventoryNavItems = [
     title: "Recetas",
     url: "/inventory/recipes",
     icon: ChefHat,
+  },
+];
+
+const supplierNavItems = [
+  {
+    title: "Proveedores",
+    url: "/suppliers",
+    icon: Truck,
   },
 ];
 
@@ -256,6 +265,26 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {inventoryNavItems.map((item) => (
+                <SidebarMenuItem key={item.url}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                    <Link href={item.url}>
+                      <item.icon className="size-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarSeparator />
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Proveedores</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {supplierNavItems.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)}>
                     <Link href={item.url}>

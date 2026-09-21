@@ -213,5 +213,12 @@ private struct SessionAutoLockModifier: ViewModifier {
                 monitor.shouldLock = shouldLock
                 monitor.start()
             }
+            // Cualquier borrador de comanda sin mandar a cocina se considera
+            // abandonado en cuanto la sesión se re-bloquea por inactividad
+            // (ver `POSViewModel.purgeDraftsOnLock`) — no afecta el carrito
+            // EN MEMORIA de la pantalla actual, que sigue vivo por diseño.
+            .onChange(of: monitor.isLocked) { _, locked in
+                if locked { vm.purgeDraftsOnLock() }
+            }
     }
 }

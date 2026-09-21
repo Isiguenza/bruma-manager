@@ -85,6 +85,96 @@ struct Promotion: Codable, Identifiable {
               let rules = try? JSONDecoder().decode([ComboRule].self, from: data) else { return [] }
         return rules
     }
+
+    // MARK: - Live schedule state (Promociones tab, iPad)
+    //
+    // Mirrors api-server/src/lib/promotionSchedule.ts field-by-field (same
+    // precedence, same device-local time) so the tab's "En vivo/Programada"
+    // split matches what the backend actually serves to the POS.
+
+    private static let gregorian = Calendar(identifier: .gregorian)
+
+    static let isoDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = gregorian
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    static let hhmmFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = gregorian
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    private static let dayNames = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"]
+
+    static func friendlyDate(_ iso: String) -> String {
+        guard let date = isoDateFormatter.date(from: iso) else { return iso }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "es_MX")
+        f.dateFormat = "d MMM"
+        return f.string(from: date)
+    }
+
+    static func hhmm(_ date: Date) -> String { hhmmFormatter.string(from: date) }
+
+    func scheduleInfo(now: Date = Date()) -> PromotionScheduleInfo {
+        guard active else { return PromotionScheduleInfo(state: .paused, reason: "Pausada manualmente") }
+
+        let todayISO = Self.isoDateFormatter.string(from: now)
+        if let startDate, todayISO < startDate {
+            return PromotionScheduleInfo(state: .scheduled, reason: "Empieza el \(Self.friendlyDate(startDate))")
+        }
+        if let endDate, todayISO > endDate {
+            return PromotionScheduleInfo(state: .expired, reason: "Venció el \(Self.friendlyDate(endDate))")
+        }
+
+        let currentDay = Self.gregorian.component(.weekday, from: now) - 1 // 0=domingo, como JS getDay()
+        let days = parsedDaysOfWeek
+        let daysOk = days.isEmpty || days.contains(currentDay)
+
+        let hhmm = Self.hhmm(now)
+        let startTrim = startTime.map { String($0.prefix(5)) }
+        let endTrim = endTime.map { String($0.prefix(5)) }
+        let afterStart = startTrim.map { hhmm >= $0 } ?? true
+        let beforeEnd = endTrim.map { hhmm <= $0 } ?? true
+
+        if daysOk && afterStart && beforeEnd {
+            return PromotionScheduleInfo(state: .live, reason: nil)
+        }
+        if !daysOk {
+            let next = Self.nextAllowedDayLabel(days: days, from: currentDay)
+            let suffix = startTrim.map { ", \($0)" } ?? ""
+            return PromotionScheduleInfo(state: .scheduled, reason: "Próxima: \(next)\(suffix)")
+        }
+        if !afterStart, let s = startTrim {
+            return PromotionScheduleInfo(state: .scheduled, reason: "Empieza hoy a las \(s)")
+        }
+        if !beforeEnd, let e = endTrim {
+            return PromotionScheduleInfo(state: .scheduled, reason: "Termina hoy a las \(e) · vuelve mañana")
+        }
+        return PromotionScheduleInfo(state: .scheduled, reason: "Fuera de horario")
+    }
+
+    private static func nextAllowedDayLabel(days: [Int], from: Int) -> String {
+        guard !days.isEmpty else { return "" }
+        for i in 1...7 {
+            let d = (from + i) % 7
+            if days.contains(d) { return i == 1 ? "mañana" : dayNames[d] }
+        }
+        return ""
+    }
+}
+
+enum PromotionLiveState { case live, scheduled, paused, expired }
+
+struct PromotionScheduleInfo {
+    let state: PromotionLiveState
+    let reason: String?
 }
 
 struct ComboRule: Codable {

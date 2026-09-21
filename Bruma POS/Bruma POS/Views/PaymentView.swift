@@ -78,10 +78,10 @@ struct PaymentView: View {
                         heroTotal
                         methodRow
                         VStack(spacing: 10) {
-                            tipRowPill
                             if vm.paymentMethod == "cash" {
                                 cashRowPill
                             }
+                            tipRowPill
                         }
                     }
                     .padding(.horizontal, 24)

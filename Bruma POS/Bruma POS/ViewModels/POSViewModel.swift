@@ -158,7 +158,16 @@ class POSViewModel: ObservableObject {
     @Published var showFreeTextNotes = false
     
     // MARK: - Cart
-    @Published var cart: [CartItem] = []
+    // El `didSet` persiste un borrador en UserDefaults (ver `CartDraftStore`
+    // al fondo de este archivo) mientras se arma una comanda nueva — así
+    // sobrevive si sales de la pantalla (Mesas) y vuelves antes de mandarla
+    // a cocina, que hoy la perdía por completo.
+    @Published var cart: [CartItem] = [] {
+        didSet { persistDraftIfNeeded() }
+    }
+    /// Ids de mesa (server id) con un borrador guardado — para el badge
+    /// "Borrador" en `TableCardView`. Mismo patrón que `tablesWithReadyItems`.
+    @Published var tablesWithDraft: Set<String> = CartDraftStore.tableIdsWithDrafts()
     @Published var activeSeat = "C"
     @Published var activeCourse = 1
     @Published var guestCount = 1
@@ -1856,22 +1865,30 @@ class POSViewModel: ObservableObject {
         guestCount = tempGuestCount
         activeSeat = "A1"
         showInitialGuestDialog = false
-        
-        // Clear cart and reset state for new empty table
-        cart = []
+
+        // Si hay un borrador guardado para esta mesa (se salió sin mandar a
+        // cocina y volvió), lo restauramos en vez de empezar de cero.
         currentOrderId = nil
         currentOrderNumber = nil
         activeCourse = 1
+        var restoredDraft = false
+        if let table = selectedTable, let draft = CartDraftStore.load(CartDraftStore.tableKey(table.id)) {
+            cart = draft.items
+            restoredDraft = true
+        } else {
+            cart = []
+        }
 
         print("✅ Navegando a POS con selectedTable=\(selectedTable?.id ?? "nil")")
         currentScreen = .pos
-        
+
         if let table = selectedTable {
             Task {
                 let _ = try? await APIService.shared.updateTable(tableId: table.id, body: ["guestCount": tempGuestCount])
             }
         }
-        showToast("Mesa \(selectedTable?.number ?? "") — \(tempGuestCount) persona\(tempGuestCount > 1 ? "s" : "")")
+        let base = "Mesa \(selectedTable?.number ?? "") — \(tempGuestCount) persona\(tempGuestCount > 1 ? "s" : "")"
+        showToast(restoredDraft ? "\(base) · borrador restaurado" : base)
     }
     
     func confirmGuestCount() {
@@ -1974,6 +1991,12 @@ class POSViewModel: ObservableObject {
     
     func handleNewDeliveryOrder() {
         resetPaymentState()
+        // Si hay un borrador de "para llevar" sin mandar a cocina, lo
+        // retomamos directo (saltando el diálogo de cliente, ya lo teníamos).
+        if let draft = CartDraftStore.load(CartDraftStore.takeoutKey) {
+            restoreTakeoutDraft(draft)
+            return
+        }
         isCreatingPlatformDelivery = false
         isPlatformDelivery = false
         isHomeDelivery = false
@@ -1995,6 +2018,10 @@ class POSViewModel: ObservableObject {
 
     func handleNewPlatformDeliveryOrder() {
         resetPaymentState()
+        if let draft = CartDraftStore.load(CartDraftStore.takeoutKey) {
+            restoreTakeoutDraft(draft)
+            return
+        }
         isCreatingPlatformDelivery = true
         isPlatformDelivery = true
         deliveryPlatform = ""
@@ -2034,6 +2061,90 @@ class POSViewModel: ObservableObject {
         activeSeat = "C"
         activeCourse = 1
         currentScreen = .pos
+    }
+
+    /// Retoma un borrador de "para llevar" guardado — salta el diálogo de
+    /// cliente porque esos datos ya los teníamos.
+    private func restoreTakeoutDraft(_ draft: CartDraft) {
+        selectedTable = nil
+        selectedEmployee = nil
+        isEmployeeOrder = false
+        customerName = draft.customerName ?? ""
+        isHomeDelivery = draft.isHomeDelivery ?? false
+        isPlatformDelivery = draft.isPlatformDelivery ?? false
+        isCreatingPlatformDelivery = draft.isCreatingPlatformDelivery ?? false
+        deliveryPlatform = draft.deliveryPlatform ?? ""
+        platformOrderDigits = draft.platformOrderDigits ?? ""
+        deliveryCustomerName = draft.deliveryCustomerName ?? ""
+        guestCount = draft.guestCount
+        currentOrderId = nil
+        currentOrderNumber = nil
+        activeCourse = 1
+        activeSeat = "C"
+        showCustomerNameDialog = false
+        currentScreen = .pos
+        cart = draft.items
+        showToast("Continuando borrador de \(customerName.isEmpty ? "para llevar" : customerName)")
+    }
+
+    // MARK: - Borradores de comanda (UserDefaults)
+    //
+    // Solo para órdenes que TODAVÍA no existen en el backend
+    // (`currentOrderId == nil`) — una vez que se manda a cocina ya queda la
+    // orden real creada ahí, y `handleSelectTable`/`selectSplitTicket` la
+    // recargan de por sí, así que el borrador ya no hace falta.
+
+    /// Key del borrador activo según en qué se está comandando ahora mismo,
+    /// o `nil` si no aplica (ya hay una orden real, o no hay mesa/"para
+    /// llevar" en curso — p.ej. modo práctica o consumo de empleado, que no
+    /// necesitan recuperación).
+    private var activeDraftKey: String? {
+        guard currentOrderId == nil, !isPracticeMode, !isEmployeeOrder else { return nil }
+        if let table = selectedTable { return CartDraftStore.tableKey(table.id) }
+        if currentScreen == .pos, !customerName.isEmpty { return CartDraftStore.takeoutKey }
+        return nil
+    }
+
+    private func persistDraftIfNeeded() {
+        guard let key = activeDraftKey else { return }
+        if cart.isEmpty {
+            CartDraftStore.clear(key)
+        } else {
+            let isTakeout = selectedTable == nil
+            let draft = CartDraft(
+                items: cart,
+                guestCount: guestCount,
+                savedAt: Date(),
+                customerName: isTakeout ? customerName : nil,
+                isHomeDelivery: isTakeout ? isHomeDelivery : nil,
+                isPlatformDelivery: isTakeout ? isPlatformDelivery : nil,
+                isCreatingPlatformDelivery: isTakeout ? isCreatingPlatformDelivery : nil,
+                deliveryPlatform: isTakeout ? deliveryPlatform : nil,
+                platformOrderDigits: isTakeout ? platformOrderDigits : nil,
+                deliveryCustomerName: isTakeout ? deliveryCustomerName : nil
+            )
+            CartDraftStore.save(draft, key: key)
+        }
+        tablesWithDraft = CartDraftStore.tableIdsWithDrafts()
+    }
+
+    /// Se llama justo después de mandar a cocina exitosamente (o de que el
+    /// item quede en cola offline, que localmente también se trata como
+    /// "enviado") — ya queda la orden real, así que el borrador sobra.
+    private func clearActiveDraft() {
+        let key = selectedTable.map { CartDraftStore.tableKey($0.id) } ?? CartDraftStore.takeoutKey
+        CartDraftStore.clear(key)
+        tablesWithDraft = CartDraftStore.tableIdsWithDrafts()
+    }
+
+    /// Se llama desde `SessionAutoLockModifier` justo cuando la sesión se
+    /// bloquea por inactividad — cualquier borrador sin mandar a cocina para
+    /// ese momento se considera abandonado (no sobrevive al re-lock, aunque
+    /// el carrito EN MEMORIA de la pantalla actual sí sigue ahí por diseño
+    /// de `SessionLockMonitor`; esto solo afecta la recuperación al navegar).
+    func purgeDraftsOnLock() {
+        CartDraftStore.clearAll()
+        tablesWithDraft = []
     }
 
     func handleSelectDeliveryOrder(_ order: Order) {
@@ -3134,6 +3245,7 @@ class POSViewModel: ObservableObject {
 
                 let scopeLabel = course.map { "Tiempo \($0)" } ?? "cocina"
                 showToast("Enviado a \(scopeLabel) (\(unsentItems.count) items)")
+                clearActiveDraft()
             } catch let error as APIError where error == .offlineQueued {
                 // Offline: items are queued for sync, mark local state (respeta tiempo)
                 for i in cart.indices {
@@ -3142,6 +3254,7 @@ class POSViewModel: ObservableObject {
                     }
                 }
                 showToast("📴 Guardado offline — se enviará a cocina automáticamente")
+                clearActiveDraft()
             } catch {
                 print("❌ [handleSendToKitchen] ERROR: \(error)")
                 print("❌ [handleSendToKitchen] ERROR localized: \(error.localizedDescription)")
@@ -4301,6 +4414,11 @@ class POSViewModel: ObservableObject {
                 // Limpia cualquier cobro parqueado de esta mesa (ya se liberó).
                 clearParkedPayment(tableId: selectedTable?.id)
 
+                // Libera también el borrador guardado (si había uno) — antes
+                // de resetear `selectedTable`, que es lo que decide si es el
+                // de una mesa o el de "para llevar".
+                clearActiveDraft()
+
                 // 3. Resetear estado
                 selectedTable = nil
                 cart = []
@@ -4642,4 +4760,77 @@ struct TicketItem {
     var originalPrice: Double?
     var isGuest: Bool?
     var customModifiers: String?
+}
+
+// MARK: - Borrador de comanda (UserDefaults)
+//
+// Definidos aquí (no en un archivo propio de `Services/`) a propósito: este
+// archivo ya compila en los dos targets (POS y Mobile) sin necesitar tocar
+// `membershipExceptions` en el .pbxproj — un archivo nuevo en `Services/`
+// sí lo necesitaría (ver gotcha de "dos copias de schema"/target compartido
+// en CLAUDE.md).
+
+struct CartDraft: Codable {
+    let items: [CartItem]
+    let guestCount: Int
+    let savedAt: Date
+
+    // Solo aplican al borrador de "para llevar" (`selectedTable == nil`).
+    let customerName: String?
+    let isHomeDelivery: Bool?
+    let isPlatformDelivery: Bool?
+    let isCreatingPlatformDelivery: Bool?
+    let deliveryPlatform: String?
+    let platformOrderDigits: String?
+    let deliveryCustomerName: String?
+}
+
+enum CartDraftStore {
+    private static let storageKey = "com.brumapos.cartDrafts"
+    private static let tableKeyPrefix = "table_"
+    static let takeoutKey = "takeout"
+
+    static func tableKey(_ tableId: String) -> String { tableKeyPrefix + tableId }
+
+    private static func loadAll() -> [String: CartDraft] {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let decoded = try? JSONDecoder().decode([String: CartDraft].self, from: data) else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private static func saveAll(_ drafts: [String: CartDraft]) {
+        guard let data = try? JSONEncoder().encode(drafts) else { return }
+        UserDefaults.standard.set(data, forKey: storageKey)
+    }
+
+    static func load(_ key: String) -> CartDraft? {
+        loadAll()[key]
+    }
+
+    static func save(_ draft: CartDraft, key: String) {
+        var all = loadAll()
+        all[key] = draft
+        saveAll(all)
+    }
+
+    static func clear(_ key: String) {
+        var all = loadAll()
+        guard all.removeValue(forKey: key) != nil else { return }
+        saveAll(all)
+    }
+
+    static func clearAll() {
+        UserDefaults.standard.removeObject(forKey: storageKey)
+    }
+
+    /// Ids de mesa (server id) con borrador guardado — para el badge
+    /// "Borrador" en `TableCardView`, sin decodificar todo el diccionario
+    /// desde la vista.
+    static func tableIdsWithDrafts() -> Set<String> {
+        Set(loadAll().keys.compactMap { key in
+            key.hasPrefix(tableKeyPrefix) ? String(key.dropFirst(tableKeyPrefix.count)) : nil
+        })
+    }
 }

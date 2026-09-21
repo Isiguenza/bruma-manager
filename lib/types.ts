@@ -362,6 +362,48 @@ export interface Promotion {
   updatedAt: Date;
 }
 
+export interface Supplier {
+  id: string;
+  name: string;
+  contactName: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  notes: string | null;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  items?: SupplierItem[];
+}
+
+export interface SupplierItem {
+  id: string;
+  supplierId: string;
+  productId: string;
+  variantName: string | null;
+  costPrice: string;
+  sourceCategoryId: string | null;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  product?: Product | null;
+  sourceCategory?: Category | null;
+}
+
+export interface SupplierCalculationLine {
+  supplierItemId: string;
+  supplierId: string;
+  supplierName: string;
+  productId: string;
+  productName: string;
+  variantName: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  costPrice: number;
+  quantitySold: number;
+  lineTotal: number;
+}
+
 export interface Discount {
   id: string;
   name: string;

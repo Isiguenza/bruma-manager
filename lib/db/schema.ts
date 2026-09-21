@@ -1027,6 +1027,52 @@ export const userProfilesRelations = relations(userProfiles, ({ many }) => ({
   cashRegisters: many(cashRegisters),
 }));
 
+// PROVEEDORES — a quién le compramos productos que revendemos en el menú
+// (ej. Punto Napa nos vende los postres). Vive solo en el dashboard Next.js.
+export const suppliers = pgTable("suppliers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  contactName: varchar("contact_name", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 255 }),
+  address: text("address"),
+  notes: text("notes"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Qué producto/variante nos vende un proveedor y a qué costo. Asignar "toda
+// una categoría" desde la UI EXPANDE a una fila por producto/variante aquí
+// (ver CLAUDE.md) — sourceCategoryId es solo trazabilidad para poder
+// reagrupar visualmente y ofrecer "Resincronizar categoría", nunca participa
+// en el cálculo de cuánto se le debe al proveedor.
+export const supplierItems = pgTable("supplier_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  supplierId: uuid("supplier_id")
+    .notNull()
+    .references(() => suppliers.id, { onDelete: "cascade" }),
+  productId: uuid("product_id")
+    .notNull()
+    .references(() => products.id, { onDelete: "cascade" }),
+  variantName: varchar("variant_name", { length: 255 }), // null = todas las variantes del producto bajo un solo costo
+  costPrice: decimal("cost_price", { precision: 10, scale: 2 }).notNull(),
+  sourceCategoryId: uuid("source_category_id").references(() => categories.id, { onDelete: "set null" }),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const suppliersRelations = relations(suppliers, ({ many }) => ({
+  items: many(supplierItems),
+}));
+
+export const supplierItemsRelations = relations(supplierItems, ({ one }) => ({
+  supplier: one(suppliers, { fields: [supplierItems.supplierId], references: [suppliers.id] }),
+  product: one(products, { fields: [supplierItems.productId], references: [products.id] }),
+  sourceCategory: one(categories, { fields: [supplierItems.sourceCategoryId], references: [categories.id] }),
+}));
+
 // Aliases for backward compatibility with api-server route code
 export const employees = userProfiles;
 export const inventory = inventoryProducts;

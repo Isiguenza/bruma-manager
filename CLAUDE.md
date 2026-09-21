@@ -285,6 +285,55 @@ misma limitación que ya tenía `printComanda`. Lectura desde el dashboard:
 directo de `lib/db/schema.ts` — no tiene espejo en `api-server` porque nada
 más lo consume), panel "Auditoría" en `/cash-register`.
 
+## Proveedores (dashboard Next.js) — quién nos vende qué y cuánto le debemos
+
+Tab "Proveedores" (`app/(dashboard)/suppliers/`), 100% en el dashboard Next.js
+— no toca `api-server` ni las apps iOS. Tablas `suppliers` y `supplier_items`
+(`lib/db/schema.ts`, migradas a mano con `scripts/add-suppliers.ts`, mismo
+patrón de `db:push` manual que el resto de la DB). `supplier_items` es SIEMPRE
+a nivel producto/variante concreto (`productId` + `variantName` nullable +
+`costPrice`) — asignar "categoría completa" desde la UI (reusa
+`components/promotion-product-picker.tsx`, el mismo picker de promociones) es
+solo una forma de captura masiva que EXPANDE la categoría a una fila por
+producto/variante en el momento (`sourceCategoryId` queda solo como
+trazabilidad/agrupación visual, nunca se lee para el cálculo). Si después se
+agrega un producto nuevo a esa categoría, NO aparece solo — hay que tocar
+"Resincronizar categoría" en el detalle del proveedor.
+
+**No-traslape es a nivel aplicación, no constraint de DB**
+(`lib/suppliers/overlap.ts`, `findSupplierItemConflict`): un producto/variante
+no puede estar asignado a más de un proveedor activo. Asignar el producto
+completo (`variantName: null`) choca contra CUALQUIER fila existente de ese
+`productId` (sea variante específica o el producto completo de otro
+proveedor) — evita traslapes parciales. Verificado en producción: al asignar
+una categoría dos veces (o a dos proveedores) el segundo intento se salta
+correctamente y reporta a quién ya pertenece cada producto.
+
+**El calculador confirma en producción que `order_items.productName` de una
+variante es exactamente `"${product.name} - ${variantName}"`** (sin invertir,
+sin prefijo de categoría — la inversión de `comandaItemName()` en
+`kitchenPrint.ts` es solo cosmética para la comanda impresa). El join de
+ventas por rango de fechas (`app/api/suppliers/calculate/route.ts`) usa
+siempre `orderItems.productId` y, si hay `variantName`, además filtra por ese
+string exacto — probado contra ventas reales de "Espresso - Doble/Sencillo".
+
+Impresión: ticket térmico vía print-server (`POST /print-supplier`, calcado
+de `/print-corte`) Y PDF con `jsPDF` puro (`components/supplier-invoice-pdf.ts`,
+sin `jspdf-autotable`, tabla dibujada a mano) — ambos alimentados por el mismo
+endpoint `app/api/suppliers/print-data/route.ts` para que ticket y PDF nunca
+diverjan en las cifras. Alcance: proveedor completo, una categoría dentro de
+un proveedor, o consolidado de todos los proveedores (`/suppliers/all`).
+
+**Gotcha del entorno: `scripts/*.ts` que usan `import { config } from
+"dotenv"` no corren tal cual con `npx tsx`/`pnpm exec tsx` en este repo** —
+pnpm con node_modules estricto no expone `dotenv` (es dependencia transitiva
+de otro paquete, no está declarada directo), así que `Cannot find module
+'dotenv'` truena incluso para scripts viejos que ya usaban ese patrón. Para
+correr una migración manual: o se lee `DATABASE_URL` de `.env` a mano con
+`fs.readFileSync`+regex en un `.mjs` temporal (sin pasar por `dotenv`), o se
+soluciona el phantom-dependency de raíz agregando `dotenv` como dependencia
+real del proyecto — no asumir que `npx tsx scripts/x.ts` simplemente funciona.
+
 ## Stripe: test vs live
 
 `customer_stripe_accounts.stripe_customer_id` no es válido entre modo test y

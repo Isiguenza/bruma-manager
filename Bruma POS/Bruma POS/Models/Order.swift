@@ -159,7 +159,7 @@ struct OrderItem: Codable, Identifiable {
     }
 }
 
-struct CartItem: Identifiable {
+struct CartItem: Identifiable, Codable {
     let id = UUID()
     let productId: String
     let productName: String
