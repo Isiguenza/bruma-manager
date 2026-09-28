@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import { db, schema } from "../db";
 import { eq, and, or, desc, inArray, sql, isNull } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import {
   emitOrderNew,
   emitOrderUpdated,
@@ -73,6 +74,18 @@ router.get("/orders", async (req, res) => {
       whereConditions.push(sql`${schema.orders.source} != ${excludeSource as string} OR ${schema.orders.source} IS NULL`);
     }
 
+    // All known POS, Dispatch, and dashboard callers send at least one of the
+    // filters below. Keep those historical, explicit views unbounded; only the
+    // truly broad polling request is scoped to today's service day and 200 rows.
+    const hasExplicitNarrowing = Boolean(
+      paymentStatus || status || tableId || cashRegisterId || noTable === "true" || userId || source || excludeSource
+    );
+    if (!hasExplicitNarrowing) {
+      whereConditions.push(
+        sql`${schema.orders.createdAt} >= date_trunc('day', now() AT TIME ZONE 'America/Mexico_City')`
+      );
+    }
+
     const orders = await db.query.orders.findMany({
       where: whereConditions.length > 0 ? and(...whereConditions) : undefined,
       with: {
@@ -108,6 +121,7 @@ router.get("/orders", async (req, res) => {
         table: true,
       },
       orderBy: desc(schema.orders.createdAt),
+      ...(hasExplicitNarrowing ? {} : { limit: 200 }),
     });
 
     // Marcar cada item como bebida si su categoría es bebida O su flujo por
@@ -202,7 +216,6 @@ router.get("/orders/:id", async (req, res) => {
 
 // POST /api/orders
 router.post("/orders", async (req, res) => {
-  console.log("🛎️ [POST /api/orders] Request body:", JSON.stringify(req.body, null, 2));
   try {
     const {
       tableId,
@@ -229,44 +242,19 @@ router.post("/orders", async (req, res) => {
       }
     }
 
-    // Generate order number (max existing + 1)
-    const maxOrderResult = await db
-      .select({ max: sql<number>`COALESCE(MAX(${schema.orders.orderNumber}), 0)` })
-      .from(schema.orders);
-    const nextOrderNumber = (maxOrderResult[0]?.max ?? 0) + 1;
-    console.log("🛎️ [POST /api/orders] next orderNumber:", nextOrderNumber);
+    const orderId = randomUUID();
 
-    // Create order (only insert fields that exist in schema)
-    const [newOrder] = await db
-      .insert(schema.orders)
-      .values({
-        orderNumber: nextOrderNumber,
-        tableId: tableId || null,
-        customerName: customerName || null,
-        cashRegisterId: cashRegisterId || null,
-        userId: req.body.userId || employeeId || null,
-        guestCount: req.body.guestCount || 1,
-        status: status || "pending",
-        paymentStatus: "pending",
-        subtotal: "0",
-        total: "0",
-        tip: "0",
-        source: req.body.source || "pos",
-        isPractice: req.body.isPractice === true,
-      })
-      .returning();
-    
-    console.log("🛎️ [POST /api/orders] Created order:", newOrder.id, "tableId:", newOrder.tableId);
-
-    // Create order items if provided
+    // Prepare order items before opening the transaction so the only database
+    // work inside it is the atomic order/items/totals/table-status change.
     let orderSubtotal = 0;
+    let orderItems: any[] = [];
     if (items && items.length > 0) {
-      const orderItems = items.map((item: any) => {
+      orderItems = items.map((item: any) => {
         const isGuestItem = item.isGuest === true;
         const itemSubtotal = isGuestItem ? 0 : (parseFloat(item.subtotal) || (item.quantity * item.unitPrice));
         orderSubtotal += itemSubtotal;
         return {
-          orderId: newOrder.id,
+          orderId,
           productId: item.productId,
           productName: item.productName,
           quantity: item.quantity,
@@ -291,42 +279,59 @@ router.post("/orders", async (req, res) => {
         };
       });
 
-      await db.insert(schema.orderItems).values(orderItems);
-
-      // Update order subtotal and total
-      await db
-        .update(schema.orders)
-        .set({
-          subtotal: orderSubtotal.toString(),
-          total: orderSubtotal.toString(),
-        })
-        .where(eq(schema.orders.id, newOrder.id));
     }
 
-    // Fetch complete order with items
-    const completeOrder = await db.query.orders.findFirst({
-      where: eq(schema.orders.id, newOrder.id),
-      with: {
-        items: true,
-      },
-    });
-
-    // Update table status if dine-in
-    let tableNumber: string | null = null;
+    // Neon HTTP does not support Drizzle's callback transaction API; db.batch
+    // is its supported single server-side transaction endpoint.
+    const statements: any[] = [
+      db.insert(schema.orders).values({
+        id: orderId,
+        tableId: tableId || null,
+        customerName: customerName || null,
+        cashRegisterId: cashRegisterId || null,
+        userId: req.body.userId || employeeId || null,
+        guestCount: req.body.guestCount || 1,
+        status: status || "pending",
+        paymentStatus: "pending",
+        subtotal: "0",
+        total: "0",
+        tip: "0",
+        source: req.body.source || "pos",
+        isPractice: req.body.isPractice === true,
+      }),
+    ];
+    if (orderItems.length > 0) {
+      statements.push(db.insert(schema.orderItems).values(orderItems));
+      statements.push(
+        db
+          .update(schema.orders)
+          .set({
+            subtotal: orderSubtotal.toString(),
+            total: orderSubtotal.toString(),
+          })
+          .where(eq(schema.orders.id, orderId))
+      );
+    }
     if (tableId) {
-      await db
-        .update(schema.tables)
-        .set({ status: "occupied" })
-        .where(eq(schema.tables.id, tableId));
-
-      const updatedTable = await db.query.tables.findFirst({
-        where: eq(schema.tables.id, tableId),
-      });
-      if (updatedTable) {
-        tableNumber = updatedTable.number;
-        emitTableUpdated(updatedTable);
-      }
+      statements.push(
+        db.update(schema.tables).set({ status: "occupied" }).where(eq(schema.tables.id, tableId))
+      );
     }
+    await db.batch(statements as any);
+    console.log("🛎️ [POST /api/orders] Created order:", orderId, "tableId:", tableId || null);
+
+    // Both reads can run concurrently after the transaction commits.
+    const [completeOrder, updatedTable] = await Promise.all([
+      db.query.orders.findFirst({
+        where: eq(schema.orders.id, orderId),
+        with: { items: true },
+      }),
+      tableId
+        ? db.query.tables.findFirst({ where: eq(schema.tables.id, tableId) })
+        : Promise.resolve(null),
+    ]);
+    const tableNumber = updatedTable?.number ?? null;
+    if (updatedTable) emitTableUpdated(updatedTable);
 
     // Trazabilidad: quién comandó qué, a qué mesa/orden, y cuándo — el primer
     // envío a cocina pasa por aquí (rondas siguientes de la misma orden pasan
@@ -337,9 +342,9 @@ router.post("/orders", async (req, res) => {
           userId: req.body.userId || employeeId,
           action: "order.sent_to_kitchen",
           entityType: "order",
-          entityId: newOrder.id,
+          entityId: orderId,
           details: JSON.stringify({
-            orderNumber: newOrder.orderNumber,
+            orderNumber: completeOrder?.orderNumber,
             tableNumber,
             itemCount: items?.length ?? 0,
             itemNames: (items ?? []).map((item: any) => item.productName),
@@ -977,9 +982,12 @@ router.post("/orders/:id/send-to-kitchen", async (req, res) => {
     const { id } = req.params;
     const { employeeId, itemNames, itemCount, course } = req.body;
 
-    const existingOrder = await db.query.orders.findFirst({
-      where: eq(schema.orders.id, id),
-    });
+    // The order lookup and register check are independent reads. Running them
+    // together removes one Neon round-trip while retaining the same gate.
+    const [existingOrder, openRegister] = await Promise.all([
+      db.query.orders.findFirst({ where: eq(schema.orders.id, id) }),
+      db.query.cashRegisters.findFirst({ where: eq(schema.cashRegisters.status, "open") }),
+    ]);
     if (!existingOrder) {
       return res.status(404).json({ error: "Orden no encontrada" });
     }
@@ -987,20 +995,23 @@ router.post("/orders/:id/send-to-kitchen", async (req, res) => {
     // Misma defensa que en POST /api/orders: exige caja abierta salvo Modo
     // Práctica, para clientes desincronizados que se saltaron el gate local.
     if (!existingOrder.isPractice) {
-      const openRegister = await db.query.cashRegisters.findFirst({
-        where: eq(schema.cashRegisters.status, "open"),
-      });
       if (!openRegister) {
         return res.status(409).json({ error: "Caja cerrada. Abre la caja para poder comandar.", code: "REGISTER_CLOSED" });
       }
     }
 
-    // Update order status to preparing
-    const [updatedOrder] = await db
-      .update(schema.orders)
-      .set({ status: "preparing" })
-      .where(eq(schema.orders.id, id))
-      .returning();
+    // The table snapshot is independent of the status mutation, so fetch it
+    // while the update is in flight instead of after the complete order read.
+    const [[updatedOrder], updatedTable] = await Promise.all([
+      db
+        .update(schema.orders)
+        .set({ status: "preparing" })
+        .where(eq(schema.orders.id, id))
+        .returning(),
+      existingOrder.tableId
+        ? db.query.tables.findFirst({ where: eq(schema.tables.id, existingOrder.tableId) })
+        : Promise.resolve(null),
+    ]);
 
     if (!updatedOrder) {
       return res.status(404).json({ error: "Orden no encontrada" });
@@ -1039,14 +1050,7 @@ router.post("/orders/:id/send-to-kitchen", async (req, res) => {
     }
 
     // Emit table:updated if dine-in so all POS clients refresh the table
-    if (completeOrder?.tableId) {
-      const updatedTable = await db.query.tables.findFirst({
-        where: eq(schema.tables.id, completeOrder.tableId),
-      });
-      if (updatedTable) {
-        emitTableUpdated(updatedTable);
-      }
-    }
+    if (updatedTable) emitTableUpdated(updatedTable);
 
     res.json({ success: true, order: completeOrder });
   } catch (error) {
@@ -1543,11 +1547,6 @@ router.post("/orders/:id/split-into-tickets", async (req, res) => {
 
     const splitGroupId = order.splitGroupId || order.id;
 
-    const maxOrderResult = await db
-      .select({ max: sql<number>`COALESCE(MAX(${schema.orders.orderNumber}), 0)` })
-      .from(schema.orders);
-    let nextOrderNumber = (maxOrderResult[0]?.max ?? 0) + 1;
-
     // Cuánto se le quitó a cada item original vía clonado (no vía el camino
     // barato de reasignar la fila completa) — se usa después para reducir la
     // fila original que se queda en la orden padre.
@@ -1562,7 +1561,6 @@ router.post("/orders/:id/split-into-tickets", async (req, res) => {
       const [newOrder] = await db
         .insert(schema.orders)
         .values({
-          orderNumber: nextOrderNumber++,
           tableId: order.tableId,
           customerName: order.customerName,
           cashRegisterId: order.cashRegisterId,

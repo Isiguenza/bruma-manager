@@ -145,10 +145,30 @@ struct TableMapView: View {
                     // Render a merged pair once, as a single combined table on
                     // the primary; the secondary half is absorbed into it.
                     if table.isMergePrimary == true {
-                        MergedTableChip(primary: table, vm: vm)
+                        let members = [table] + vm.tables
+                            .filter { $0.mergeGroupId == table.id && $0.id != table.id }
+                            .sorted { (Int($0.number) ?? 0) < (Int($1.number) ?? 0) }
+                        MergedTableChip(
+                            primary: table,
+                            members: members,
+                            onSelectTable: { vm.handleSelectTable(table) },
+                            onUnmerge: { await vm.unmergeTable(table) }
+                        )
                     }
                 } else {
-                    TableMapChip(table: table, vm: vm)
+                    TableMapChip(
+                        table: table,
+                        isSelectedForMerge: vm.selectedForMerge.contains(table.id),
+                        mergeModeActive: vm.mergeModeActive,
+                        editingLayout: vm.editingLayout,
+                        hasReadyItems: vm.tablesWithReadyItems.contains(table.id),
+                        onSelectTable: { vm.handleSelectTable(table) },
+                        onToggleMergeSelection: { vm.toggleMergeSelection(table) },
+                        onStartMergeMode: { vm.startMergeMode(preselecting: table) },
+                        onSaveLayout: { vm.saveLayout($0) },
+                        onUnmerge: { await vm.unmergeTable(table) },
+                        onUpdateCapacity: { vm.updateTableCapacity(table, capacity: $0) }
+                    )
                 }
             }
         }
@@ -300,8 +320,22 @@ private struct MapToolbarButtonStyle: ButtonStyle {
 struct TableMapChip: View {
     static let maxCells = 4
 
+    // Solo el valor de la mesa + primitivos/callbacks — NUNCA el vm completo:
+    // con @ObservedObject var vm aquí, cualquiera de sus ~150 @Published
+    // fuerza un re-render de CADA chip del mapa en cada evento de socket,
+    // sin importar si la mesa de este chip cambió. Mismo patrón que ya usa
+    // TableCardView en TableSelectionView.swift.
     let table: Table
-    @ObservedObject var vm: POSViewModel
+    let isSelectedForMerge: Bool
+    let mergeModeActive: Bool
+    let editingLayout: Bool
+    let hasReadyItems: Bool
+    let onSelectTable: () -> Void
+    let onToggleMergeSelection: () -> Void
+    let onStartMergeMode: () -> Void
+    let onSaveLayout: ([TableLayoutUpdate]) -> Void
+    let onUnmerge: () async -> Void
+    let onUpdateCapacity: (Int) -> Void
     @Environment(\.mapGridMetrics) private var metrics
     // Plain @State (not @GestureState) so we control exactly when they clear:
     // atomically, in the same withAnimation as the committed model update, so
@@ -311,7 +345,6 @@ struct TableMapChip: View {
     @State private var showCapacityEditor = false
 
     private var isRound: Bool { table.shape == "round" }
-    private var isSelectedForMerge: Bool { vm.selectedForMerge.contains(table.id) }
 
     /// Footprint in *raw* (pre-rotation) cells — what's actually stored.
     private var rawCells: CellFootprint {
@@ -328,8 +361,7 @@ struct TableMapChip: View {
     private var displayCapacity: Int { table.capacity }
 
     // Status details only make sense in the plain (non-editing/merging) render.
-    private var showStatus: Bool { !vm.editingLayout && !vm.mergeModeActive }
-    private var hasReadyItems: Bool { vm.tablesWithReadyItems.contains(table.id) }
+    private var showStatus: Bool { !editingLayout && !mergeModeActive }
 
     /// Compact rush / hold / listo badges along the top edge, mirroring cards.
     @ViewBuilder
@@ -376,7 +408,7 @@ struct TableMapChip: View {
             .frame(width: spanW, height: spanH)
             .position(x: centerX, y: centerY)
             .sheet(isPresented: $showCapacityEditor) {
-                CapacityEditorSheet(table: table, vm: vm)
+                CapacityEditorSheet(table: table, onSave: onUpdateCapacity)
             }
     }
 
@@ -384,12 +416,12 @@ struct TableMapChip: View {
     private func chip(spanW: CGFloat, spanH: CGFloat, cell: CGFloat) -> some View {
         let visual = chipVisual(spanW: spanW, spanH: spanH, cell: cell)
 
-        if vm.mergeModeActive {
+        if mergeModeActive {
             visual
                 .overlay(mergeSelectionOverlay)
                 .contentShape(Rectangle())
-                .onTapGesture { vm.toggleMergeSelection(table) }
-        } else if vm.editingLayout {
+                .onTapGesture { onToggleMergeSelection() }
+        } else if editingLayout {
             visual
                 .gesture(moveGesture)
                 .overlay(alignment: .bottomTrailing) {
@@ -401,14 +433,14 @@ struct TableMapChip: View {
                 .zIndex(dragOffset == .zero && resizePreview == nil ? 0 : 1)
         } else {
             Button {
-                vm.handleSelectTable(table)
+                onSelectTable()
             } label: {
                 visual
             }
             .buttonStyle(.plain)
             .contextMenu {
                 Button {
-                    vm.startMergeMode(preselecting: table)
+                    onStartMergeMode()
                 } label: {
                     Label("Combinar mesas", systemImage: "link")
                 }
@@ -424,7 +456,7 @@ struct TableMapChip: View {
             // Rotated layer — the physical table shape and its chairs.
             ZStack {
                 shapeBackground
-                if !vm.editingLayout && !vm.mergeModeActive {
+                if !editingLayout && !mergeModeActive {
                     SeatMarks(width: rawW, height: rawH, cellSize: cell, capacity: table.capacity, color: table.borderColor)
                 }
             }
@@ -492,7 +524,7 @@ struct TableMapChip: View {
     private var editContextMenu: some View {
         if table.isMerged {
             Button(role: .destructive) {
-                Task { await vm.unmergeTable(table) }
+                Task { await onUnmerge() }
             } label: {
                 Label("Separar mesas", systemImage: "link.badge.plus")
             }
@@ -528,7 +560,7 @@ struct TableMapChip: View {
             shape: table.shape ?? "square"
         )
         mutate(&update)
-        vm.saveLayout([update])
+        onSaveLayout([update])
     }
 
     private var moveGesture: some Gesture {
@@ -557,7 +589,7 @@ struct TableMapChip: View {
                             rotation: table.rotation ?? 0,
                             shape: table.shape ?? "square"
                         )
-                        vm.saveLayout([update])
+                        onSaveLayout([update])
                     }
                     dragOffset = .zero
                 }
@@ -626,13 +658,13 @@ struct TableMapChip: View {
 
 private struct CapacityEditorSheet: View {
     let table: Table
-    @ObservedObject var vm: POSViewModel
+    let onSave: (Int) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var capacity: Int
 
-    init(table: Table, vm: POSViewModel) {
+    init(table: Table, onSave: @escaping (Int) -> Void) {
         self.table = table
-        self.vm = vm
+        self.onSave = onSave
         _capacity = State(initialValue: table.capacity)
     }
 
@@ -655,7 +687,7 @@ private struct CapacityEditorSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Guardar") {
-                        vm.updateTableCapacity(table, capacity: capacity)
+                        onSave(capacity)
                         dismiss()
                     }
                 }
@@ -670,20 +702,16 @@ private struct CapacityEditorSheet: View {
 /// and a joint label (e.g. "1-2" or "1-2-5").
 struct MergedTableChip: View {
     let primary: Table
-    @ObservedObject var vm: POSViewModel
+    /// Primary first, then its members sorted by table number — computed by
+    /// the caller (needs the full `vm.tables` list), so this chip itself only
+    /// takes plain values/callbacks instead of the whole vm.
+    let members: [Table]
+    let onSelectTable: () -> Void
+    let onUnmerge: () async -> Void
     @Environment(\.mapGridMetrics) private var metrics
-
-    /// The primary first, then its members sorted by table number.
-    private var groupMembers: [Table] {
-        let others = vm.tables
-            .filter { $0.mergeGroupId == primary.id && $0.id != primary.id }
-            .sorted { (Int($0.number) ?? 0) < (Int($1.number) ?? 0) }
-        return [primary] + others
-    }
 
     var body: some View {
         let cell = metrics.cellSize
-        let members = groupMembers
 
         // Bounding box covering every member (they're slid adjacent on merge).
         let minX = members.map { $0.positionX ?? 0 }.min() ?? 0
@@ -698,7 +726,7 @@ struct MergedTableChip: View {
         let label = members.map { $0.number }.joined(separator: "-")
 
         Button {
-            vm.handleSelectTable(primary)
+            onSelectTable()
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
@@ -735,7 +763,7 @@ struct MergedTableChip: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button(role: .destructive) {
-                Task { await vm.unmergeTable(primary) }
+                Task { await onUnmerge() }
             } label: {
                 Label("Separar mesas", systemImage: "link.badge.plus")
             }

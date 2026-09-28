@@ -459,6 +459,34 @@ web) — el broadcast es del backend, no punto-a-punto.
 hay que pedir el detalle o ajustar el endpoint, no asumir que el campo del
 listado es confiable.
 
+**Handlers de `order:updated`/`rush`/`hold` en POSViewModel: aplicar el
+payload, no refetch en bloque.** Con 2+ iPads suscritos a `room:pos`/
+`room:tables`, cualquier acción en cualquiera de los dos dispara el evento en
+AMBOS dispositivos — un handler que hace refetch de red en cada evento se
+multiplica encima de los polls de respaldo (60s tablas, 25s pendientes
+online). `setupSocketCallbacks` en `POSViewModel.swift` ahora aplica el
+payload que ya llega (`applyOrderUpdatedPayload`, decodificando el dict a
+`Order` con `JSONDecoder` + `.convertFromSnakeCase`, igual que `APIService`)
+directo a `cart`/`tablesWithReadyItems`/`deliveryOrders` en vez de llamar
+`refreshOrderFromSocket()`/`refreshReadyItemsAndDelivery()` sin condición; el
+único refetch que queda es cuando el payload de plano no trae `items` (p.ej.
+endpoints que solo regresan la fila cruda de `orders`) y es sobre la mesa
+abierta, no global. `order:rush`/`order:hold` ya traen `priority`/`onHold`
+completos, así que `updateDeliveryOrderFlags` los aplica con
+`Order.withPriorityAndHold(...)` (copy con esos 2 campos reemplazados) sin
+tocar red. Si se agrega un nuevo handler de socket, el default debe ser
+"aplicar el payload", no "refetch y ya".
+
+**Chips del mapa de mesas (`TableMapView.swift`) NUNCA deben tomar el `vm`
+completo.** `TableMapChip`/`MergedTableChip` reciben solo el `Table` (o los
+`members: [Table]` ya resueltos por el padre) + primitivos (`Bool`s) +
+callbacks — nunca `@ObservedObject var vm: POSViewModel`. Con `vm` completo,
+cualquiera de sus ~150 `@Published` fuerza un re-render de CADA chip del
+mapa (no solo el que cambió), en un mapa con 20-50+ mesas eso es jank real en
+cada evento de socket. `TableCardView` en `TableSelectionView.swift` (la
+vista de lista/grid, no el mapa) ya seguía este patrón — es la referencia a
+copiar para cualquier chip/celda nueva del mapa.
+
 ## Caja: el corte se calcula EN VIVO desde `orders`
 
 `GET /api/cash-register/:id/corte` (y `/report`) recalculan ventas por método,

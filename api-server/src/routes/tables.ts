@@ -34,15 +34,16 @@ router.get("/tables", async (req, res) => {
   try {
     const { status } = req.query;
 
-    // Fetch tables and all pending orders in two sequential queries (no Promise.all)
-    const tables = status
-      ? await db.query.tables.findMany({ where: eq(schema.tables.status, status as any) })
-      : await db.query.tables.findMany();
-
-    // Fetch all pending orders in one query
-    const pendingOrders = await db.query.orders.findMany({
-      where: eq(schema.orders.paymentStatus, "pending"),
-    });
+    // These reads are independent, so issue them together instead of waiting
+    // one Neon HTTP round-trip before starting the other.
+    const [tables, pendingOrders] = await Promise.all([
+      status
+        ? db.query.tables.findMany({ where: eq(schema.tables.status, status as any) })
+        : db.query.tables.findMany(),
+      db.query.orders.findMany({
+        where: eq(schema.orders.paymentStatus, "pending"),
+      }),
+    ]);
     console.log(`📋 Pending orders found: ${pendingOrders.length}`);
 
     // Build a map: tableId -> most recent pending order

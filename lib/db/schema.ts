@@ -11,7 +11,7 @@ import {
   date,
   time,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // Enums
 export const userRoleEnum = pgEnum("user_role", [
@@ -296,7 +296,7 @@ export const quickNotes = pgTable("quick_notes", {
 // Orders
 export const orders = pgTable("orders", {
   id: uuid("id").defaultRandom().primaryKey(),
-  orderNumber: integer("order_number").notNull(),
+  orderNumber: integer("order_number").notNull().default(sql`nextval('orders_order_number_seq'::regclass)`),
   status: orderStatusEnum("status").notNull().default("pending"),
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull().default("0"),
   tip: decimal("tip", { precision: 10, scale: 2 }).notNull().default("0"),

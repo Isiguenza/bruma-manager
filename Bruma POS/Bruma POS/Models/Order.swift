@@ -82,6 +82,23 @@ struct Order: Codable, Identifiable {
         if name.hasPrefix("Didi") { return "Didi" }
         return nil
     }
+
+    /// Copy with only priority/onHold replaced — lets order:rush/order:hold
+    /// socket payloads patch an already-loaded delivery order in place
+    /// instead of refetching the whole delivery list.
+    func withPriorityAndHold(priority: Int?, onHold: Bool?) -> Order {
+        Order(
+            id: id, orderNumber: orderNumber, status: status, subtotal: subtotal, total: total,
+            paymentStatus: paymentStatus, customerName: customerName, guestCount: guestCount,
+            tableId: tableId, tableName: tableName, tableNumber: tableNumber, employeeName: employeeName,
+            userId: userId, source: source, createdAt: createdAt, items: items, splitBillData: splitBillData,
+            paymentMethod: paymentMethod, tip: tip, tipPaymentMethod: tipPaymentMethod,
+            discountAmount: discountAmount, discountName: discountName, payments: payments,
+            priority: priority ?? self.priority, onHold: onHold ?? self.onHold, splitGroupId: splitGroupId,
+            customerPhone: customerPhone, deliveryType: deliveryType, deliveryAddress: deliveryAddress,
+            deliveryLat: deliveryLat, deliveryLng: deliveryLng, estimatedReadyMinutes: estimatedReadyMinutes
+        )
+    }
 }
 
 struct OrderPayment: Codable, Identifiable {

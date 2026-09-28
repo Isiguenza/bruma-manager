@@ -747,8 +747,7 @@ class POSViewModel: ObservableObject {
             Task { @MainActor in
                 guard let orderId = dict["id"] as? String else { return }
                 print("📦 [Socket] order:updated received for \(orderId)")
-                print("📦 [Socket] Full dict: \(dict)")
-                
+
                 // Update table's activeOrder status if tableId is present
                 if let tableId = dict["tableId"] as? String,
                    let status = dict["status"] as? String,
@@ -811,8 +810,14 @@ class POSViewModel: ObservableObject {
                     print("⚠️ [Socket] Missing tableId or status in dict")
                 }
 
-                await self?.refreshOrderFromSocket()
-                await self?.refreshReadyItemsAndDelivery()
+                // Antes: refreshOrderFromSocket() + refreshReadyItemsAndDelivery()
+                // sin condición, en CADA order:updated — con 2 iPads suscritos a
+                // room:pos/room:tables, cualquier acción en cualquiera de los dos
+                // disparaba varios GET en ambos dispositivos, encima de los polls
+                // de 60s/25s ya existentes. Ahora se aplica el payload que ya
+                // llegó directo al estado local; solo cae a red cuando de plano
+                // falta lo necesario (mismo criterio que el fallback de arriba).
+                self?.applyOrderUpdatedPayload(dict, orderId: orderId)
             }
         }
         
@@ -1282,19 +1287,14 @@ class POSViewModel: ObservableObject {
 
     @MainActor
     private func updateDeliveryOrderFlags(orderId: String, priority: Int?, onHold: Bool?) {
-        // Update delivery orders
+        // El payload de order:rush/order:hold ya trae priority/onHold directo —
+        // se aplica en el arreglo local, sin refetch (antes disparaba
+        // refreshReadyItemsAndDelivery(), 2 GETs más, en cada evento).
         if let idx = deliveryOrders.firstIndex(where: { $0.id == orderId }) {
-            var order = deliveryOrders[idx]
-            // We can't mutate Order directly (it's a let struct), so we need to use a workaround
-            // Since Order fields are lets, we need to rebuild it. But priority/onHold are optional lets.
-            // Actually in Swift, structs with let properties can be reconstructed via a copy if we have them all.
-            // But since Order has many fields, let's just refresh delivery orders from API instead.
-            print("🔥⏸️ [Socket] Delivery order flagged, refreshing...")
-            Task { await refreshReadyItemsAndDelivery() }
+            deliveryOrders[idx] = deliveryOrders[idx].withPriorityAndHold(priority: priority, onHold: onHold)
         }
         if let idx = platformDeliveryOrders.firstIndex(where: { $0.id == orderId }) {
-            print("🔥⏸️ [Socket] Platform delivery order flagged, refreshing...")
-            Task { await refreshReadyItemsAndDelivery() }
+            platformDeliveryOrders[idx] = platformDeliveryOrders[idx].withPriorityAndHold(priority: priority, onHold: onHold)
         }
     }
     
@@ -1324,7 +1324,82 @@ class POSViewModel: ObservableObject {
             print("Error refreshing order from socket: \(error)")
         }
     }
-    
+
+    /// Aplica un payload de `order:updated` directo al estado local — evita el
+    /// refetch en bloque que antes corría en cada evento (ver setupSocketCallbacks).
+    /// Solo cae a red cuando la pieza de estado en cuestión de plano no puede
+    /// derivarse del payload (mismo criterio que el fallback de activeOrder nil).
+    @MainActor
+    private func applyOrderUpdatedPayload(_ dict: [String: Any], orderId: String) {
+        let tableId = dict["tableId"] as? String
+        let status = dict["status"] as? String
+        let paymentStatus = dict["paymentStatus"] as? String
+
+        // 1) Carrito de la mesa actualmente abierta (si es la que cambió).
+        if let selected = selectedTable, selected.id == tableId {
+            let decoded = decodeOrderPayload(dict)
+            if let decoded, decoded.items != nil,
+               (currentOrderId == nil || currentOrderId == decoded.id) {
+                applyDecodedOrderToCart(decoded)
+            } else {
+                // El payload no traía `items` (algunos endpoints solo regresan
+                // la fila cruda de `orders`) o pertenece a otra orden activa de
+                // la misma mesa (cuentas divididas) — único caso que sigue
+                // pidiendo red, y dirigido nada más a la mesa abierta.
+                Task { await refreshOrderFromSocket() }
+            }
+        }
+
+        // 2) Mesas con items listos — se deriva del status/paymentStatus de
+        // ESTA orden, igual que fetchTablesWithReadyItems() lo calcula server-side.
+        if let tableId {
+            if status == "ready" && paymentStatus == "pending" {
+                tablesWithReadyItems.insert(tableId)
+            } else {
+                tablesWithReadyItems.remove(tableId)
+            }
+        }
+
+        // 3) Delivery/pickup (sin mesa): reemplaza/inserta la orden en los
+        // arreglos locales y vuelve a agrupar en memoria — separateDeliveryOrders
+        // ya sabe agrupar por customerName, así que no hace falta refetch aquí.
+        if tableId == nil, let decoded = decodeOrderPayload(dict) {
+            let stillActive = ["preparing", "ready", "pending"].contains(decoded.status)
+                && decoded.paymentStatus == "pending"
+                && decoded.source != "employee"
+            var combined = deliveryOrders + platformDeliveryOrders
+            combined.removeAll { $0.id == decoded.id }
+            if stillActive {
+                combined.append(decoded)
+            }
+            separateDeliveryOrders(combined)
+        }
+    }
+
+    private func decodeOrderPayload(_ dict: [String: Any]) -> Order? {
+        guard let data = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try? decoder.decode(Order.self, from: data)
+    }
+
+    /// Reemplaza en `cart` solo los items de ESTA orden (por orderId), sin
+    /// tocar los de otras órdenes activas de la misma mesa.
+    @MainActor
+    private func applyDecodedOrderToCart(_ order: Order) {
+        currentOrderId = order.id
+        currentOrderNumber = order.orderNumber
+        var items: [CartItem] = []
+        for item in order.items ?? [] where !(item.voided ?? false) {
+            var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
+            cartItem.orderStatus = order.status
+            items.append(cartItem)
+        }
+        cart.removeAll { $0.orderId == order.id }
+        cart.append(contentsOf: items)
+        applyPromotions()
+    }
+
     deinit {
         tablePollingTimer?.invalidate()
         inactivityTimer?.invalidate()
@@ -1550,13 +1625,18 @@ class POSViewModel: ObservableObject {
 
     private func refreshReadyItemsAndDelivery() async {
         print("🔄 [refreshReadyItemsAndDelivery] Checking for ready items...")
-        if let readyIds = try? await APIService.shared.fetchTablesWithReadyItems() {
+        // Independientes entre sí — en paralelo en vez de uno tras otro.
+        async let readyIdsResult = try? APIService.shared.fetchTablesWithReadyItems()
+        async let ordersResult = try? APIService.shared.fetchDeliveryOrders()
+        let (readyIds, orders) = await (readyIdsResult, ordersResult)
+
+        if let readyIds {
             print("✅ [refreshReadyItemsAndDelivery] Tables with ready items: \(readyIds)")
             tablesWithReadyItems = readyIds
         } else {
             print("❌ [refreshReadyItemsAndDelivery] Failed to fetch ready items")
         }
-        if let orders = try? await APIService.shared.fetchDeliveryOrders() {
+        if let orders {
             separateDeliveryOrders(orders)
         }
     }
