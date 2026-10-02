@@ -139,7 +139,6 @@ class POSViewModel: ObservableObject {
     // MARK: - Modifier Flow
     @Published var flowGraph: FlowGraph?
     @Published var flowPath: [FlowPathVisit] = []
-    @Published var showingFlowSummary = false
     @Published var selectedProduct: Product?
     @Published var productNotes = ""
     private var flowGraphCache: [String: FlowGraph] = [:]
@@ -2393,24 +2392,9 @@ class POSViewModel: ObservableObject {
         }
     }
 
-    var flowSelectionSummaries: [FlowSelectionSummary] {
-        guard let graph = flowGraph else { return [] }
-        return flowPath.compactMap { visit in
-            guard let node = graph.nodes.first(where: { $0.id == visit.nodeId }),
-                  !node.options.isEmpty else { return nil }
-            let selectedOptions = node.options.filter { visit.selectedOptionIds.contains($0.id) }
-            guard !selectedOptions.isEmpty else { return nil }
-            let detail = selectedOptions.map { option in
-                option.emitsChildItem ? "Componente: \(option.label)" : option.label
-            }.joined(separator: ", ")
-            return FlowSelectionSummary(id: node.id, title: node.title, detail: detail)
-        }
-    }
-
     func returnToFlowVisit(_ index: Int) {
         guard flowPath.indices.contains(index) else { return }
         flowPath = Array(flowPath.prefix(index + 1))
-        showingFlowSummary = false
     }
 
     func flowLiveTotal() -> Double {
@@ -2420,11 +2404,6 @@ class POSViewModel: ObservableObject {
     }
 
     func flowSummaryItems() -> [CartItem] { buildFlowCartItems() ?? [] }
-
-    func confirmFlowSummary() {
-        showingFlowSummary = false
-        prepareFlowItemAndShowNotes()
-    }
 
     private var currentFlowContext: FlowContext? {
         guard let product = selectedProduct else { return nil }
@@ -2497,7 +2476,7 @@ class POSViewModel: ObservableObject {
             if let next = try FlowEngine.nextNode(in: graph, currentNodeId: node.id, selectedOptionIds: visit.selectedOptionIds, context: context) {
                 flowPath.append(FlowPathVisit(nodeId: next, selectedOptionIds: []))
             } else {
-                showingFlowSummary = true
+                prepareFlowItemAndShowNotes()
             }
         } catch {
             showToast("El flujo tiene una ruta inválida", isError: true)
@@ -2517,7 +2496,6 @@ class POSViewModel: ObservableObject {
     func resetFlow() {
         flowGraph = nil
         flowPath = []
-        showingFlowSummary = false
         selectedProduct = nil
         selectedFlowVariant = nil
         pendingFlowItems = []
@@ -2632,7 +2610,10 @@ class POSViewModel: ObservableObject {
     
     func updateQuantity(at index: Int, delta: Int) {
         guard index < cart.count else { return }
-        guard cart[index].parentLocalId == nil else { return }
+        guard cart[index].parentLocalId == nil else {
+            showToast("Los componentes de un paquete se eliminan junto con el platillo", isError: true)
+            return
+        }
         if cart[index].sentToKitchen {
             showToast("No se puede modificar un item ya enviado a cocina", isError: true)
             return
@@ -2661,32 +2642,31 @@ class POSViewModel: ObservableObject {
             showVoidDialog = true
             return
         }
-        let parentId = cart[index].id
-        cart.removeAll { $0.id == parentId || $0.parentLocalId == parentId }
-        applyPromotions()
-        emitCustomerDisplayState()
+        _ = removeCartGroup(at: index)
     }
-    
+
+    /// The cart has two historical quantity entry points; keep this public
+    /// spelling for existing callers, but route both through the same group-safe path.
     func updateCartQuantity(at index: Int, delta: Int) {
-        guard index < cart.count else { return }
+        updateQuantity(at: index, delta: delta)
+    }
+
+    /// Removes a package parent together with all local component rows.
+    /// Returns false for a child so every removal surface can preserve the same rule.
+    @discardableResult
+    func removeCartGroup(at index: Int) -> Bool {
+        guard index < cart.count else { return false }
         let item = cart[index]
-        guard item.parentLocalId == nil else { return }
-        
-        // Don't allow changing quantity of items already sent to kitchen
-        if item.sentToKitchen {
-            showToast("No se puede modificar cantidad de items enviados a cocina", isError: true)
-            return
+        guard item.parentLocalId == nil else {
+            showToast("Los componentes de un paquete se eliminan junto con el platillo", isError: true)
+            return false
         }
-        
-        let newQuantity = item.quantity + delta
-        if newQuantity < 1 {
-            // Remove item if quantity goes below 1
-            cart.remove(at: index)
-        } else {
-            var updated = cart[index]
-            updated.quantity = newQuantity
-            cart[index] = updated
-        }
+        removeCartGroup(parentId: item.id)
+        return true
+    }
+
+    private func removeCartGroup(parentId: UUID) {
+        cart.removeAll { $0.id == parentId || $0.parentLocalId == parentId }
         applyPromotions()
         emitCustomerDisplayState()
     }
@@ -2699,7 +2679,7 @@ class POSViewModel: ObservableObject {
             if let itemId = item.itemId, let orderId = item.orderId {
                 try? await APIService.shared.voidItem(orderId: orderId, itemId: itemId, reason: voidReason.isEmpty ? "Sin razón" : voidReason, voidedBy: employeeId)
             }
-            cart.remove(at: index)
+            removeCartGroup(parentId: item.id)
             showToast("Item eliminado: \(item.productName)")
             showVoidDialog = false
             voidItemIndex = nil
@@ -4807,12 +4787,6 @@ struct ProductSubcategoryGroup: Identifiable {
     let id: String
     let title: String?
     let products: [Product]
-}
-
-struct FlowSelectionSummary: Identifiable {
-    let id: String
-    let title: String
-    let detail: String
 }
 
 struct GuestProductItem: Identifiable {

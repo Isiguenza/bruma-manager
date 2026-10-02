@@ -229,12 +229,18 @@ private struct ComandasCartItemRow: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let packageLabel = item.packageLabel {
-                        Text(packageLabel)
+                        Label(packageLabel, systemImage: "shippingbox.fill")
                             .font(.caption2.weight(.bold))
                             .foregroundColor(.orange)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color.orange.opacity(0.16)))
+                    }
+
+                    if item.parentLocalId != nil {
+                        Label("Componente del paquete", systemImage: "arrow.turn.down.right")
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(.orange.opacity(0.85))
                     }
 
                     if showCourseBadge {
@@ -276,7 +282,21 @@ private struct ComandasCartItemRow: View {
         }
         .padding(12)
         .padding(.leading, item.parentLocalId == nil ? 0 : 20)
-        .modifier(FlatCard(cornerRadius: 10))
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(cardBorder, lineWidth: 1)
+        )
+        .overlay(alignment: .leading) {
+            if item.parentLocalId != nil {
+                Capsule()
+                    .fill(Color.orange.opacity(0.8))
+                    .frame(width: 3)
+                    .padding(.vertical, 10)
+                    .padding(.leading, 6)
+            }
+        }
         .contextMenu {
             if item.sentToKitchen {
                 Text("Item ya enviado a cocina").foregroundColor(.gray)
@@ -395,6 +415,18 @@ private struct ComandasCartItemRow: View {
 
     private var itemTotal: Double {
         item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
+    }
+
+    private var cardBackground: Color {
+        if item.parentLocalId != nil { return Color.orange.opacity(0.06) }
+        if item.packageLabel != nil { return Color.orange.opacity(0.08) }
+        return Color.white.opacity(0.05)
+    }
+
+    private var cardBorder: Color {
+        if item.parentLocalId != nil { return Color.orange.opacity(0.18) }
+        if item.packageLabel != nil { return Color.orange.opacity(0.32) }
+        return Color.white.opacity(0.1)
     }
 
     private var sentStatusRow: some View {

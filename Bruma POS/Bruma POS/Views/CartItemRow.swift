@@ -32,12 +32,18 @@ struct CartItemRow: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let packageLabel = item.packageLabel {
-                        Text(packageLabel)
+                        Label(packageLabel, systemImage: "shippingbox.fill")
                             .font(.caption2.weight(.bold))
                             .foregroundColor(.orange)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color.orange.opacity(0.16)))
+                    }
+
+                    if item.parentLocalId != nil {
+                        Label("Componente del paquete", systemImage: "arrow.turn.down.right")
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(.orange.opacity(0.85))
                     }
                     
                     // Promotion badge
@@ -218,6 +224,15 @@ struct CartItemRow: View {
         .background(backgroundColor)
         .cornerRadius(10)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(borderColor, lineWidth: 1))
+        .overlay(alignment: .leading) {
+            if item.parentLocalId != nil {
+                Capsule()
+                    .fill(Color.orange.opacity(0.8))
+                    .frame(width: 3)
+                    .padding(.vertical, 10)
+                    .padding(.leading, 6)
+            }
+        }
         .contextMenu {
             if item.sentToKitchen {
                 Text("Item ya enviado a cocina")
@@ -343,6 +358,12 @@ struct CartItemRow: View {
     }
     
     private var backgroundColor: Color {
+        if item.parentLocalId != nil {
+            return Color.orange.opacity(0.06)
+        }
+        if item.packageLabel != nil {
+            return Color.orange.opacity(0.08)
+        }
         if isInsidePromotionGroup {
             return Color.white.opacity(0.02)
         }
@@ -350,6 +371,12 @@ struct CartItemRow: View {
     }
     
     private var borderColor: Color {
+        if item.parentLocalId != nil {
+            return Color.orange.opacity(0.18)
+        }
+        if item.packageLabel != nil {
+            return Color.orange.opacity(0.32)
+        }
         if isInsidePromotionGroup {
             return Color.clear
         }

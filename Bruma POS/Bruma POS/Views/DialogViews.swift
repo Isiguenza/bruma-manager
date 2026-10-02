@@ -345,36 +345,15 @@ struct ProductAddDialog: View {
     @ViewBuilder
     private var notesSection: some View {
         VStack(spacing: 16) {
-            // Flow selection summary (when coming from a graph flow)
-            if !vm.flowSelectionSummaries.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Resumen de selección")
-                        .font(.subheadline.bold())
-                        .foregroundColor(.white)
-                    
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(vm.flowSelectionSummaries) { selection in
-                            HStack(alignment: .top, spacing: 6) {
-                                Text("•")
-                                    .foregroundColor(.blue)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(selection.title)
-                                        .font(.caption.weight(.medium))
-                                        .foregroundColor(.white)
-                                    Text(selection.detail)
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                }
-                            }
-                        }
+            let flowItems = vm.flowSummaryItems()
+            if !flowItems.isEmpty {
+                POSFlowNotesSummary(
+                    items: flowItems,
+                    formatCurrency: vm.formatCurrency,
+                    editSelection: {
+                        Haptics.tap()
+                        vm.handleCancelNotes()
                     }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(0.05))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 1))
                 )
             }
 
@@ -487,6 +466,60 @@ struct ProductAddDialog: View {
         vm.quickNotes.filter { $0.applies(toProductId: currentProductId, variantName: vm.pendingCartItem?.variantName) }
     }
     
+}
+
+/// El sheet es la única revisión final para un flujo: conserva el padre,
+/// componentes del paquete y total antes de agregarlo al carrito.
+private struct POSFlowNotesSummary: View {
+    let items: [CartItem]
+    let formatCurrency: (Double) -> String
+    let editSelection: () -> Void
+
+    private var total: Double { items.reduce(0) { $0 + $1.total } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Resumen del paquete")
+                .font(.subheadline.bold())
+                .foregroundColor(.white)
+
+            ForEach(items) { item in
+                HStack(spacing: 8) {
+                    if item.parentLocalId != nil {
+                        Image(systemName: "arrow.turn.down.right")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    Text(item.productName)
+                        .font(item.parentLocalId == nil ? .subheadline.weight(.semibold) : .caption)
+                        .foregroundColor(.white)
+                    Spacer(minLength: 12)
+                    Text(formatCurrency(item.unitPrice))
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(item.parentLocalId == nil ? .green : .gray)
+                }
+                .padding(.leading, item.parentLocalId == nil ? 0 : 14)
+            }
+
+            Divider().background(Color.white.opacity(0.12))
+            HStack {
+                Text("Total").font(.subheadline.weight(.bold)).foregroundColor(.white)
+                Spacer()
+                Text(formatCurrency(total)).font(.subheadline.weight(.bold)).foregroundColor(.green)
+            }
+
+            Button(action: editSelection) {
+                Label("Editar selección", systemImage: "chevron.left")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+            }
+            .buttonStyle(.flatCapsuleNeutral)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .modifier(FlatCard(cornerRadius: 12))
+    }
 }
 
 // MARK: - Void Dialog
@@ -1193,17 +1226,26 @@ struct AdminMenuDialog: View {
         let empId = vm.employeeId
         var anyFailed = false
 
-        let sortedIndices = deleteSelection.keys.sorted(by: >)
-        print("🗑️ [AdminDelete] Starting delete — \(sortedIndices.count) item(s), reason: \"\(reason)\"")
+        let selectedItems = deleteSelection.keys.sorted(by: >).compactMap { index -> (id: UUID, quantity: Int)? in
+            guard vm.cart.indices.contains(index) else { return nil }
+            return (vm.cart[index].id, deleteSelection[index] ?? 1)
+        }
+        print("🗑️ [AdminDelete] Starting delete — \(selectedItems.count) item(s), reason: \"\(reason)\"")
 
-        for index in sortedIndices {
-            guard index < vm.cart.count else {
-                print("⚠️ [AdminDelete] index \(index) out of bounds (cart.count=\(vm.cart.count)), skipping")
+        for selected in selectedItems {
+            guard let index = vm.cart.firstIndex(where: { $0.id == selected.id }) else {
+                print("⚠️ [AdminDelete] selected item no longer exists, skipping")
                 continue
             }
-            let qtyToRemove = deleteSelection[index] ?? 1
+            let qtyToRemove = selected.quantity
             let item = vm.cart[index]
             print("📦 [AdminDelete] index=\(index) product=\"\(item.productName)\" qty=\(item.quantity) toRemove=\(qtyToRemove) sentToKitchen=\(item.sentToKitchen) itemId=\(item.itemId ?? "nil") orderId=\(item.orderId ?? "nil")")
+
+            guard item.parentLocalId == nil else {
+                vm.showToast("Los componentes de un paquete se eliminan junto con el platillo", isError: true)
+                anyFailed = true
+                continue
+            }
 
             if item.sentToKitchen {
                 if let itemId = item.itemId, let orderId = item.orderId {
@@ -1217,7 +1259,7 @@ struct AdminMenuDialog: View {
                                 voidedBy: empId
                             )
                             print("✅ [AdminDelete] Void success, removing from local cart")
-                            if index < vm.cart.count { vm.cart.remove(at: index) }
+                            _ = vm.removeCartGroup(at: index)
                         } else {
                             let newQty = item.quantity - qtyToRemove
                             print("🟡 [AdminDelete] PARTIAL — PATCH /api/order-items/\(itemId) newQty=\(newQty) unitPrice=\(item.unitPrice)")
@@ -1236,12 +1278,12 @@ struct AdminMenuDialog: View {
                     }
                 } else {
                     print("⚠️ [AdminDelete] sentToKitchen but no itemId/orderId — removing locally only")
-                    if index < vm.cart.count { vm.cart.remove(at: index) }
+                    _ = vm.removeCartGroup(at: index)
                 }
             } else {
                 if qtyToRemove >= item.quantity {
                     print("🔵 [AdminDelete] Local-only item, removing from cart")
-                    if index < vm.cart.count { vm.cart.remove(at: index) }
+                    _ = vm.removeCartGroup(at: index)
                 } else {
                     let newQty = item.quantity - qtyToRemove
                     print("🔵 [AdminDelete] Local-only item, reducing qty \(item.quantity) → \(newQty)")

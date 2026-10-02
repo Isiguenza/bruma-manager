@@ -111,24 +111,16 @@ struct ComandasProductAddDialog: View {
     @ViewBuilder
     private var notesSection: some View {
         VStack(spacing: 16) {
-            if !vm.flowSelectionSummaries.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Resumen de selección")
-                        .font(.subheadline.bold())
-                        .foregroundColor(.white)
-                    ForEach(vm.flowSelectionSummaries) { selection in
-                        HStack(alignment: .top, spacing: 6) {
-                            Text("•").foregroundColor(.blue)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(selection.title).font(.caption.weight(.medium)).foregroundColor(.white)
-                                Text(selection.detail).font(.caption).foregroundColor(.gray)
-                            }
-                        }
+            let flowItems = vm.flowSummaryItems()
+            if !flowItems.isEmpty {
+                MobileFlowNotesSummary(
+                    items: flowItems,
+                    formatCurrency: vm.formatCurrency,
+                    editSelection: {
+                        Haptics.tap()
+                        vm.handleCancelNotes()
                     }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .modifier(FlatCard(cornerRadius: 12))
+                )
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -224,4 +216,57 @@ struct ComandasProductAddDialog: View {
         vm.quickNotes.filter { $0.applies(toProductId: currentProductId, variantName: vm.pendingCartItem?.variantName) }
     }
 
+}
+
+/// Resumen completo del paquete antes de agregarlo al carrito en iPhone.
+private struct MobileFlowNotesSummary: View {
+    let items: [CartItem]
+    let formatCurrency: (Double) -> String
+    let editSelection: () -> Void
+
+    private var total: Double { items.reduce(0) { $0 + $1.total } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Resumen del paquete")
+                .font(.subheadline.bold())
+                .foregroundColor(.white)
+
+            ForEach(items) { item in
+                HStack(spacing: 8) {
+                    if item.parentLocalId != nil {
+                        Image(systemName: "arrow.turn.down.right")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    Text(item.productName)
+                        .font(item.parentLocalId == nil ? .subheadline.weight(.semibold) : .caption)
+                        .foregroundColor(.white)
+                    Spacer(minLength: 12)
+                    Text(formatCurrency(item.unitPrice))
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(item.parentLocalId == nil ? .green : .gray)
+                }
+                .padding(.leading, item.parentLocalId == nil ? 0 : 14)
+            }
+
+            Divider().background(Color.white.opacity(0.12))
+            HStack {
+                Text("Total").font(.subheadline.weight(.bold)).foregroundColor(.white)
+                Spacer()
+                Text(formatCurrency(total)).font(.subheadline.weight(.bold)).foregroundColor(.green)
+            }
+
+            Button(action: editSelection) {
+                Label("Editar selección", systemImage: "chevron.left")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+            }
+            .buttonStyle(.flatCapsuleNeutral)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .modifier(FlatCard(cornerRadius: 12))
+    }
 }

@@ -25,20 +25,21 @@ struct ComandasOrderTakingView: View {
                 header
                 Divider().background(Color.white.opacity(0.1))
 
-                if vm.showingFlowSummary {
-                    MobileFlowSummary(items: vm.flowSummaryItems(), formatCurrency: vm.formatCurrency, confirm: vm.confirmFlowSummary)
-                } else if let node = vm.activeFlowNode {
-                    MobileFlowNode(
-                        node: node,
-                        selectedOptionIds: vm.activeFlowSelectedOptionIds,
-                        total: vm.formatCurrency(vm.flowLiveTotal()),
-                        select: { option in
-                            Haptics.tap()
-                            vm.handleStepSelection(option)
-                        },
-                        clear: { Haptics.tap(); vm.handleStepSelection(nil) },
-                        advance: { Haptics.tap(); vm.advanceToNextStep() }
-                    )
+                if let node = vm.activeFlowNode {
+                    VStack(spacing: 0) {
+                        flowBreadcrumbs
+                        MobileFlowNode(
+                            node: node,
+                            selectedOptionIds: vm.activeFlowSelectedOptionIds,
+                            total: vm.formatCurrency(vm.flowLiveTotal()),
+                            select: { option in
+                                Haptics.tap()
+                                vm.handleStepSelection(option)
+                            },
+                            clear: { Haptics.tap(); vm.handleStepSelection(nil) },
+                            advance: { Haptics.tap(); vm.advanceToNextStep() }
+                        )
+                    }
                 } else {
                     browseContent
                 }
@@ -190,6 +191,26 @@ struct ComandasOrderTakingView: View {
         if let table = vm.selectedTable { return table.displayName }
         if !vm.customerName.isEmpty { return vm.customerName }
         return "Para Llevar"
+    }
+
+    private var flowBreadcrumbs: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(vm.flowBreadcrumbs, id: \.index) { crumb in
+                    Button(crumb.title) {
+                        Haptics.tap()
+                        vm.returnToFlowVisit(crumb.index)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.blue)
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.03))
     }
 
     // MARK: - Browse
@@ -427,23 +448,6 @@ private struct MobileFlowOption: View {
             }
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct MobileFlowSummary: View {
-    let items: [CartItem]
-    let formatCurrency: (Double) -> String
-    let confirm: () -> Void
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("Resumen").font(.title3.weight(.bold)).foregroundColor(.white)
-            ForEach(items) { item in
-                HStack { Text(item.parentLocalId == nil ? item.productName : "↳ \(item.productName)").foregroundColor(.white); Spacer(); Text(formatCurrency(item.unitPrice)).foregroundColor(.gray) }
-                    .padding(12).modifier(FlatCard(cornerRadius: 10))
-            }
-            Button("Confirmar") { confirm() }.buttonStyle(.flatCapsule(.green))
-        }
-        .padding(16)
     }
 }
 

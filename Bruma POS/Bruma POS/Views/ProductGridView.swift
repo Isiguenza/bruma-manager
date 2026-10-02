@@ -5,9 +5,7 @@ struct ProductGridView: View {
 
     var body: some View {
         Group {
-            if vm.showingFlowSummary {
-                flowSummary
-            } else if let node = vm.activeFlowNode {
+            if let node = vm.activeFlowNode {
                 flowNodeScreen(node)
             } else {
                 legacyContent
@@ -45,6 +43,19 @@ struct ProductGridView: View {
                     }
                 }
                 HStack {
+                    Button {
+                        Haptics.tap()
+                        vm.handleBackInFlow()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "chevron.left")
+                            Text("Atrás")
+                        }
+                        .font(.callout.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.flatCapsuleNeutral)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(node.title).font(.title2.weight(.bold)).foregroundColor(.white)
                         if let subtitle = node.subtitle { Text(subtitle).font(.subheadline).foregroundColor(.gray) }
@@ -81,18 +92,6 @@ struct ProductGridView: View {
                 .disabled(vm.activeFlowSelectedOptionIds.count < node.minSelections || (node.maxSelections != nil && vm.activeFlowSelectedOptionIds.count > node.maxSelections!))
             }
         }
-    }
-
-    private var flowSummary: some View {
-        VStack(spacing: 12) {
-            Text("Resumen").font(.title2.weight(.bold)).foregroundColor(.white)
-            ForEach(vm.flowSummaryItems()) { item in
-                HStack { Text(item.parentLocalId == nil ? item.productName : "↳ \(item.productName)").foregroundColor(.white); Spacer(); Text(vm.formatCurrency(item.unitPrice)).foregroundColor(.gray) }
-                    .padding(12).modifier(FlatCard(cornerRadius: 10))
-            }
-            Button("Confirmar") { vm.confirmFlowSummary() }.buttonStyle(.flatCapsule(.green))
-        }
-        .padding(20)
     }
 
     // MARK: - Products List
