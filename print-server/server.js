@@ -151,6 +151,102 @@ function solidLine(heightDots = 3) {
   return GS + "v0" + String.fromCharCode(0, xL, xH, yL, yH) + bitmap;
 }
 
+/**
+ * Package children are explicitly identified by the API print path. The POS
+ * payment ticket predates that field, but package children are persisted and
+ * billed at $0, so retain that narrow fallback for its existing payload.
+ * Courtesy items opt out through `isGuest`.
+ */
+function isPackageChild(item, { allowZeroPriceFallback = false } = {}) {
+  if (item?.isPackageChild === true || item?.packageChild === true || item?.parentItemId || item?.parentName) {
+    return true;
+  }
+  return allowZeroPriceFallback && item?.isGuest !== true && Number(item?.total) === 0;
+}
+
+function receiptItemLabel(item) {
+  const child = isPackageChild(item, { allowZeroPriceFallback: true });
+  const prefix = child ? "   ↳ " : "";
+  return { child, label: `${prefix}${item.qty}x ${item.name}` };
+}
+
+/** Keeps package components under their parent even when the DB insert order
+ * placed every parent row before all of its child rows. `parentName` is sent
+ * by the API print path; unmatched legacy rows are kept rather than dropped. */
+function matchesPackageParent(printedName, parentName) {
+  const candidate = String(printedName || "").toLocaleLowerCase();
+  return String(parentName || "")
+    .toLocaleLowerCase()
+    .split(" - ")
+    .every((part) => candidate.includes(part));
+}
+
+function keepPackageItemsTogether(items) {
+  const childrenByParentName = new Map();
+  const unmatchedChildren = [];
+
+  for (const item of items) {
+    if (!isPackageChild(item)) continue;
+    if (item.parentName) {
+      const children = childrenByParentName.get(item.parentName) || [];
+      children.push(item);
+      childrenByParentName.set(item.parentName, children);
+    } else {
+      unmatchedChildren.push(item);
+    }
+  }
+
+  const ordered = [];
+  for (const item of items) {
+    if (isPackageChild(item)) continue;
+    ordered.push(item);
+    // Kitchen names may add a subcategory or reverse a variant, while
+    // parentName is the original menu name. Match every original segment.
+    for (const [parentName, children] of childrenByParentName.entries()) {
+      if (!matchesPackageParent(item.name, parentName)) continue;
+      ordered.push(...children);
+      childrenByParentName.delete(parentName);
+    }
+  }
+
+  for (const children of childrenByParentName.values()) ordered.push(...children);
+  ordered.push(...unmatchedChildren);
+  return ordered;
+}
+
+/**
+ * Older POS clients send a kitchen payload directly to this server without
+ * parent ids. Their package parent does include the selected flow steps, so
+ * use the "Hacer paquete" choice to mark its immediately following child
+ * items. New API payloads already carry explicit metadata and take priority.
+ */
+function inferLegacyPackageChildren(items) {
+  const resolved = items.map((item) => ({ ...item }));
+
+  for (let index = 0; index < resolved.length; index++) {
+    const parent = resolved[index];
+    if (isPackageChild(parent)) continue;
+    const steps = Array.isArray(parent.flowSteps) ? parent.flowSteps : [];
+    const hasPackageChoice = steps.some((step) => /hacer\s+paquete/i.test(String(step?.name || "")));
+    if (!hasPackageChoice) continue;
+
+    // The package-choice step itself is not a child. The remaining flow
+    // choices correspond to the items that follow this parent in the legacy
+    // POS payload (for example, entrada and bebida).
+    let remainingChildren = steps.filter((step) => !/hacer\s+paquete/i.test(String(step?.name || ""))).length;
+    for (let childIndex = index + 1; childIndex < resolved.length && remainingChildren > 0; childIndex++) {
+      const candidate = resolved[childIndex];
+      if (isPackageChild(candidate)) continue;
+      const candidateSteps = Array.isArray(candidate.flowSteps) ? candidate.flowSteps : [];
+      if (candidateSteps.some((step) => /hacer\s+paquete/i.test(String(step?.name || "")))) break;
+      resolved[childIndex] = { ...candidate, isPackageChild: true, parentName: parent.name };
+      remainingChildren -= 1;
+    }
+  }
+
+  return resolved;
+}
+
 // Función para enviar a la impresora con fallback USB
 function sendToPrinter(content) {
   return new Promise((resolve, reject) => {
@@ -372,7 +468,7 @@ app.post('/print', async (req, res) => {
     
     // Imprimir todos los items juntos
     for (const item of allItems) {
-      const qtyName = `${item.qty}x ${item.name}`;
+      const { child: isChild, label: qtyName } = receiptItemLabel(item);
       const price = item.isGuest ? "$0" : `$${item.total}`;
       const itemSpaces = Math.max(1, 48 - qtyName.length - price.length);
       content += qtyName + " ".repeat(itemSpaces) + price + "\n";
@@ -390,6 +486,12 @@ app.post('/print', async (req, res) => {
       // Agregar indicador de invitado si existe
       if (item.isGuest) {
         content += `  \u21b3 Invitado\n`;
+      }
+
+      // The price of a package child is intentionally $0: its value belongs
+      // to the parent line. This keeps the hierarchy clear on the bill.
+      if (isChild && item.parentName) {
+        content += `      Paquete: ${item.parentName}\n`;
       }
     }
     
@@ -802,7 +904,7 @@ app.post('/print-seat-bill', async (req, res) => {
 
     // Items
     for (const item of items) {
-      const qtyName = `${item.qty}x ${item.name}`;
+      const { child: isChild, label: qtyName } = receiptItemLabel(item);
       const price = `$${item.total}`;
       const itemSpaces = Math.max(1, 48 - qtyName.length - price.length);
       content += qtyName + " ".repeat(itemSpaces) + price + "\n";
@@ -814,6 +916,10 @@ app.post('/print-seat-bill', async (req, res) => {
           const modSpaces = Math.max(1, 48 - modLine.length - modPrice.length);
           content += modLine + " ".repeat(modSpaces) + modPrice + "\n";
         }
+      }
+
+      if (isChild && item.parentName) {
+        content += `      Paquete: ${item.parentName}\n`;
       }
     }
 
@@ -939,7 +1045,8 @@ app.post('/print-split', async (req, res) => {
 
     // Items
     for (const item of items) {
-      const itemName = item.name.length > 20 ? item.name.substring(0, 20) : item.name;
+      const { child: isChild, label } = receiptItemLabel(item);
+      const itemName = label.length > 20 ? label.substring(0, 20) : label;
       const qty = item.qty;
       const price = item.price;
       const itemTotal = item.total;
@@ -952,6 +1059,7 @@ app.post('/print-split', async (req, res) => {
           content += `   + ${mod.name} (+$${mod.price})\n`;
         }
       }
+      if (isChild && item.parentName) content += `      Paquete: ${item.parentName}\n`;
     }
 
     content += solidLine() + commands.feedLine;
@@ -1258,9 +1366,11 @@ app.post('/print-comanda', async (req, res) => {
     content += solidLine() + commands.feedLine;
     content += commands.feedLine;
 
-    // Separar bebidas y alimentos
-    const beverages = items.filter(item => item.isBeverage);
-    const food = items.filter(item => !item.isBeverage);
+    // Separate after recovering legacy package relationships so a beverage
+    // still carries its parent context when it is routed to BEBIDAS.
+    const packageAwareItems = inferLegacyPackageChildren(items);
+    const beverages = packageAwareItems.filter(item => item.isBeverage);
+    const food = packageAwareItems.filter(item => !item.isBeverage);
 
     const appendItem = (item, { packageChild = false } = {}) => {
       const childPrefix = packageChild ? "   ↳ " : "";
@@ -1320,7 +1430,7 @@ app.post('/print-comanda', async (req, res) => {
       for (const item of beverages) {
         // Beverage children stay in BEBIDAS for routing, while parentName
         // preserves their package relationship even across sections.
-        appendItem(item, { packageChild: item.isPackageChild === true });
+        appendItem(item, { packageChild: isPackageChild(item) });
       }
 
       if (food.length > 0) {
@@ -1373,7 +1483,7 @@ app.post('/print-comanda', async (req, res) => {
         
         for (let j = 0; j < courses.length; j++) {
           const course = courses[j];
-          const courseItems = byCourse[course];
+          const courseItems = keepPackageItemsTogether(byCourse[course]);
           
           // Header de tiempo (solo si hay múltiples tiempos)
           if (courses.length > 1) {
@@ -1382,23 +1492,11 @@ app.post('/print-comanda', async (req, res) => {
             content += commands.boldOff;
           }
           
-          // Parent and child rows arrive adjacent from the order writer. Keep
-          // food children physically below their parent; a stray historical
-          // child still renders safely with its parent context.
-          for (let itemIndex = 0; itemIndex < courseItems.length; itemIndex++) {
-            const item = courseItems[itemIndex];
-            if (item.isPackageChild) {
-              appendItem(item, { packageChild: true });
-              continue;
-            }
-            appendItem(item);
-            while (
-              itemIndex + 1 < courseItems.length &&
-              courseItems[itemIndex + 1].isPackageChild
-            ) {
-              itemIndex += 1;
-              appendItem(courseItems[itemIndex], { packageChild: true });
-            }
+          // Parent rows and child rows are inserted in separate DB batches,
+          // so their incoming order is not necessarily adjacent. The helper
+          // has already placed each identifiable child under its parent.
+          for (const item of courseItems) {
+            appendItem(item, { packageChild: isPackageChild(item) });
           }
         }
 
