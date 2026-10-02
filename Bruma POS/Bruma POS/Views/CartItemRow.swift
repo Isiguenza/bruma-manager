@@ -30,6 +30,15 @@ struct CartItemRow: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.white)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if let packageLabel = item.packageLabel {
+                        Text(packageLabel)
+                            .font(.caption2.weight(.bold))
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.orange.opacity(0.16)))
+                    }
                     
                     // Promotion badge
                     if let promoName = item.promotionName {
@@ -205,6 +214,7 @@ struct CartItemRow: View {
             }
         }
         .padding(12)
+        .padding(.leading, item.parentLocalId == nil ? 0 : 20)
         .background(backgroundColor)
         .cornerRadius(10)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(borderColor, lineWidth: 1))

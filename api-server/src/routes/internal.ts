@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { emitPromotionsUpdated } from "../sockets/events";
+import { emitFlowsUpdated, emitPromotionsUpdated } from "../sockets/events";
 
 const router = Router();
 
@@ -8,6 +8,11 @@ const router = Router();
 // Express process.
 router.post("/promotions/notify", (_req, res) => {
   emitPromotionsUpdated();
+  res.status(204).end();
+});
+
+router.post("/flows/notify", (_req, res) => {
+  emitFlowsUpdated();
   res.status(204).end();
 });
 

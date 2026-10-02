@@ -21,6 +21,159 @@ import { printKitchenComanda } from "../lib/kitchenPrint";
 
 const router = Router();
 
+class FlowItemPayloadError extends Error {}
+
+type PreparedOrderItemWrites = {
+  parentRows: any[];
+  childRows: any[];
+  selectionRows: any[];
+  orderSubtotal: number;
+  childBeverageByItemId: Map<string, boolean>;
+};
+
+/**
+ * Turns the client-side parent/child indexes into UUID references before any
+ * write. The parent rows must be inserted before children and selections in a
+ * single Neon db.batch because the client cannot know DB UUIDs beforehand.
+ */
+async function prepareOrderItemWrites(orderId: string, items: any[]): Promise<PreparedOrderItemWrites> {
+  const records = items.map((item, index) => ({
+    item,
+    index,
+    id: randomUUID(),
+    parentIndex: item.parentIndex === undefined || item.parentIndex === null ? null : item.parentIndex,
+  }));
+
+  for (const record of records) {
+    if (record.parentIndex === null) continue;
+    if (!Number.isInteger(record.parentIndex) || record.parentIndex < 0 || record.parentIndex >= records.length) {
+      throw new FlowItemPayloadError(`parentIndex inválido para el item ${record.index}`);
+    }
+    if (record.parentIndex === record.index || records[record.parentIndex].parentIndex !== null) {
+      throw new FlowItemPayloadError(`parentIndex debe señalar a un padre para el item ${record.index}`);
+    }
+  }
+
+  // Child beverage routing is always derived from the referenced product's
+  // category on the server; no client-provided isBeverage value is accepted.
+  const childProductIds = Array.from(
+    new Set(records.filter((record) => record.parentIndex !== null).map((record) => record.item.productId).filter(Boolean))
+  );
+  const childProducts = childProductIds.length > 0
+    ? await db.query.products.findMany({
+        where: inArray(schema.products.id, childProductIds),
+        columns: { id: true },
+        with: { category: { columns: { isBeverage: true } } },
+      })
+    : [];
+  const childBeverageByProductId = new Map(
+    childProducts.map((product: any) => [product.id, product.category?.isBeverage === true])
+  );
+  if (childProducts.length !== childProductIds.length) {
+    throw new FlowItemPayloadError("Un item hijo referencia un producto inexistente");
+  }
+
+  let orderSubtotal = 0;
+  const parentRows: any[] = [];
+  const childRows: any[] = [];
+  const childBeverageByItemId = new Map<string, boolean>();
+
+  for (const record of records) {
+    const { item, id, parentIndex } = record;
+    const isChild = parentIndex !== null;
+    const isGuestItem = item.isGuest === true;
+    const itemSubtotal = isChild
+      ? 0
+      : isGuestItem
+        ? 0
+        : (parseFloat(item.subtotal) || (item.quantity * item.unitPrice));
+    if (!isChild) orderSubtotal += itemSubtotal;
+
+    const row = {
+      id,
+      orderId,
+      parentItemId: isChild ? records[parentIndex].id : null,
+      packageLabel: isChild ? null : (item.packageLabel || null),
+      productId: item.productId,
+      productName: item.productName,
+      quantity: item.quantity,
+      unitPrice: isChild ? "0" : item.unitPrice,
+      subtotal: itemSubtotal.toString(),
+      notes: item.notes || null,
+      frostingId: item.frostingId || null,
+      frostingName: item.frostingName || null,
+      dryToppingId: item.dryToppingId || null,
+      dryToppingName: item.dryToppingName || null,
+      extraId: item.extraId || null,
+      extraName: item.extraName || null,
+      customModifiers: item.customModifiers || null,
+      seat: item.seat || "C",
+      course: item.course || 1,
+      deliveredToTable: item.deliveredToTable || false,
+      isGuest: isGuestItem,
+      promotionId: isChild ? null : (item.promotionId || null),
+      promotionName: isChild ? null : (item.promotionName || null),
+      originalPrice: isChild ? null : (item.originalPrice != null ? item.originalPrice.toString() : null),
+      promotionDiscount: isChild ? null : (item.promotionDiscount != null ? item.promotionDiscount.toString() : null),
+    };
+    if (isChild) {
+      childRows.push(row);
+      childBeverageByItemId.set(id, childBeverageByProductId.get(item.productId) === true);
+    } else {
+      parentRows.push(row);
+    }
+  }
+
+  const selectionRows: any[] = [];
+  for (const record of records) {
+    if (record.item.selections === undefined || record.item.selections === null) continue;
+    if (!Array.isArray(record.item.selections)) {
+      throw new FlowItemPayloadError(`selections debe ser un arreglo para el item ${record.index}`);
+    }
+    record.item.selections.forEach((selection: any, sortOrder: number) => {
+      const childIndex = selection.childIndex === undefined || selection.childIndex === null ? null : selection.childIndex;
+      if (childIndex !== null && (!Number.isInteger(childIndex) || childIndex < 0 || childIndex >= records.length)) {
+        throw new FlowItemPayloadError(`childIndex inválido para la selección ${sortOrder} del item ${record.index}`);
+      }
+      if (childIndex !== null && records[childIndex].parentIndex !== record.index) {
+        throw new FlowItemPayloadError(`childIndex debe señalar a un hijo del item ${record.index} para la selección ${sortOrder}`);
+      }
+      if (!selection.nodeTitle || !selection.optionLabel) {
+        throw new FlowItemPayloadError(`nodeTitle y optionLabel son requeridos para la selección ${sortOrder} del item ${record.index}`);
+      }
+      selectionRows.push({
+        id: randomUUID(),
+        orderItemId: record.id,
+        flowId: selection.flowId || null,
+        nodeId: selection.nodeId || null,
+        optionId: selection.optionId || null,
+        nodeTitle: selection.nodeTitle,
+        optionLabel: selection.optionLabel,
+        priceDelta: selection.priceDelta != null ? selection.priceDelta.toString() : "0",
+        refProductId: selection.refProductId || null,
+        refVariantName: selection.refVariantName || null,
+        refListPrice: selection.refListPrice != null ? selection.refListPrice.toString() : null,
+        childItemId: childIndex === null ? null : records[childIndex].id,
+        sortOrder,
+      });
+    });
+  }
+
+  return { parentRows, childRows, selectionRows, orderSubtotal, childBeverageByItemId };
+}
+
+function addServerChildBeverageFlags(order: any, childBeverageByItemId: Map<string, boolean>) {
+  if (!order || childBeverageByItemId.size === 0) return order;
+  return {
+    ...order,
+    items: (order.items || []).map((item: any) =>
+      childBeverageByItemId.has(item.id)
+        ? { ...item, isBeverage: childBeverageByItemId.get(item.id) }
+        : item
+    ),
+  };
+}
+
 // GET /api/orders
 router.get("/orders", async (req, res) => {
   try {
@@ -247,38 +400,10 @@ router.post("/orders", async (req, res) => {
     // Prepare order items before opening the transaction so the only database
     // work inside it is the atomic order/items/totals/table-status change.
     let orderSubtotal = 0;
-    let orderItems: any[] = [];
+    let preparedItems: PreparedOrderItemWrites | null = null;
     if (items && items.length > 0) {
-      orderItems = items.map((item: any) => {
-        const isGuestItem = item.isGuest === true;
-        const itemSubtotal = isGuestItem ? 0 : (parseFloat(item.subtotal) || (item.quantity * item.unitPrice));
-        orderSubtotal += itemSubtotal;
-        return {
-          orderId,
-          productId: item.productId,
-          productName: item.productName,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          subtotal: itemSubtotal.toString(),
-          notes: item.notes || null,
-          frostingId: item.frostingId || null,
-          frostingName: item.frostingName || null,
-          dryToppingId: item.dryToppingId || null,
-          dryToppingName: item.dryToppingName || null,
-          extraId: item.extraId || null,
-          extraName: item.extraName || null,
-          customModifiers: item.customModifiers || null,
-          seat: item.seat || "C",
-          course: item.course || 1,
-          deliveredToTable: item.deliveredToTable || false,
-          isGuest: isGuestItem,
-          promotionId: item.promotionId || null,
-          promotionName: item.promotionName || null,
-          originalPrice: item.originalPrice != null ? item.originalPrice.toString() : null,
-          promotionDiscount: item.promotionDiscount != null ? item.promotionDiscount.toString() : null,
-        };
-      });
-
+      preparedItems = await prepareOrderItemWrites(orderId, items);
+      orderSubtotal = preparedItems.orderSubtotal;
     }
 
     // Neon HTTP does not support Drizzle's callback transaction API; db.batch
@@ -300,8 +425,18 @@ router.post("/orders", async (req, res) => {
         isPractice: req.body.isPractice === true,
       }),
     ];
-    if (orderItems.length > 0) {
-      statements.push(db.insert(schema.orderItems).values(orderItems));
+    if (preparedItems) {
+      // Keep these ordered statements in one Neon transaction: parent UUIDs,
+      // then children that reference them, then selections that reference both.
+      if (preparedItems.parentRows.length > 0) {
+        statements.push(db.insert(schema.orderItems).values(preparedItems.parentRows));
+      }
+      if (preparedItems.childRows.length > 0) {
+        statements.push(db.insert(schema.orderItems).values(preparedItems.childRows));
+      }
+      if (preparedItems.selectionRows.length > 0) {
+        statements.push(db.insert(schema.orderItemSelections).values(preparedItems.selectionRows));
+      }
       statements.push(
         db
           .update(schema.orders)
@@ -353,14 +488,19 @@ router.post("/orders", async (req, res) => {
         .catch((e: unknown) => console.error("[order.sent_to_kitchen] audit log falló:", e));
     }
 
-    emitOrderNew(completeOrder);
-    res.json(completeOrder);
+    const orderWithServerBeverageFlags = addServerChildBeverageFlags(
+      completeOrder,
+      preparedItems?.childBeverageByItemId ?? new Map()
+    );
+    emitOrderNew(orderWithServerBeverageFlags);
+    res.json(orderWithServerBeverageFlags);
 
     // Imprimir la comanda DESPUÉS de responder — el pedido ya quedó guardado
     // bien independientemente de que esto tenga éxito o no (con reintentos,
     // ver lib/kitchenPrint.ts). Solo para órdenes que van directo a cocina
     // (status "preparing" con items) — drafts/split-tickets no imprimen aquí.
     if (status === "preparing" && items && items.length > 0 && completeOrder) {
+      const parentNames = new Map((completeOrder.items || []).map((item: any) => [item.id, item.productName]));
       printKitchenComanda({
         orderNumber: completeOrder.orderNumber,
         tableNumber,
@@ -368,7 +508,8 @@ router.post("/orders", async (req, res) => {
         guestCount: req.body.guestCount || null,
         isDelivery: !tableId,
         isPractice: completeOrder.isPractice,
-        items: items.map((item: any) => ({
+        items: (completeOrder.items || []).map((item: any) => ({
+          orderItemId: item.id,
           productId: item.productId,
           productName: item.productName,
           quantity: item.quantity,
@@ -379,10 +520,16 @@ router.post("/orders", async (req, res) => {
           dryToppingName: item.dryToppingName,
           extraName: item.extraName,
           customModifiers: item.customModifiers,
+          parentName: item.parentItemId ? parentNames.get(item.parentItemId) : null,
+          isPackageChild: item.parentItemId !== null,
+          packageLabel: item.packageLabel,
         })),
       }).catch((e) => console.error("[kitchenPrint] error imprimiendo orden nueva:", e));
     }
   } catch (error) {
+    if (error instanceof FlowItemPayloadError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error("🛎️ [POST /api/orders] ERROR:", error);
     console.error("🛎️ [POST /api/orders] ERROR stack:", (error as Error).stack);
     res.status(500).json({ error: "Error al crear orden" });
@@ -407,36 +554,18 @@ router.post("/orders/:id/items", async (req, res) => {
       return res.status(404).json({ error: "Orden no encontrada" });
     }
 
-    const orderItems = items.map((item: any) => {
-      const isGuestItem = item.isGuest === true;
-      const itemSubtotal = isGuestItem ? 0 : (parseFloat(item.subtotal) || (item.quantity * item.unitPrice));
-      return {
-        orderId: id,
-        productId: item.productId,
-        productName: item.productName,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        subtotal: itemSubtotal.toString(),
-        notes: item.notes || null,
-        frostingId: item.frostingId || null,
-        frostingName: item.frostingName || null,
-        dryToppingId: item.dryToppingId || null,
-        dryToppingName: item.dryToppingName || null,
-        extraId: item.extraId || null,
-        extraName: item.extraName || null,
-        customModifiers: item.customModifiers || null,
-        seat: item.seat || "C",
-        course: item.course || 1,
-        deliveredToTable: item.deliveredToTable || false,
-        isGuest: isGuestItem,
-        promotionId: item.promotionId || null,
-        promotionName: item.promotionName || null,
-        originalPrice: item.originalPrice != null ? item.originalPrice.toString() : null,
-        promotionDiscount: item.promotionDiscount != null ? item.promotionDiscount.toString() : null,
-      };
-    });
-
-    await db.insert(schema.orderItems).values(orderItems);
+    const preparedItems = await prepareOrderItemWrites(id, items);
+    const itemStatements: any[] = [];
+    if (preparedItems.parentRows.length > 0) {
+      itemStatements.push(db.insert(schema.orderItems).values(preparedItems.parentRows));
+    }
+    if (preparedItems.childRows.length > 0) {
+      itemStatements.push(db.insert(schema.orderItems).values(preparedItems.childRows));
+    }
+    if (preparedItems.selectionRows.length > 0) {
+      itemStatements.push(db.insert(schema.orderItemSelections).values(preparedItems.selectionRows));
+    }
+    await db.batch(itemStatements as any);
 
     // Recalcular el subtotal desde TODOS los items en la BD (excluye anulados e
     // invitados). Esto es seguro ante concurrencia: si dos iPads agregan a la
@@ -476,8 +605,12 @@ router.post("/orders/:id/items", async (req, res) => {
       },
     });
 
-    emitOrderUpdated(updatedOrder);
-    res.json(updatedOrder);
+    const orderWithServerBeverageFlags = addServerChildBeverageFlags(
+      updatedOrder,
+      preparedItems.childBeverageByItemId
+    );
+    emitOrderUpdated(orderWithServerBeverageFlags);
+    res.json(orderWithServerBeverageFlags);
 
     // Imprimir SOLO los items recién agregados (no toda la orden de nuevo) —
     // después de responder, con reintentos server-side (ver lib/kitchenPrint.ts).
@@ -486,6 +619,7 @@ router.post("/orders/:id/items", async (req, res) => {
       const table = await db.query.tables.findFirst({ where: eq(schema.tables.id, order.tableId) });
       tableNumber = table?.number ?? null;
     }
+    const parentNames = new Map((updatedOrder?.items || []).map((item: any) => [item.id, item.productName]));
     printKitchenComanda({
       orderNumber: order.orderNumber,
       tableNumber,
@@ -493,7 +627,8 @@ router.post("/orders/:id/items", async (req, res) => {
       guestCount: order.guestCount,
       isDelivery: !order.tableId,
       isPractice: order.isPractice,
-      items: items.map((item: any) => ({
+      items: (updatedOrder?.items || []).filter((item: any) => preparedItems.parentRows.some((row) => row.id === item.id) || preparedItems.childRows.some((row) => row.id === item.id)).map((item: any) => ({
+        orderItemId: item.id,
         productId: item.productId,
         productName: item.productName,
         quantity: item.quantity,
@@ -504,9 +639,15 @@ router.post("/orders/:id/items", async (req, res) => {
         dryToppingName: item.dryToppingName,
         extraName: item.extraName,
         customModifiers: item.customModifiers,
+        parentName: item.parentItemId ? parentNames.get(item.parentItemId) : null,
+        isPackageChild: item.parentItemId !== null,
+        packageLabel: item.packageLabel,
       })),
     }).catch((e) => console.error("[kitchenPrint] error imprimiendo items agregados:", e));
   } catch (error) {
+    if (error instanceof FlowItemPayloadError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error("Error adding items to order:", error);
     res.status(500).json({ error: "Error al agregar items" });
   }
@@ -1080,8 +1221,9 @@ router.post("/orders/:id/reprint-comanda", async (req, res) => {
     let activeItems = (order.items || []).filter((i: any) => !i.voided && !i.isGuest);
     if (Array.isArray(itemIds) && itemIds.length > 0) {
       const wanted = new Set(itemIds);
-      activeItems = activeItems.filter((i: any) => wanted.has(i.id));
+      activeItems = activeItems.filter((i: any) => wanted.has(i.id) || (i.parentItemId && wanted.has(i.parentItemId)));
     }
+    const parentNames = new Map((order.items || []).map((item: any) => [item.id, item.productName]));
     if (activeItems.length === 0) {
       return res.status(400).json({ error: "La orden no tiene items para imprimir" });
     }
@@ -1100,6 +1242,7 @@ router.post("/orders/:id/reprint-comanda", async (req, res) => {
       isDelivery: !order.tableId,
       isPractice: order.isPractice,
       items: activeItems.map((item: any) => ({
+        orderItemId: item.id,
         productId: item.productId,
         productName: item.productName,
         quantity: item.quantity,
@@ -1110,6 +1253,9 @@ router.post("/orders/:id/reprint-comanda", async (req, res) => {
         dryToppingName: item.dryToppingName,
         extraName: item.extraName,
         customModifiers: item.customModifiers,
+        parentName: item.parentItemId ? parentNames.get(item.parentItemId) : null,
+        isPackageChild: item.parentItemId !== null,
+        packageLabel: item.packageLabel,
       })),
     });
 
@@ -1872,15 +2018,27 @@ router.patch("/order-items/:id/void", async (req, res) => {
     const { voidReason, voidedBy } = req.body;
     console.log("[PATCH /order-items/:id/void] id=", id, "body=", JSON.stringify(req.body));
 
-    const [voidedItem] = await db
-      .update(schema.orderItems)
-      .set({
-        voided: true,
-        voidReason: voidReason || "Cancelado",
-        voidedBy: voidedBy || null,
-      })
-      .where(eq(schema.orderItems.id, id))
-      .returning();
+    const [voidedRows] = await db.batch([
+      db
+        .update(schema.orderItems)
+        .set({
+          voided: true,
+          voidReason: voidReason || "Cancelado",
+          voidedBy: voidedBy || null,
+        })
+        .where(eq(schema.orderItems.id, id))
+        .returning(),
+      db
+        .update(schema.orderItems)
+        .set({
+          voided: true,
+          voidReason: voidReason || "Cancelado",
+          voidedBy: voidedBy || null,
+        })
+        .where(eq(schema.orderItems.parentItemId, id))
+        .returning(),
+    ] as any);
+    const [voidedItem] = voidedRows as any[];
 
     if (!voidedItem) {
       return res.status(404).json({ error: "Item no encontrado" });
@@ -1906,15 +2064,27 @@ router.patch("/orders/:id/items/:itemId/void", async (req, res) => {
     const { voidReason, voidedBy } = req.body;
     console.log("[PATCH /orders/:id/items/:itemId/void] itemId=", itemId, "body=", JSON.stringify(req.body));
 
-    const [voidedItem] = await db
-      .update(schema.orderItems)
-      .set({
-        voided: true,
-        voidReason: voidReason || "Cancelado",
-        voidedBy: voidedBy || null,
-      })
-      .where(eq(schema.orderItems.id, itemId))
-      .returning();
+    const [voidedRows] = await db.batch([
+      db
+        .update(schema.orderItems)
+        .set({
+          voided: true,
+          voidReason: voidReason || "Cancelado",
+          voidedBy: voidedBy || null,
+        })
+        .where(eq(schema.orderItems.id, itemId))
+        .returning(),
+      db
+        .update(schema.orderItems)
+        .set({
+          voided: true,
+          voidReason: voidReason || "Cancelado",
+          voidedBy: voidedBy || null,
+        })
+        .where(eq(schema.orderItems.parentItemId, itemId))
+        .returning(),
+    ] as any);
+    const [voidedItem] = voidedRows as any[];
 
     if (!voidedItem) {
       return res.status(404).json({ error: "Item no encontrado" });
@@ -1952,6 +2122,7 @@ router.patch("/order-items/:id", async (req, res) => {
       .select({
         quantity: schema.orderItems.quantity,
         orderId: schema.orderItems.orderId,
+        parentItemId: schema.orderItems.parentItemId,
       })
       .from(schema.orderItems)
       .where(eq(schema.orderItems.id, id))
@@ -1960,6 +2131,10 @@ router.patch("/order-items/:id", async (req, res) => {
     if (!existing.length) {
       console.log("[PATCH /api/order-items/:id] 404 - item not found");
       return res.status(404).json({ error: "Item no encontrado" });
+    }
+
+    if (existing[0].parentItemId !== null) {
+      return res.status(409).json({ error: "Los items hijos de un paquete no se editan directamente" });
     }
 
     const { orderId } = existing[0];

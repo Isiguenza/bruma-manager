@@ -1,0 +1,292 @@
+[
+  {
+    "name": "exclude-gana-sobre-include",
+    "input": {
+      "product": { "id": "plato", "categoryId": "platos", "subcategoryId": "fuertes" },
+      "definitions": [
+        { "id": "category-flow", "name": "Categoría excluida", "scopeKind": "category", "priority": 0, "active": true },
+        { "id": "global-flow", "name": "Global", "scopeKind": "global", "priority": 0, "active": true }
+      ],
+      "targets": [
+        { "flowId": "category-flow", "mode": "include", "categoryId": "platos" },
+        { "flowId": "category-flow", "mode": "exclude", "productId": "plato" }
+      ],
+      "nodes": [
+        { "id": "excluded-entry", "flowId": "category-flow", "title": "No debe aparecer", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 0 },
+        { "id": "global-entry", "flowId": "global-flow", "title": "Global", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 1 }
+      ],
+      "options": [], "overrides": [], "edges": [], "products": [], "categories": []
+    },
+    "expected": {
+      "productId": "plato", "format": "graph", "source": "composed",
+      "flows": [{ "id": "global-flow", "name": "Global", "scopeKind": "global", "priority": 0 }],
+      "entryNodeId": "global-entry",
+      "nodes": [{ "id": "global-entry", "flowId": "global-flow", "title": "Global", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "options": [] }],
+      "edges": []
+    }
+  },
+  {
+    "name": "orden-por-scope",
+    "input": {
+      "product": { "id": "plato", "categoryId": "platos", "subcategoryId": "fuertes" },
+      "definitions": [
+        { "id": "global", "name": "Global", "scopeKind": "global", "priority": 0, "active": true },
+        { "id": "category", "name": "Categoría", "scopeKind": "category", "priority": 0, "active": true },
+        { "id": "subcategory", "name": "Subcategoría", "scopeKind": "subcategory", "priority": 0, "active": true },
+        { "id": "product", "name": "Producto", "scopeKind": "product", "priority": 0, "active": true }
+      ],
+      "targets": [
+        { "flowId": "category", "mode": "include", "categoryId": "platos" },
+        { "flowId": "subcategory", "mode": "include", "subcategoryId": "fuertes" },
+        { "flowId": "product", "mode": "include", "productId": "plato" }
+      ],
+      "nodes": [
+        { "id": "global-entry", "flowId": "global", "title": "Global", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 3 },
+        { "id": "category-entry", "flowId": "category", "title": "Categoría", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 2 },
+        { "id": "subcategory-entry", "flowId": "subcategory", "title": "Subcategoría", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 1 },
+        { "id": "product-entry", "flowId": "product", "title": "Producto", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 0 }
+      ],
+      "options": [], "overrides": [], "edges": [], "products": [], "categories": []
+    },
+    "expected": {
+      "productId": "plato", "format": "graph", "source": "composed",
+      "flows": [
+        { "id": "product", "name": "Producto", "scopeKind": "product", "priority": 0 },
+        { "id": "subcategory", "name": "Subcategoría", "scopeKind": "subcategory", "priority": 0 },
+        { "id": "category", "name": "Categoría", "scopeKind": "category", "priority": 0 },
+        { "id": "global", "name": "Global", "scopeKind": "global", "priority": 0 }
+      ],
+      "entryNodeId": "product-entry",
+      "nodes": [
+        { "id": "product-entry", "flowId": "product", "title": "Producto", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "options": [] },
+        { "id": "subcategory-entry", "flowId": "subcategory", "title": "Subcategoría", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "options": [] },
+        { "id": "category-entry", "flowId": "category", "title": "Categoría", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "options": [] },
+        { "id": "global-entry", "flowId": "global", "title": "Global", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "options": [] }
+      ], "edges": []
+    }
+  },
+  {
+    "name": "orden-por-priority",
+    "input": {
+      "product": { "id": "plato", "categoryId": "platos", "subcategoryId": "fuertes" },
+      "definitions": [
+        { "id": "beta", "name": "Beta", "scopeKind": "category", "priority": 5, "active": true },
+        { "id": "low", "name": "Último por prioridad", "scopeKind": "category", "priority": 1, "active": true },
+        { "id": "alpha", "name": "Alpha", "scopeKind": "category", "priority": 5, "active": true }
+      ],
+      "targets": [
+        { "flowId": "alpha", "mode": "include", "categoryId": "platos" },
+        { "flowId": "beta", "mode": "include", "categoryId": "platos" },
+        { "flowId": "low", "mode": "include", "categoryId": "platos" }
+      ],
+      "nodes": [
+        { "id": "beta-entry", "flowId": "beta", "title": "Beta", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 2 },
+        { "id": "low-entry", "flowId": "low", "title": "Prioridad", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 0 },
+        { "id": "alpha-entry", "flowId": "alpha", "title": "Alpha", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 1 }
+      ],
+      "options": [], "overrides": [], "edges": [], "products": [], "categories": []
+    },
+    "expected": {
+      "productId": "plato", "format": "graph", "source": "composed",
+      "flows": [
+        { "id": "low", "name": "Último por prioridad", "scopeKind": "category", "priority": 1 },
+        { "id": "alpha", "name": "Alpha", "scopeKind": "category", "priority": 5 },
+        { "id": "beta", "name": "Beta", "scopeKind": "category", "priority": 5 }
+      ],
+      "entryNodeId": "low-entry",
+      "nodes": [
+        { "id": "low-entry", "flowId": "low", "title": "Prioridad", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "options": [] },
+        { "id": "alpha-entry", "flowId": "alpha", "title": "Alpha", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "options": [] },
+        { "id": "beta-entry", "flowId": "beta", "title": "Beta", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "options": [] }
+      ], "edges": []
+    }
+  },
+  {
+    "name": "splice-de-dos-flujos",
+    "input": {
+      "product": { "id": "plato", "categoryId": "platos", "subcategoryId": "fuertes" },
+      "definitions": [
+        { "id": "first", "name": "Primero", "scopeKind": "product", "priority": 0, "active": true },
+        { "id": "second", "name": "Segundo", "scopeKind": "global", "priority": 0, "active": true }
+      ],
+      "targets": [{ "flowId": "first", "mode": "include", "productId": "plato" }],
+      "nodes": [
+        { "id": "first-entry", "flowId": "first", "title": "Primero", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 0 },
+        { "id": "second-entry", "flowId": "second", "title": "Segundo", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 1 }
+      ],
+      "options": [], "overrides": [],
+      "edges": [
+        { "id": "first-end", "flowId": "first", "fromNodeId": "first-entry", "fromOptionId": null, "toNodeId": null, "condition": null, "sortOrder": 0 },
+        { "id": "second-end", "flowId": "second", "fromNodeId": "second-entry", "fromOptionId": null, "toNodeId": null, "condition": null, "sortOrder": 0 }
+      ], "products": [], "categories": []
+    },
+    "expected": {
+      "productId": "plato", "format": "graph", "source": "composed",
+      "flows": [{ "id": "first", "name": "Primero", "scopeKind": "product", "priority": 0 }, { "id": "second", "name": "Segundo", "scopeKind": "global", "priority": 0 }],
+      "entryNodeId": "first-entry",
+      "nodes": [
+        { "id": "first-entry", "flowId": "first", "title": "Primero", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "options": [] },
+        { "id": "second-entry", "flowId": "second", "title": "Segundo", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "options": [] }
+      ],
+      "edges": [
+        { "id": "first-end", "fromNodeId": "first-entry", "fromOptionId": null, "toNodeId": "second-entry", "condition": null, "sortOrder": 0 },
+        { "id": "second-end", "fromNodeId": "second-entry", "fromOptionId": null, "toNodeId": null, "condition": null, "sortOrder": 0 }
+      ]
+    }
+  },
+  {
+    "name": "expansion-de-categoria",
+    "input": {
+      "product": { "id": "plato", "categoryId": "platos", "subcategoryId": "fuertes" },
+      "definitions": [{ "id": "flow", "name": "Bebidas", "scopeKind": "product", "priority": 0, "active": true }],
+      "targets": [{ "flowId": "flow", "mode": "include", "productId": "plato" }],
+      "nodes": [{ "id": "drink-node", "flowId": "flow", "title": "Bebida", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 0 }],
+      "options": [{ "id": "all-drinks", "nodeId": "drink-node", "label": "Bebida", "source": "category", "priceMode": "delta", "priceDelta": 3, "refProductId": null, "refCategoryId": "drinks", "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": true, "active": true, "sortOrder": 0 }],
+      "overrides": [], "edges": [],
+      "products": [
+        { "id": "agua", "name": "Agua", "categoryId": "drinks", "price": 15, "variants": "[]", "active": true },
+        { "id": "soda", "name": "Soda", "categoryId": "drinks", "price": 10, "variants": "[{\"name\":\"Chica\",\"price\":10},{\"name\":\"Grande\",\"price\":18}]", "active": true },
+        { "id": "inactiva", "name": "Z No disponible", "categoryId": "drinks", "price": 99, "variants": "[]", "active": false }
+      ],
+      "categories": [{ "id": "drinks", "isBeverage": true }]
+    },
+    "expected": {
+      "productId": "plato", "format": "graph", "source": "composed", "flows": [{ "id": "flow", "name": "Bebidas", "scopeKind": "product", "priority": 0 }], "entryNodeId": "drink-node",
+      "nodes": [{ "id": "drink-node", "flowId": "flow", "title": "Bebida", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true,
+        "options": [
+          { "id": "all-drinks:agua:", "label": "Bebida", "source": "category", "priceMode": "delta", "effectivePrice": 3, "refProductId": "agua", "refCategoryId": "drinks", "refVariantName": null, "refListPrice": 15, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true, "refCategoryActive": true },
+          { "id": "all-drinks:soda:Chica", "label": "Soda - Chica", "source": "category", "priceMode": "delta", "effectivePrice": 3, "refProductId": "soda", "refCategoryId": "drinks", "refVariantName": "Chica", "refListPrice": 10, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true, "refCategoryActive": true },
+          { "id": "all-drinks:soda:Grande", "label": "Soda - Grande", "source": "category", "priceMode": "delta", "effectivePrice": 3, "refProductId": "soda", "refCategoryId": "drinks", "refVariantName": "Grande", "refListPrice": 18, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true, "refCategoryActive": true }
+        ]
+      }], "edges": []
+    }
+  },
+  {
+    "name": "override-explicito-sobre-expansion",
+    "input": {
+      "product": { "id": "plato", "categoryId": "platos", "subcategoryId": "fuertes" },
+      "definitions": [{ "id": "flow", "name": "Bebidas", "scopeKind": "product", "priority": 0, "active": true }],
+      "targets": [{ "flowId": "flow", "mode": "include", "productId": "plato" }],
+      "nodes": [{ "id": "drink-node", "flowId": "flow", "title": "Bebida", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 0 }],
+      "options": [
+        { "id": "all-drinks", "nodeId": "drink-node", "label": "Incluida", "source": "category", "priceMode": "free", "priceDelta": 0, "refProductId": null, "refCategoryId": "drinks", "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": true, "active": true, "sortOrder": 0 },
+        { "id": "agua-plus", "nodeId": "drink-node", "label": "Agua especial", "source": "product", "priceMode": "delta", "priceDelta": 10, "refProductId": "agua", "refCategoryId": null, "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": true, "active": true, "sortOrder": 1 }
+      ],
+      "overrides": [], "edges": [],
+      "products": [
+        { "id": "agua", "name": "Agua", "categoryId": "drinks", "price": 15, "variants": "[]", "active": true },
+        { "id": "soda", "name": "Soda", "categoryId": "drinks", "price": 20, "variants": "[]", "active": true }
+      ], "categories": [{ "id": "drinks", "isBeverage": true }]
+    },
+    "expected": {
+      "productId": "plato", "format": "graph", "source": "composed", "flows": [{ "id": "flow", "name": "Bebidas", "scopeKind": "product", "priority": 0 }], "entryNodeId": "drink-node",
+      "nodes": [{ "id": "drink-node", "flowId": "flow", "title": "Bebida", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true,
+        "options": [
+          { "id": "all-drinks:soda:", "label": "Incluida", "source": "category", "priceMode": "free", "effectivePrice": 0, "refProductId": "soda", "refCategoryId": "drinks", "refVariantName": null, "refListPrice": 20, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true, "refCategoryActive": true },
+          { "id": "agua-plus", "label": "Agua especial", "source": "product", "priceMode": "delta", "effectivePrice": 10, "refProductId": "agua", "refCategoryId": null, "refVariantName": null, "refListPrice": 15, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true }
+        ]
+      }], "edges": []
+    }
+  },
+  {
+    "name": "precedencia-de-price-overrides",
+    "input": {
+      "product": { "id": "plato", "categoryId": "platos", "subcategoryId": "fuertes" },
+      "definitions": [{ "id": "flow", "name": "Precios", "scopeKind": "product", "priority": 0, "active": true }],
+      "targets": [{ "flowId": "flow", "mode": "include", "productId": "plato" }],
+      "nodes": [{ "id": "price-node", "flowId": "flow", "title": "Precios", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 0 }],
+      "options": [
+        { "id": "product-price", "nodeId": "price-node", "label": "Producto", "source": "product", "priceMode": "delta", "priceDelta": 4, "refProductId": "extra-1", "refCategoryId": null, "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": false, "active": true, "sortOrder": 0 },
+        { "id": "subcategory-price", "nodeId": "price-node", "label": "Subcategoría", "source": "product", "priceMode": "delta", "priceDelta": 4, "refProductId": "extra-2", "refCategoryId": null, "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": false, "active": true, "sortOrder": 1 },
+        { "id": "category-price", "nodeId": "price-node", "label": "Categoría", "source": "product", "priceMode": "delta", "priceDelta": 4, "refProductId": "extra-3", "refCategoryId": null, "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": false, "active": true, "sortOrder": 2 },
+        { "id": "base-price", "nodeId": "price-node", "label": "Base", "source": "product", "priceMode": "delta", "priceDelta": 44, "refProductId": "extra-4", "refCategoryId": null, "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": false, "active": true, "sortOrder": 3 }
+      ],
+      "overrides": [
+        { "optionId": "product-price", "productId": "plato", "subcategoryId": "fuertes", "categoryId": "platos", "priceDelta": 11 },
+        { "optionId": "subcategory-price", "subcategoryId": "fuertes", "categoryId": "platos", "priceDelta": 22 },
+        { "optionId": "category-price", "categoryId": "platos", "priceDelta": 33 }
+      ], "edges": [],
+      "products": [
+        { "id": "extra-1", "name": "Uno", "categoryId": "extras", "price": 1, "variants": "[]", "active": true },
+        { "id": "extra-2", "name": "Dos", "categoryId": "extras", "price": 2, "variants": "[]", "active": true },
+        { "id": "extra-3", "name": "Tres", "categoryId": "extras", "price": 3, "variants": "[]", "active": true },
+        { "id": "extra-4", "name": "Cuatro", "categoryId": "extras", "price": 4, "variants": "[]", "active": true }
+      ], "categories": [{ "id": "extras", "isBeverage": false }]
+    },
+    "expected": {
+      "productId": "plato", "format": "graph", "source": "composed", "flows": [{ "id": "flow", "name": "Precios", "scopeKind": "product", "priority": 0 }], "entryNodeId": "price-node",
+      "nodes": [{ "id": "price-node", "flowId": "flow", "title": "Precios", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true,
+        "options": [
+          { "id": "product-price", "label": "Producto", "source": "product", "priceMode": "delta", "effectivePrice": 11, "refProductId": "extra-1", "refCategoryId": null, "refVariantName": null, "refListPrice": 1, "variantChoices": null, "emitsChildItem": false, "isBeverage": false, "refProductActive": true },
+          { "id": "subcategory-price", "label": "Subcategoría", "source": "product", "priceMode": "delta", "effectivePrice": 22, "refProductId": "extra-2", "refCategoryId": null, "refVariantName": null, "refListPrice": 2, "variantChoices": null, "emitsChildItem": false, "isBeverage": false, "refProductActive": true },
+          { "id": "category-price", "label": "Categoría", "source": "product", "priceMode": "delta", "effectivePrice": 33, "refProductId": "extra-3", "refCategoryId": null, "refVariantName": null, "refListPrice": 3, "variantChoices": null, "emitsChildItem": false, "isBeverage": false, "refProductActive": true },
+          { "id": "base-price", "label": "Base", "source": "product", "priceMode": "delta", "effectivePrice": 44, "refProductId": "extra-4", "refCategoryId": null, "refVariantName": null, "refListPrice": 4, "variantChoices": null, "emitsChildItem": false, "isBeverage": false, "refProductActive": true }
+        ]
+      }], "edges": []
+    }
+  },
+  {
+    "name": "target-de-producto-no-matchea-producto-ajeno-sin-subcategoria",
+    "input": {
+      "product": { "id": "producto-b", "categoryId": "categoria-b", "subcategoryId": null },
+      "definitions": [{ "id": "flow", "name": "Producto A", "scopeKind": "product", "priority": 0, "active": true }],
+      "targets": [{ "flowId": "flow", "mode": "include", "productId": "producto-a", "subcategoryId": null, "categoryId": null }],
+      "nodes": [], "options": [], "overrides": [], "edges": [], "products": [], "categories": []
+    },
+    "expected": null
+  },
+  {
+    "name": "target-de-subcategoria-no-matchea-producto-sin-subcategoria",
+    "input": {
+      "product": { "id": "producto", "categoryId": "categoria", "subcategoryId": null },
+      "definitions": [{ "id": "flow", "name": "Subcategoría", "scopeKind": "subcategory", "priority": 0, "active": true }],
+      "targets": [{ "flowId": "flow", "mode": "include", "productId": null, "subcategoryId": "subcategoria", "categoryId": null }],
+      "nodes": [], "options": [], "overrides": [], "edges": [], "products": [], "categories": []
+    },
+    "expected": null
+  },
+  {
+    "name": "target-de-categoria-no-matchea-producto-sin-categoria",
+    "input": {
+      "product": { "id": "producto", "categoryId": null, "subcategoryId": "subcategoria" },
+      "definitions": [{ "id": "flow", "name": "Categoría", "scopeKind": "category", "priority": 0, "active": true }],
+      "targets": [{ "flowId": "flow", "mode": "include", "productId": null, "subcategoryId": null, "categoryId": "categoria" }],
+      "nodes": [], "options": [], "overrides": [], "edges": [], "products": [], "categories": []
+    },
+    "expected": null
+  },
+  {
+    "name": "global-con-includes-no-matchea-fuera-de-ellos",
+    "input": {
+      "product": { "id": "capuccino", "categoryId": "cafe", "subcategoryId": null },
+      "definitions": [{ "id": "paquete", "name": "Paquete", "scopeKind": "global", "priority": 0, "active": true }],
+      "targets": [{ "flowId": "paquete", "mode": "include", "productId": null, "subcategoryId": null, "categoryId": "ceviches" }],
+      "nodes": [], "options": [], "overrides": [], "edges": [], "products": [], "categories": []
+    },
+    "expected": null
+  },
+  {
+    "name": "etiquetas-de-variantes-en-expansion-de-categoria",
+    "input": {
+      "product": { "id": "plato", "categoryId": "platos", "subcategoryId": null },
+      "definitions": [{ "id": "flow", "name": "Paquete", "scopeKind": "product", "priority": 0, "active": true }],
+      "targets": [{ "flowId": "flow", "mode": "include", "productId": "plato", "subcategoryId": null, "categoryId": null }],
+      "nodes": [{ "id": "bebida", "flowId": "flow", "title": "Bebida", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 0 }],
+      "options": [{ "id": "all-drinks", "nodeId": "bebida", "label": "Bebida", "source": "category", "priceMode": "free", "priceDelta": 0, "refProductId": null, "refCategoryId": "drinks", "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": true, "active": true, "sortOrder": 0 }],
+      "overrides": [], "edges": [],
+      "products": [{ "id": "boing", "name": "Boing Sabores", "categoryId": "drinks", "price": 20, "variants": "[{\"name\":\"Mango\",\"price\":20},{\"name\":\"Guayaba\",\"price\":20}]", "active": true }, { "id": "pepsi", "name": "Pepsi", "categoryId": "drinks", "price": 25, "variants": "[{\"name\":\"Normal\",\"price\":25},{\"name\":\"Black\",\"price\":25}]", "active": true }],
+      "categories": [{ "id": "drinks", "isBeverage": true }]
+    },
+    "expected": {
+      "productId": "plato", "format": "graph", "source": "composed", "flows": [{ "id": "flow", "name": "Paquete", "scopeKind": "product", "priority": 0 }], "entryNodeId": "bebida",
+      "nodes": [{ "id": "bebida", "flowId": "flow", "title": "Bebida", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true,
+        "options": [
+          { "id": "all-drinks:boing:Mango", "label": "Boing Sabores - Mango", "source": "category", "priceMode": "free", "effectivePrice": 0, "refProductId": "boing", "refCategoryId": "drinks", "refVariantName": "Mango", "refListPrice": 20, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true, "refCategoryActive": true },
+          { "id": "all-drinks:boing:Guayaba", "label": "Boing Sabores - Guayaba", "source": "category", "priceMode": "free", "effectivePrice": 0, "refProductId": "boing", "refCategoryId": "drinks", "refVariantName": "Guayaba", "refListPrice": 20, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true, "refCategoryActive": true },
+          { "id": "all-drinks:pepsi:Normal", "label": "Pepsi - Normal", "source": "category", "priceMode": "free", "effectivePrice": 0, "refProductId": "pepsi", "refCategoryId": "drinks", "refVariantName": "Normal", "refListPrice": 25, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true, "refCategoryActive": true },
+          { "id": "all-drinks:pepsi:Black", "label": "Pepsi - Black", "source": "category", "priceMode": "free", "effectivePrice": 0, "refProductId": "pepsi", "refCategoryId": "drinks", "refVariantName": "Black", "refListPrice": 25, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true, "refCategoryActive": true }
+        ]
+      }], "edges": []
+    }
+  }
+]

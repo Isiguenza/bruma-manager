@@ -8,9 +8,11 @@ import {
   boolean,
   timestamp,
   pgEnum,
+  jsonb,
   date,
   time,
 } from "drizzle-orm/pg-core";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 
 // Enums
@@ -108,6 +110,11 @@ export const discountTypeEnum = pgEnum("discount_type", [
   "fixed_amount",
   "flexible",
 ]);
+export const flowScopeKindEnum = pgEnum("flow_scope_kind", ["global", "category", "subcategory", "product"]);
+export const flowTargetModeEnum = pgEnum("flow_target_mode", ["include", "exclude"]);
+export const flowSelectModeEnum = pgEnum("flow_select_mode", ["single", "multi"]);
+export const flowOptionSourceEnum = pgEnum("flow_option_source", ["manual", "product", "category"]);
+export const flowPriceModeEnum = pgEnum("flow_price_mode", ["free", "product_price", "delta"]);
 
 // User profiles (extends Neon Auth users)
 export const userProfiles = pgTable("user_profiles", {
@@ -171,6 +178,7 @@ export const products = pgTable("products", {
   imageUrl: text("image_url"),
   hasVariants: boolean("has_variants").notNull().default(false),
   variants: text("variants"), // JSON: [{ name: "Pieza", price: "50.00" }, { name: "Orden", price: "150.00" }]
+  flowTags: jsonb("flow_tags").notNull().default(sql`'[]'::jsonb`),
   active: boolean("active").notNull().default(true),
   menuImages: text("menu_images"), // JSON: ["url1", "url2", ...] — up to 4 images for web menu
   menuVideo: text("menu_video"),   // Single video URL for web menu
@@ -281,6 +289,82 @@ export const modifierOptions = pgTable("modifier_options", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Flujos v2 — grafo unificado de modificadores y paquetes.
+export const flowDefinitions = pgTable("flow_definitions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  scopeKind: flowScopeKindEnum("scope_kind").notNull(),
+  priority: integer("priority").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const flowTargets = pgTable("flow_targets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  flowId: uuid("flow_id").notNull().references(() => flowDefinitions.id, { onDelete: "cascade" }),
+  mode: flowTargetModeEnum("mode").notNull(),
+  categoryId: uuid("category_id").references(() => categories.id, { onDelete: "cascade" }),
+  subcategoryId: uuid("subcategory_id").references(() => subcategories.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }),
+});
+
+export const flowNodes = pgTable("flow_nodes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  flowId: uuid("flow_id").notNull().references(() => flowDefinitions.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  subtitle: text("subtitle"),
+  selectMode: flowSelectModeEnum("select_mode").notNull().default("single"),
+  minSelections: integer("min_selections").notNull().default(0),
+  maxSelections: integer("max_selections"),
+  includeNoneOption: boolean("include_none_option").notNull().default(true),
+  noneLabel: varchar("none_label", { length: 255 }),
+  isEntry: boolean("is_entry").notNull().default(false),
+  posX: integer("pos_x").notNull().default(0),
+  posY: integer("pos_y").notNull().default(0),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const flowNodeOptions = pgTable("flow_node_options", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  nodeId: uuid("node_id").notNull().references(() => flowNodes.id, { onDelete: "cascade" }),
+  source: flowOptionSourceEnum("source").notNull(),
+  label: varchar("label", { length: 255 }),
+  refProductId: uuid("ref_product_id").references(() => products.id, { onDelete: "set null" }),
+  refCategoryId: uuid("ref_category_id").references(() => categories.id, { onDelete: "set null" }),
+  refVariantName: varchar("ref_variant_name", { length: 255 }),
+  allowVariantChoice: boolean("allow_variant_choice").notNull().default(false),
+  priceMode: flowPriceModeEnum("price_mode").notNull().default("delta"),
+  priceDelta: decimal("price_delta", { precision: 10, scale: 2 }).notNull().default("0"),
+  emitsChildItem: boolean("emits_child_item").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const flowOptionPriceOverrides = pgTable("flow_option_price_overrides", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  optionId: uuid("option_id").notNull().references(() => flowNodeOptions.id, { onDelete: "cascade" }),
+  categoryId: uuid("category_id").references(() => categories.id, { onDelete: "cascade" }),
+  subcategoryId: uuid("subcategory_id").references(() => subcategories.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }),
+  priceDelta: decimal("price_delta", { precision: 10, scale: 2 }).notNull(),
+});
+
+export const flowEdges = pgTable("flow_edges", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  flowId: uuid("flow_id").notNull().references(() => flowDefinitions.id, { onDelete: "cascade" }),
+  fromNodeId: uuid("from_node_id").notNull().references(() => flowNodes.id, { onDelete: "cascade" }),
+  fromOptionId: uuid("from_option_id").references(() => flowNodeOptions.id, { onDelete: "cascade" }),
+  toNodeId: uuid("to_node_id").references(() => flowNodes.id, { onDelete: "cascade" }),
+  condition: jsonb("condition"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Predefined quick notes ("abbreviations") selectable when adding a comment to a cart item.
 // Global by default; productIds scopes it to specific products when set.
 export const quickNotes = pgTable("quick_notes", {
@@ -356,6 +440,8 @@ export const orderItems = pgTable("order_items", {
   orderId: uuid("order_id")
     .notNull()
     .references(() => orders.id, { onDelete: "cascade" }),
+  parentItemId: uuid("parent_item_id").references((): AnyPgColumn => orderItems.id, { onDelete: "cascade" }),
+  packageLabel: varchar("package_label", { length: 255 }),
   productId: uuid("product_id")
     .notNull()
     .references(() => products.id),
@@ -384,6 +470,23 @@ export const orderItems = pgTable("order_items", {
   promotionDiscount: decimal("promotion_discount", { precision: 10, scale: 2 }),
   // Guest/invited item
   isGuest: boolean("is_guest").notNull().default(false), // Item invitado (no se cobra)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const orderItemSelections = pgTable("order_item_selections", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderItemId: uuid("order_item_id").notNull().references(() => orderItems.id, { onDelete: "cascade" }),
+  flowId: uuid("flow_id").references(() => flowDefinitions.id, { onDelete: "set null" }),
+  nodeId: uuid("node_id").references(() => flowNodes.id, { onDelete: "set null" }),
+  optionId: uuid("option_id").references(() => flowNodeOptions.id, { onDelete: "set null" }),
+  nodeTitle: varchar("node_title", { length: 255 }).notNull(),
+  optionLabel: varchar("option_label", { length: 255 }).notNull(),
+  priceDelta: decimal("price_delta", { precision: 10, scale: 2 }).notNull().default("0"),
+  refProductId: uuid("ref_product_id").references(() => products.id, { onDelete: "set null" }),
+  refVariantName: varchar("ref_variant_name", { length: 255 }),
+  refListPrice: decimal("ref_list_price", { precision: 10, scale: 2 }),
+  childItemId: uuid("child_item_id").references(() => orderItems.id, { onDelete: "set null" }),
+  sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -596,6 +699,90 @@ export const modifierOptionsRelations = relations(modifierOptions, ({ one }) => 
   }),
 }));
 
+export const flowDefinitionsRelations = relations(flowDefinitions, ({ many }) => ({
+  nodes: many(flowNodes),
+  targets: many(flowTargets),
+  edges: many(flowEdges),
+}));
+
+export const flowTargetsRelations = relations(flowTargets, ({ one }) => ({
+  flow: one(flowDefinitions, {
+    fields: [flowTargets.flowId],
+    references: [flowDefinitions.id],
+  }),
+  category: one(categories, {
+    fields: [flowTargets.categoryId],
+    references: [categories.id],
+  }),
+  subcategory: one(subcategories, {
+    fields: [flowTargets.subcategoryId],
+    references: [subcategories.id],
+  }),
+  product: one(products, {
+    fields: [flowTargets.productId],
+    references: [products.id],
+  }),
+}));
+
+export const flowNodesRelations = relations(flowNodes, ({ one, many }) => ({
+  flow: one(flowDefinitions, {
+    fields: [flowNodes.flowId],
+    references: [flowDefinitions.id],
+  }),
+  options: many(flowNodeOptions),
+  edges: many(flowEdges, { relationName: "flowEdgesFromNode" }),
+  incomingEdges: many(flowEdges, { relationName: "flowEdgesToNode" }),
+}));
+
+export const flowNodeOptionsRelations = relations(flowNodeOptions, ({ one, many }) => ({
+  node: one(flowNodes, {
+    fields: [flowNodeOptions.nodeId],
+    references: [flowNodes.id],
+  }),
+  priceOverrides: many(flowOptionPriceOverrides),
+  edges: many(flowEdges),
+}));
+
+export const flowOptionPriceOverridesRelations = relations(flowOptionPriceOverrides, ({ one }) => ({
+  option: one(flowNodeOptions, {
+    fields: [flowOptionPriceOverrides.optionId],
+    references: [flowNodeOptions.id],
+  }),
+  category: one(categories, {
+    fields: [flowOptionPriceOverrides.categoryId],
+    references: [categories.id],
+  }),
+  subcategory: one(subcategories, {
+    fields: [flowOptionPriceOverrides.subcategoryId],
+    references: [subcategories.id],
+  }),
+  product: one(products, {
+    fields: [flowOptionPriceOverrides.productId],
+    references: [products.id],
+  }),
+}));
+
+export const flowEdgesRelations = relations(flowEdges, ({ one }) => ({
+  flow: one(flowDefinitions, {
+    fields: [flowEdges.flowId],
+    references: [flowDefinitions.id],
+  }),
+  fromNode: one(flowNodes, {
+    relationName: "flowEdgesFromNode",
+    fields: [flowEdges.fromNodeId],
+    references: [flowNodes.id],
+  }),
+  fromOption: one(flowNodeOptions, {
+    fields: [flowEdges.fromOptionId],
+    references: [flowNodeOptions.id],
+  }),
+  toNode: one(flowNodes, {
+    relationName: "flowEdgesToNode",
+    fields: [flowEdges.toNodeId],
+    references: [flowNodes.id],
+  }),
+}));
+
 export const productsRelations = relations(products, ({ one, many }) => ({
   category: one(categories, {
     fields: [products.categoryId],
@@ -649,7 +836,7 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   }),
 }));
 
-export const orderItemsRelations = relations(orderItems, ({ one }) => ({
+export const orderItemsRelations = relations(orderItems, ({ one, many }) => ({
   order: one(orders, {
     fields: [orderItems.orderId],
     references: [orders.id],
@@ -661,6 +848,43 @@ export const orderItemsRelations = relations(orderItems, ({ one }) => ({
   frosting: one(frostings, {
     fields: [orderItems.frostingId],
     references: [frostings.id],
+  }),
+  parentItem: one(orderItems, {
+    relationName: "orderItemChildren",
+    fields: [orderItems.parentItemId],
+    references: [orderItems.id],
+  }),
+  childItems: many(orderItems, { relationName: "orderItemChildren" }),
+  selections: many(orderItemSelections, { relationName: "orderItemSelections" }),
+  childSelections: many(orderItemSelections, { relationName: "orderItemChildSelections" }),
+}));
+
+export const orderItemSelectionsRelations = relations(orderItemSelections, ({ one }) => ({
+  orderItem: one(orderItems, {
+    relationName: "orderItemSelections",
+    fields: [orderItemSelections.orderItemId],
+    references: [orderItems.id],
+  }),
+  flow: one(flowDefinitions, {
+    fields: [orderItemSelections.flowId],
+    references: [flowDefinitions.id],
+  }),
+  node: one(flowNodes, {
+    fields: [orderItemSelections.nodeId],
+    references: [flowNodes.id],
+  }),
+  option: one(flowNodeOptions, {
+    fields: [orderItemSelections.optionId],
+    references: [flowNodeOptions.id],
+  }),
+  refProduct: one(products, {
+    fields: [orderItemSelections.refProductId],
+    references: [products.id],
+  }),
+  childItem: one(orderItems, {
+    relationName: "orderItemChildSelections",
+    fields: [orderItemSelections.childItemId],
+    references: [orderItems.id],
   }),
 }));
 

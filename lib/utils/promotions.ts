@@ -14,12 +14,15 @@ export function applyPromotions(
   console.log('🎯 Aplicando promociones:', promotions.length, 'promociones activas');
   console.log('🛒 Items en carrito:', cartItems.length);
 
+  // Children are $0 components of their parent package. Promotions mutate
+  // unitPrice, so letting one through can create a phantom/double discount.
   // Group items by product, price, AND displayed product name. Variants can
   // intentionally share a price, but a promotion may target only one of them.
   // CartItem names include the variant ("Producto - Variante"), so this keeps
   // eligibility and buy-X quantities isolated per actual variant.
   const itemsByProduct = new Map<string, CartItem[]>();
   cartItems.forEach((item, index) => {
+    if ((item as any).parentItemId != null) return;
     const key = `${item.productId}_${item.unitPrice}_${item.productName}`;
     if (!itemsByProduct.has(key)) {
       itemsByProduct.set(key, []);

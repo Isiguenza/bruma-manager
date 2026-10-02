@@ -24,7 +24,12 @@ router.get("/products", async (req, res) => {
       orderBy: desc(schema.products.createdAt),
     });
 
-    res.json(products);
+    res.json(
+      products.map((product) => ({
+        ...product,
+        flowTags: Array.isArray(product.flowTags) ? product.flowTags : [],
+      }))
+    );
   } catch (error) {
     console.error("Error fetching products:", error);
     res.status(500).json({ error: "Error al obtener productos" });
@@ -44,7 +49,10 @@ router.get("/products/:id", async (req, res) => {
       return res.status(404).json({ error: "Producto no encontrado" });
     }
 
-    res.json(product);
+    res.json({
+      ...product,
+      flowTags: Array.isArray(product.flowTags) ? product.flowTags : [],
+    });
   } catch (error) {
     console.error("Error fetching product:", error);
     res.status(500).json({ error: "Error al obtener producto" });

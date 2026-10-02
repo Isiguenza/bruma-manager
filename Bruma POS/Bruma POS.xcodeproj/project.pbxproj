@@ -37,9 +37,9 @@
 			membershipExceptions = (
 				Config/Environment.swift,
 				Models/CashRegister.swift,
-				Models/CategoryFlow.swift,
 				Models/CorteData.swift,
 				Models/Employee.swift,
+				Models/FlowGraph.swift,
 				Models/MapFixture.swift,
 				Models/Order.swift,
 				Models/PendingCashPayment.swift,
@@ -50,6 +50,7 @@
 				Models/RegisterReports.swift,
 				Models/Table.swift,
 				Services/APIService.swift,
+				Services/FlowEngine.swift,
 				Services/IdleDimmer.swift,
 				Services/LocalNotifications.swift,
 				Services/OfflineDataStore.swift,

@@ -293,9 +293,9 @@ router.get("/cash-register/:id/report", async (req, res) => {
       byEmployeeMap[empKey].orders++;
       byEmployeeMap[empKey].total += orderTotal;
 
-      // Por producto (excluye anulados)
+      // Por producto: children are $0 package components, not another sold dish.
       for (const it of ((o as any).items || [])) {
-        if (it.voided) continue;
+        if (it.voided || it.parentItemId !== null) continue;
         const name = it.productName as string;
         if (!byProductMap[name]) byProductMap[name] = { productName: name, qty: 0, total: 0 };
         byProductMap[name].qty += it.quantity;

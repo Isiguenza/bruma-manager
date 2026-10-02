@@ -1,311 +1,63 @@
-// @ts-nocheck - Type compatibility issues with React Flow generics
-"use client";
+"use client"
 
-import { useCallback, useState, useEffect, useRef } from "react";
-import { useTheme } from "next-themes";
-import {
-  ReactFlow,
-  MiniMap,
-  Controls,
-  Background,
-  useNodesState,
-  useEdgesState,
-  addEdge,
-  Connection,
-  Edge,
-  Node,
-  BackgroundVariant,
-  Panel,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Plus, FloppyDisk, ArrowLeft } from "@phosphor-icons/react";
-import { StepNode } from "./StepNode";
-import { AddStepPanel } from "./AddStepPanel";
-import { StepEditPanel } from "./StepEditPanel";
-import type { ModifierStep } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react"
+import { Background, BackgroundVariant, Controls, MiniMap, ReactFlow, type Connection, type Edge, type Node, type NodeTypes } from "@xyflow/react"
+import "@xyflow/react/dist/style.css"
+import { toast } from "sonner"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { PromotionProductPicker, type PromotionProductSelection } from "@/components/promotion-product-picker"
+import type { Category, Product } from "@/lib/types"
+import { validateGraph } from "@/lib/flows/validate"
+import { AddStepPanel } from "./AddStepPanel"
+import { FlowSimulator } from "./FlowSimulator"
+import { StepEditPanel } from "./StepEditPanel"
+import { StepNode } from "./StepNode"
+import { problemIds, temporaryId, toValidationGraph, type EditorEdge, type EditorNode, type FlowDocument, type FlowTarget } from "./types"
 
-const nodeTypes = {
-  step: StepNode,
-};
+const nodeTypes = { step: StepNode } as unknown as NodeTypes
+const emptyDocument = (id: string): FlowDocument => ({ definition: { id, name: "Nuevo flujo", description: null, scopeKind: "global", priority: 0, active: true }, targets: [], nodes: [], edges: [] })
+const conditionText = (edge: EditorEdge) => { const condition = edge.condition; if (!condition) return "sin condición"; return [condition.variantNameIn?.join("|"), condition.productHasTag && `tag:${condition.productHasTag}`, condition.productIdIn?.length && "producto", condition.categoryIdIn?.length && "categoría", condition.optionSelected && "opción previa"].filter(Boolean).join(" · ") }
+const list = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean)
 
-interface FlowEditorProps {
-  productId?: string;
-  categoryId?: string;
-  subcategoryId?: string;
-  titleOverride?: string;
-  initialSteps?: ModifierStep[];
-  initialNodes?: any;
-  onSave?: (steps: ModifierStep[], nodes: any) => void;
-  onBack?: () => void;
-  isBeverage?: boolean;
-  onBeverageChange?: (value: boolean) => void;
-  allowedStepTypes?: string[];
+export function FlowEditor({ flowId, onBack }: { flowId: string; onBack?: () => void }) {
+  const [document, setDocument] = useState<FlowDocument>(() => emptyDocument(flowId))
+  const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const [targetSelection, setTargetSelection] = useState<PromotionProductSelection>({ applyTo: "specific_products", categoryId: "", productIds: [] })
+  const [targetMode, setTargetMode] = useState<"include" | "exclude">("include")
+
+  useEffect(() => { void Promise.all([fetch(`/api/flows/${flowId}`), fetch("/api/products"), fetch("/api/categories")]).then(async ([flow, productRows, categoryRows]) => { if (!flow.ok) throw new Error("No se pudo cargar el flujo"); setDocument(await flow.json()); if (productRows.ok) setProducts(await productRows.json()); if (categoryRows.ok) setCategories(await categoryRows.json()) }).catch((error) => toast.error(error.message)).finally(() => setLoading(false)) }, [flowId])
+
+  const evidence = useMemo(() => ({ products: new Map(products.map((product) => [product.id, product.active])), categories: new Map(categories.map((category) => [category.id, category.active])) }), [products, categories])
+  const problems = useMemo(() => validateGraph(toValidationGraph(document, evidence)), [document, evidence])
+  const errors = problems.filter((problem) => problem.severity === "error")
+  const invalid = useMemo(() => problemIds(problems), [problems])
+  const selectedNode = document.nodes.find((node) => node.id === selectedNodeId) ?? null
+  const selectedEdge = document.edges.find((edge) => edge.id === selectedEdgeId) ?? null
+  const flowNodes: Node[] = document.nodes.map((node) => ({ id: node.id, type: "step", position: { x: node.posX, y: node.posY }, data: { node, invalid: invalid.nodes.has(node.id) } }))
+  const flowEdges: Edge[] = document.edges.map((edge) => ({ id: edge.id, source: edge.fromNodeId, target: edge.toNodeId ?? edge.fromNodeId, label: `#${edge.sortOrder + 1} · ${edge.fromOptionId ? "opción" : "default"} · ${conditionText(edge)}`, animated: true, style: { stroke: invalid.edges.has(edge.id) ? "hsl(var(--destructive))" : undefined, strokeWidth: invalid.edges.has(edge.id) ? 3 : undefined }, labelStyle: { fill: invalid.edges.has(edge.id) ? "hsl(var(--destructive))" : undefined, fontSize: 11 }, data: { terminal: edge.toNodeId === null } }))
+  const updateNode = (next: EditorNode) => setDocument((current) => ({ ...current, nodes: current.nodes.map((node) => node.id === next.id ? next : node) }))
+  const deleteNode = (id: string) => setDocument((current) => ({ ...current, nodes: current.nodes.filter((node) => node.id !== id), edges: current.edges.filter((edge) => edge.fromNodeId !== id && edge.toNodeId !== id) }))
+  const addNode = (title: string, step: boolean) => { const node: EditorNode = { id: temporaryId("node"), title, subtitle: null, selectMode: "single", minSelections: 0, maxSelections: null, includeNoneOption: true, noneLabel: null, isEntry: document.nodes.length === 0, posX: 100 + document.nodes.length * 60, posY: 100 + document.nodes.length * 80, sortOrder: document.nodes.length, active: true, options: step ? [] : [{ id: temporaryId("option"), source: "manual", label: "Opción", refProductId: null, refCategoryId: null, refVariantName: null, allowVariantChoice: false, priceMode: "delta", priceDelta: "0", emitsChildItem: false, sortOrder: 0, active: true, priceOverrides: [] }] }; setDocument((current) => ({ ...current, nodes: [...current.nodes, node] })); setSelectedNodeId(node.id); setShowAdd(false) }
+  const connect = (connection: Connection) => { if (!connection.source || !connection.target) return; const outgoing = document.edges.filter((edge) => edge.fromNodeId === connection.source); setDocument((current) => ({ ...current, edges: [...current.edges, { id: temporaryId("edge"), fromNodeId: connection.source!, fromOptionId: null, toNodeId: connection.target!, condition: null, sortOrder: outgoing.length }] })) }
+  const updateEdge = (patch: Partial<EditorEdge>) => selectedEdge && setDocument((current) => ({ ...current, edges: current.edges.map((edge) => edge.id === selectedEdge.id ? { ...edge, ...patch } : edge) }))
+  const moveEdge = (direction: -1 | 1) => { if (!selectedEdge) return; const ordered = document.edges.filter((edge) => edge.fromNodeId === selectedEdge.fromNodeId).sort((a, b) => a.sortOrder - b.sortOrder); const index = ordered.findIndex((edge) => edge.id === selectedEdge.id); const swap = ordered[index + direction]; if (!swap) return; const ids = new Map(ordered.map((edge, position) => [edge.id, position === index ? swap.sortOrder : position === index + direction ? selectedEdge.sortOrder : edge.sortOrder])); setDocument((current) => ({ ...current, edges: current.edges.map((edge) => ids.has(edge.id) ? { ...edge, sortOrder: ids.get(edge.id)! } : edge) })) }
+  const addTargets = () => { const targets: FlowTarget[] = targetSelection.applyTo === "category" ? [{ mode: targetMode, categoryId: targetSelection.categoryId, subcategoryId: null, productId: null, targetName: categories.find((category) => category.id === targetSelection.categoryId)?.name }] : targetSelection.productIds.map((productId) => ({ mode: targetMode, categoryId: null, subcategoryId: null, productId, targetName: products.find((product) => product.id === productId)?.name })); setDocument((current) => ({ ...current, targets: [...current.targets, ...targets] })); setTargetSelection({ applyTo: "specific_products", categoryId: "", productIds: [] }) }
+  const save = async () => { if (errors.length > 0) { toast.error("Corrige los errores de validación antes de guardar"); return } setSaving(true); try { await fetch(`/api/flows/${flowId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(document.definition) }); const graph = await fetch(`/api/flows/${flowId}/graph`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nodes: document.nodes, edges: document.edges }) }); if (!graph.ok) { const body = await graph.json(); throw new Error(body.error ?? "El servidor rechazó el grafo") } const targets = await fetch(`/api/flows/${flowId}/targets`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targets: document.targets }) }); if (!targets.ok) throw new Error("No se pudieron guardar los targets"); const saved = await graph.json(); setDocument({ ...saved, targets: await targets.json() }); toast.success("Flujo guardado") } catch (error) { toast.error(error instanceof Error ? error.message : "Error guardando flujo") } finally { setSaving(false) } }
+  if (loading) return <div className="grid h-[70vh] place-items-center text-muted-foreground">Cargando editor…</div>
+  return <div className="flex h-[calc(100vh-4rem)] min-h-[700px] flex-col bg-background"><header className="flex flex-wrap items-center gap-3 border-b bg-card px-4 py-3"><Button variant="outline" size="sm" onClick={onBack}>Volver</Button><div className="min-w-52 flex-1"><Input className="h-8 font-semibold" value={document.definition.name} onChange={(event) => setDocument((current) => ({ ...current, definition: { ...current.definition, name: event.target.value } }))} /><p className="mt-1 text-xs text-muted-foreground">Las aristas se evalúan en orden: la #1 que cumple decide el siguiente nodo y también es el camino default para clientes antiguos.</p></div><Button onClick={() => setShowAdd(true)}>Agregar nodo</Button><Button disabled={saving || errors.length > 0} onClick={save}>{saving ? "Guardando…" : `Guardar${errors.length ? ` (${errors.length} errores)` : ""}`}</Button></header><div className="grid min-h-0 flex-1 lg:grid-cols-[1fr_340px]"><main className="relative min-h-[420px]"><ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onConnect={connect} onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null) }} onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null) }} onNodeDragStop={(_, node) => setDocument((current) => ({ ...current, nodes: current.nodes.map((item) => item.id === node.id ? { ...item, posX: Math.round(node.position.x), posY: Math.round(node.position.y) } : item) }))} fitView><Background variant={BackgroundVariant.Dots} /><Controls /><MiniMap /></ReactFlow>{showAdd && <AddStepPanel onAdd={addNode} onClose={() => setShowAdd(false)} />}{selectedNode && <StepEditPanel node={selectedNode} products={products} categories={categories} onUpdate={updateNode} onDelete={() => { deleteNode(selectedNode.id); setSelectedNodeId(null) }} onClose={() => setSelectedNodeId(null)} />}{selectedEdge && <EdgePanel edge={selectedEdge} nodes={document.nodes} onUpdate={updateEdge} onDelete={() => { setDocument((current) => ({ ...current, edges: current.edges.filter((edge) => edge.id !== selectedEdge.id) })); setSelectedEdgeId(null) }} onMove={moveEdge} />}</main><aside className="space-y-4 overflow-y-auto border-l bg-card p-4"><section><h2 className="font-semibold">Validación en vivo</h2>{problems.length === 0 ? <p className="mt-2 rounded bg-emerald-500/10 p-2 text-sm text-emerald-700">Sin problemas detectados.</p> : <ul className="mt-2 space-y-2">{problems.map((problem, index) => <li key={`${problem.code}-${index}`} className={`rounded p-2 text-xs ${problem.severity === "error" ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-700"}`}>{problem.message}</li>)}</ul>}</section><section className="space-y-2 border-t pt-4"><h2 className="font-semibold">Targets</h2><p className="text-xs text-muted-foreground">Los include aplican el flujo; exclude siempre gana.</p><PromotionProductPicker products={products} categories={categories} value={targetSelection} onChange={setTargetSelection} /><div className="flex gap-2"><select className="rounded border bg-background p-2 text-sm" value={targetMode} onChange={(event) => setTargetMode(event.target.value as "include" | "exclude")}><option value="include">Incluir</option><option value="exclude">Excluir</option></select><Button size="sm" onClick={addTargets}>Agregar</Button></div><div className="space-y-1">{document.targets.map((target, index) => <div className="flex items-center gap-2 rounded border p-2 text-xs" key={`${target.mode}-${target.categoryId ?? target.productId}-${index}`}><span className="font-medium">{target.mode}</span><span className="flex-1 truncate">{target.targetName ?? target.categoryId ?? target.productId}</span><button onClick={() => setDocument((current) => ({ ...current, targets: current.targets.filter((_, currentIndex) => currentIndex !== index) }))}>×</button></div>)}</div></section><FlowSimulator document={document} products={products} categories={categories} /></aside></div></div>
 }
 
-export function FlowEditor({
-  productId,
-  categoryId,
-  subcategoryId,
-  titleOverride,
-  initialSteps = [],
-  initialNodes,
-  onSave,
-  onBack,
-  isBeverage,
-  onBeverageChange,
-  allowedStepTypes,
-}: FlowEditorProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [steps, setSteps] = useState<ModifierStep[]>(initialSteps);
-  const [showAddPanel, setShowAddPanel] = useState(false);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
-
-  const hasInitialized = useRef(false);
-
-  // Initialize nodes from steps
-  useEffect(() => {
-    // Only initialize once when we first receive non-empty data
-    if (hasInitialized.current) return;
-
-    if (initialNodes) {
-      setNodes(initialNodes.nodes || []);
-      setEdges(initialNodes.edges || []);
-      setSteps(initialSteps);
-      hasInitialized.current = true;
-    } else if (initialSteps.length > 0) {
-      // Auto-layout steps vertically
-      const newNodes = initialSteps.map((step, index) => ({
-        id: step.id,
-        type: "step",
-        position: { x: 250, y: index * 150 + 50 },
-        data: { step },
-      }));
-
-      const newEdges = initialSteps.slice(0, -1).map((step, index) => ({
-        id: `e${step.id}-${initialSteps[index + 1].id}`,
-        source: step.id,
-        target: initialSteps[index + 1].id,
-        animated: true,
-      }));
-
-      setNodes(newNodes);
-      setEdges(newEdges);
-      setSteps(initialSteps);
-      hasInitialized.current = true;
-    }
-  }, [initialSteps, initialNodes]);
-
-  const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges]
-  );
-
-  const addStep = (stepType: string) => {
-    const newStep: ModifierStep = {
-      id: `step-${Date.now()}`,
-      categoryId: undefined,
-      stepName: getStepName(stepType),
-      stepType: stepType as any,
-      sortOrder: steps.length + 1,
-      isRequired: false,
-      allowMultiple: stepType === "extra",
-      includeNoneOption: true,
-      active: true,
-      createdAt: new Date(),
-      options: stepType === "custom" ? [] : [],
-    };
-
-    const newNode: Node = {
-      id: newStep.id,
-      type: "step",
-      position: { x: 250, y: nodes.length * 150 + 50 },
-      data: { step: newStep },
-    };
-
-    setSteps([...steps, newStep]);
-    setNodes([...nodes, newNode]);
-    setShowAddPanel(false);
-  };
-
-  const updateStep = (stepId: string, updates: Partial<ModifierStep>) => {
-    // Update steps array
-    const updatedSteps = steps.map((s) => 
-      s.id === stepId ? { ...s, ...updates } : s
-    );
-    setSteps(updatedSteps);
-    
-    // Update nodes with the new step data
-    setNodes(
-      nodes.map((n) => {
-        if (n.id === stepId) {
-          const currentStep = n.data?.step || {};
-          return {
-            ...n,
-            data: {
-              ...n.data,
-              step: { ...currentStep, ...updates }
-            }
-          };
-        }
-        return n;
-      })
-    );
-  };
-
-  const deleteStep = (stepId: string) => {
-    setSteps(steps.filter((s) => s.id !== stepId));
-    setNodes(nodes.filter((n) => n.id !== stepId));
-    setEdges(edges.filter((e) => e.source !== stepId && e.target !== stepId));
-  };
-
-  const handleSave = () => {
-    if (onSave) {
-      onSave(steps, { nodes, edges });
-    }
-  };
-
-  const getStepName = (stepType: string) => {
-    const names: Record<string, string> = {
-      frosting: "Betún",
-      topping: "Topping",
-      extra: "Extras",
-      custom: "Paso Personalizado",
-    };
-    return names[stepType] || "Nuevo Paso";
-  };
-
-  return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
-      <div className="h-16 border-b border-border flex items-center justify-between px-6 bg-card">
-        <div className="flex items-center gap-4">
-          {onBack && (
-            <Button variant="ghost" size="sm" onClick={onBack}>
-              <ArrowLeft className="size-4" />
-            </Button>
-          )}
-          <div>
-            <h1 className="text-xl font-bold">Editor de Flujo</h1>
-            <p className="text-sm text-muted-foreground">
-              {titleOverride ??
-                (productId
-                  ? "Flujo de Producto"
-                  : subcategoryId
-                    ? "Flujo de Subcategoría"
-                    : "Flujo de Categoría")}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {typeof isBeverage === "boolean" && onBeverageChange && (
-            <Button
-              variant={isBeverage ? "default" : "outline"}
-              onClick={() => onBeverageChange(!isBeverage)}
-              className="gap-2"
-              title="Rutear este producto como bebida (barra) en Dispatch"
-            >
-              {isBeverage ? "🥤 Es bebida" : "🥤 No bebida"}
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            onClick={() => setShowAddPanel(true)}
-            className="gap-2"
-          >
-            <Plus className="size-4" />
-            Agregar Paso
-          </Button>
-          <Button onClick={handleSave} className="gap-2">
-            <FloppyDisk className="size-4" />
-            Guardar Flujo
-          </Button>
-        </div>
-      </div>
-
-      {/* Flow Canvas */}
-      <div className="flex-1 relative">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          nodeTypes={nodeTypes}
-          fitView
-          className="bg-background"
-          onNodeClick={(_, node) => setSelectedNode(node)}
-        >
-          <Background 
-            variant={BackgroundVariant.Dots} 
-            gap={20} 
-            size={1} 
-            color={isDark ? "#333" : "#ddd"} 
-          />
-          <Controls className="bg-card border-border" />
-          <MiniMap
-            className="bg-card border-border"
-            nodeColor="#6366f1"
-            maskColor={isDark ? "rgba(0, 0, 0, 0.6)" : "rgba(255, 255, 255, 0.6)"}
-          />
-
-          {/* Info Panel */}
-          <Panel position="top-left" className="bg-card border border-border rounded-lg p-4 m-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="size-3 rounded-full bg-blue-500" />
-                <span className="text-xs text-muted-foreground">Tipo F</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="size-3 rounded-full bg-purple-500" />
-                <span className="text-xs text-muted-foreground">Tipo T</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="size-3 rounded-full bg-green-500" />
-                <span className="text-xs text-muted-foreground">Tipo E</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="size-3 rounded-full bg-orange-500" />
-                <span className="text-xs text-muted-foreground">Personalizado</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="size-3 rounded-full bg-cyan-500" />
-                <span className="text-xs text-muted-foreground">Productos</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="size-3 rounded-full bg-pink-500" />
-                <span className="text-xs text-muted-foreground">Categoría</span>
-              </div>
-            </div>
-          </Panel>
-        </ReactFlow>
-
-        {/* Add Step Panel */}
-        {showAddPanel && (
-          <AddStepPanel
-            onAdd={addStep}
-            onClose={() => setShowAddPanel(false)}
-            allowedTypes={allowedStepTypes}
-          />
-        )}
-
-        {/* Step Edit Panel */}
-        {selectedNode && selectedNode.data?.step && (
-          <StepEditPanel
-            step={selectedNode.data.step as ModifierStep}
-            onUpdate={(updates) => updateStep(selectedNode.id, updates)}
-            onDelete={() => {
-              deleteStep(selectedNode.id);
-              setSelectedNode(null);
-            }}
-            onClose={() => setSelectedNode(null)}
-          />
-        )}
-      </div>
-    </div>
-  );
+function EdgePanel({ edge, nodes, onUpdate, onDelete, onMove }: { edge: EditorEdge; nodes: EditorNode[]; onUpdate: (patch: Partial<EditorEdge>) => void; onDelete: () => void; onMove: (direction: -1 | 1) => void }) {
+  const source = nodes.find((node) => node.id === edge.fromNodeId)
+  const condition = edge.condition ?? {}
+  const change = (patch: Record<string, unknown>) => { const next: Record<string, unknown> = { ...condition, ...patch }; Object.keys(next).forEach((key) => { if (next[key] === "" || (Array.isArray(next[key]) && next[key].length === 0)) delete next[key] }); onUpdate({ condition: Object.keys(next).length ? next as EditorEdge["condition"] : null }) }
+  return <aside className="absolute right-0 top-0 z-20 h-full w-96 overflow-y-auto border-l bg-card p-5 shadow-xl"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Arista #{edge.sortOrder + 1}</h2><p className="text-xs text-muted-foreground">La primera arista que cumple gana.</p></div><Button size="sm" variant="ghost" onClick={onDelete}>Eliminar</Button></div><div className="mt-4 space-y-3"><label className="space-y-1 text-sm"><span>Siguiente nodo</span><select className="w-full rounded border bg-background p-2" value={edge.toNodeId ?? "__end__"} onChange={(event) => onUpdate({ toNodeId: event.target.value === "__end__" ? null : event.target.value })}><option value="__end__">Fin del flujo</option>{nodes.filter((node) => node.id !== edge.fromNodeId).map((node) => <option key={node.id} value={node.id}>{node.title}</option>)}</select></label><label className="space-y-1 text-sm"><span>Sale al elegir</span><select className="w-full rounded border bg-background p-2" value={edge.fromOptionId ?? ""} onChange={(event) => onUpdate({ fromOptionId: event.target.value || null })}><option value="">Cualquier opción (default)</option>{source?.options.map((option) => <option key={option.id} value={option.id}>{option.label || "Sin etiqueta"}</option>)}</select></label><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => onMove(-1)}>↑ Prioridad</Button><Button variant="outline" size="sm" onClick={() => onMove(1)}>↓ Prioridad</Button></div><p className="rounded bg-muted p-2 text-xs text-muted-foreground">La menor prioridad es también el camino usado para aplanar el flujo hacia clientes viejos.</p><label className="space-y-1 text-sm"><span>variantNameIn (separa con coma)</span><Input value={condition.variantNameIn?.join(", ") ?? ""} onChange={(event) => change({ variantNameIn: list(event.target.value) })} /></label><label className="space-y-1 text-sm"><span>productHasTag</span><Input value={condition.productHasTag ?? ""} onChange={(event) => change({ productHasTag: event.target.value })} /></label><label className="space-y-1 text-sm"><span>productIdIn (coma)</span><Input value={condition.productIdIn?.join(", ") ?? ""} onChange={(event) => change({ productIdIn: list(event.target.value) })} /></label><label className="space-y-1 text-sm"><span>categoryIdIn (coma)</span><Input value={condition.categoryIdIn?.join(", ") ?? ""} onChange={(event) => change({ categoryIdIn: list(event.target.value) })} /></label><label className="space-y-1 text-sm"><span>optionSelected</span><select className="w-full rounded border bg-background p-2" value={condition.optionSelected ?? ""} onChange={(event) => change({ optionSelected: event.target.value })}><option value="">Sin condición de opción</option>{nodes.flatMap((node) => node.options).map((option) => <option key={option.id} value={option.id}>{option.label || option.id}</option>)}</select></label></div></aside>
 }

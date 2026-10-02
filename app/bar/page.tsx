@@ -31,11 +31,27 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Minus, Trash, MagnifyingGlass, DotsThree, QrCode, Stamp, Camera, X, Money, CreditCard, Check, Spinner, Bank, House, Coffee, ShoppingBag, Users, Printer, User, ForkKnife, GearSix, CookingPot, Gift, Percent } from "@phosphor-icons/react";
 import { SlideToConfirm } from "@/components/ui/slide-to-confirm";
 import { toast } from "sonner";
-import type { Product, Category, CartItem, Frosting, DryTopping, Extra, LoyaltyCard, CategoryFlow, ModifierStep, ModifierOption, Table, Order, Promotion, Discount } from "@/lib/types";
+import type { Product, Category, CartItem, LoyaltyCard, Table, Order, Promotion, Discount } from "@/lib/types";
 import { applyPromotions, calculateDiscount } from "@/lib/utils/promotions";
 import { getApiUrl } from "@/lib/utils";
+import { buildItems, canAdvance, nextNode } from "@/lib/flows/engine";
+import type { BuiltSelection, FlowContext, FlowGraph, FlowPath, FlowProduct, FlowVariant } from "@/lib/flows/types";
 import { Sidebar } from "./components/Sidebar";
 import { ReservationsView } from "./components/ReservationsView";
+
+type BarCartItem = CartItem & {
+  packageGroupId?: string;
+  isPackageChild?: boolean;
+  parentItemId?: string | null;
+  packageLabel?: string | null;
+  flowSelections?: BuiltSelection[];
+};
+
+type FlowHistoryEntry = {
+  nodeId: string;
+  selectedOptionIds: string[];
+  path: FlowPath;
+};
 
 export default function BarPage() {
   const router = useRouter();
@@ -74,9 +90,6 @@ export default function BarPage() {
   
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [frostings, setFrostings] = useState<Frosting[]>([]);
-  const [toppings, setToppings] = useState<DryTopping[]>([]);
-  const [extras, setExtras] = useState<Extra[]>([]);
   
   // Estados para variantes de productos
   const [showVariantDialog, setShowVariantDialog] = useState(false);
@@ -100,21 +113,20 @@ export default function BarPage() {
   const [voidItemIndex, setVoidItemIndex] = useState<number | null>(null);
   const [voidReason, setVoidReason] = useState("");
   
-  // Flujo de modificadores dinámico
-  const [categoryFlow, setCategoryFlow] = useState<CategoryFlow | null>(null);
-  const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1); // -1 = productos
-  const [stepSelections, setStepSelections] = useState<Record<string, any>>({});
+  // Flujo de modificadores v2: el grafo resuelto pertenece al producto.
+  const [productFlow, setProductFlow] = useState<FlowGraph | null>(null);
+  const [currentFlowNodeId, setCurrentFlowNodeId] = useState<string | null>(null);
+  const [currentNodeSelectionIds, setCurrentNodeSelectionIds] = useState<string[]>([]);
+  const [flowPath, setFlowPath] = useState<FlowPath>([]);
+  const [flowHistory, setFlowHistory] = useState<FlowHistoryEntry[]>([]);
+  const [selectedFlowVariant, setSelectedFlowVariant] = useState<FlowVariant | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   
-  // Estados legacy para compatibilidad (se usarán según el tipo de paso)
-  const [selectedFrosting, setSelectedFrosting] = useState<Frosting | null>(null);
-  const [selectedTopping, setSelectedTopping] = useState<DryTopping | null>(null);
-  const [selectedExtras, setSelectedExtras] = useState<Extra[]>([]);
   const [productNotes, setProductNotes] = useState<string>("");
   
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<BarCartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   
@@ -271,7 +283,7 @@ export default function BarPage() {
           .then(res => res.json())
           .then(order => {
             if (order && order.items) {
-              const apiCartItems: CartItem[] = order.items
+              const apiCartItems: BarCartItem[] = order.items
                 .filter((item: any) => !item.voided)
                 .map((item: any) => ({
                   productId: item.productId,
@@ -295,10 +307,14 @@ export default function BarPage() {
                   course: item.course || 1,
                   isBeverage: item.product?.category?.isBeverage || false,
                   isGuest: item.isGuest || false,
+                  packageGroupId: item.parentItemId || (item.packageLabel ? item.id : undefined),
+                  isPackageChild: Boolean(item.parentItemId),
+                  parentItemId: item.parentItemId || null,
+                  packageLabel: item.packageLabel || null,
                 }));
               
               // Merge con items no enviados de localStorage (para preservar items invitados pendientes)
-              const localUnsentItems = savedCart ? JSON.parse(savedCart).filter((item: CartItem) => !item.sentToKitchen) : [];
+              const localUnsentItems = savedCart ? JSON.parse(savedCart).filter((item: BarCartItem) => !item.sentToKitchen) : [];
               const mergedCart = [...apiCartItems, ...localUnsentItems];
               
               setCart(mergedCart);
@@ -345,12 +361,6 @@ export default function BarPage() {
 
     return () => clearInterval(checkInactivity);
   }, [employeeId, lastActivity]);
-
-  useEffect(() => {
-    if (selectedCategory) {
-      loadCategoryFlow(selectedCategory);
-    }
-  }, [selectedCategory]);
 
   // Recargar mesas y delivery orders cuando se muestra la pantalla de selección
   useEffect(() => {
@@ -1201,23 +1211,7 @@ export default function BarPage() {
       return;
     }
 
-    const itemsData = pendingItems.map(item => ({
-      productId: item.productId,
-      productName: item.productName,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      notes: item.notes || "",
-      frostingId: item.frostingId || null,
-      frostingName: item.frostingName || null,
-      dryToppingId: item.dryToppingId || null,
-      dryToppingName: item.dryToppingName || null,
-      extraId: item.extraId || null,
-      extraName: item.extraName || null,
-      customModifiers: item.customModifiers || null,
-      seat: item.seat || "C",
-      course: item.course || 1,
-      isGuest: item.isGuest || false,
-    }));
+    const itemsData = orderItemPayloads(pendingItems, true);
 
     try {
       let orderId: string;
@@ -1266,7 +1260,7 @@ export default function BarPage() {
       }
 
       // Marcar items como enviados a cocina en el carrito local
-      const updatedCart: CartItem[] = cart.map(item => 
+      const updatedCart: BarCartItem[] = cart.map(item =>
         item.sentToKitchen ? item : { ...item, sentToKitchen: true, orderId: orderId, orderStatus: "preparing" as const } as CartItem
       );
       setCart(updatedCart);
@@ -1307,18 +1301,9 @@ export default function BarPage() {
 
   async function fetchData() {
     try {
-      // Cargar categorías y datos esenciales al inicio
-      const [categoriesRes, frostingsRes, toppingsRes, extrasRes] = await Promise.all([
-        fetch("/api/categories"),
-        fetch("/api/frostings"),
-        fetch("/api/dry-toppings"),
-        fetch("/api/extras"),
-      ]);
+      const categoriesRes = await fetch("/api/categories");
       
       if (categoriesRes.ok) setCategories(await categoriesRes.json());
-      if (frostingsRes.ok) setFrostings(await frostingsRes.json());
-      if (toppingsRes.ok) setToppings(await toppingsRes.json());
-      if (extrasRes.ok) setExtras(await extrasRes.json());
       
       // Cargar productos en segundo plano (sin caché por quota issues)
       fetchAndCacheProducts();
@@ -1343,113 +1328,125 @@ export default function BarPage() {
     }
   }
 
-  // Cargar flujo de categoría y productos si no están cargados
-  async function loadCategoryFlow(categoryId: string) {
+  function isPlatformOrder() {
+    return Boolean(customerName && /^(Uber|Rappi|Didi)/.test(customerName));
+  }
+
+  function priceForProduct(product: Product, variant: FlowVariant | null): number {
+    if (variant) return variant.price;
+    return isPlatformOrder() && product.platformPrice ? parseFloat(product.platformPrice) : parseFloat(product.price);
+  }
+
+  function flowContext(product: Product, variant: FlowVariant | null, path: FlowPath): FlowContext {
+    const rawTags = (product as Product & { flowTags?: string[] | string }).flowTags;
+    const flowTags = Array.isArray(rawTags)
+      ? rawTags
+      : typeof rawTags === "string"
+        ? (() => { try { return JSON.parse(rawTags); } catch { return []; } })()
+        : [];
+    return {
+      productId: product.id,
+      categoryId: product.categoryId,
+      subcategoryId: product.subcategoryId ?? null,
+      variantName: variant?.name ?? null,
+      flowTags,
+      pathOptionIds: path.flatMap((visit) => visit.selectedOptionIds),
+    };
+  }
+
+  function openNotesForProduct(product: Product, variant: FlowVariant | null) {
+    const newItem: CartItem = {
+      productId: product.id,
+      productName: variant ? `${product.name} - ${variant.name}` : product.name,
+      unitPrice: priceForProduct(product, variant),
+      quantity: 1,
+      notes: "",
+      customModifiers: null,
+    };
+    setPendingCartItem(newItem);
+    setTempNotes("");
+    setShowNotesDialog(true);
+  }
+
+  async function fetchProductFlow(productId: string): Promise<FlowGraph | null> {
     try {
-      // Si no hay productos cargados aún, cargarlos ahora
-      if (products.length === 0) {
-        fetchAndCacheProducts();
-      }
-      
-      const res = await fetch(`/api/categories/${categoryId}/flow`);
-      if (res.ok) {
-        const flow = await res.json();
-        setCategoryFlow(flow);
-      }
+      const res = await fetch(`/api/products/${productId}/flow?format=graph`, { cache: "no-store" });
+      if (!res.ok) return null;
+      const graph = await res.json() as FlowGraph;
+      return graph.format === "graph" && graph.entryNodeId ? graph : null;
     } catch (error) {
-      console.error("Error loading category flow:", error);
-      // Usar flujo predeterminado en caso de error
-      setCategoryFlow({
-        categoryId,
-        useDefaultFlow: true,
-        steps: [],
-      });
+      console.error("Error loading product flow:", error);
+      return null;
     }
   }
 
-  // Agregar producto directamente al carrito (flujo simplificado)
+  // Igual que promociones, un grafo editado en otra sesión debe llegar a una
+  // barra ya abierta. El flujo nuevo se usa en la siguiente navegación.
+  useEffect(() => {
+    const refreshProductFlow = () => {
+      if (document.visibilityState !== "visible" || !selectedProduct) return;
+      void fetchProductFlow(selectedProduct.id).then((graph) => {
+        if (graph) setProductFlow(graph);
+      });
+    };
+    const interval = window.setInterval(refreshProductFlow, 60_000);
+    window.addEventListener("focus", refreshProductFlow);
+    document.addEventListener("visibilitychange", refreshProductFlow);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshProductFlow);
+      document.removeEventListener("visibilitychange", refreshProductFlow);
+    };
+  }, [selectedProduct?.id]);
+
+  function initialFlowNode(graph: FlowGraph, context: FlowContext): string | null {
+    const entry = graph.nodes.find((node) => node.id === graph.entryNodeId);
+    if (!entry) return null;
+    return entry.options.length > 0 ? entry.id : nextNode(graph, entry.id, [], context);
+  }
+
+  async function beginProductFlow(product: Product, variant: FlowVariant | null) {
+    const graph = await fetchProductFlow(product.id);
+    if (!graph || graph.nodes.length === 0) {
+      openNotesForProduct(product, variant);
+      return;
+    }
+
+    try {
+      const context = flowContext(product, variant, []);
+      const initialNode = initialFlowNode(graph, context);
+      setSelectedProduct(product);
+      setSelectedFlowVariant(variant);
+      setProductFlow(graph);
+      setCurrentFlowNodeId(initialNode);
+      setCurrentNodeSelectionIds([]);
+      setFlowPath([]);
+      setFlowHistory([]);
+      setProductNotes("");
+    } catch (error) {
+      console.error("Error starting product flow:", error);
+      toast.error("El flujo de modificadores no es válido");
+      openNotesForProduct(product, variant);
+    }
+  }
+
   function handleProductClick(product: Product) {
-    // Si el producto tiene variantes, mostrar dialog de selección
     if (product.hasVariants && product.variants) {
       setSelectedProductForVariant(product);
       setShowVariantDialog(true);
       return;
     }
-
-    // Si la categoría tiene un flujo personalizado con pasos, iniciar el flujo
-    if (categoryFlow && !categoryFlow.useDefaultFlow && categoryFlow.steps.length > 0) {
-      setSelectedProduct(product);
-      setStepSelections({});
-      setSelectedFrosting(null);
-      setSelectedTopping(null);
-      setSelectedExtras([]);
-      setProductNotes("");
-      setCurrentStepIndex(0);
-      return;
-    }
-
-    // Sin flujo personalizado: crear item y mostrar diálogo de comentarios
-    // Usar precio de plataforma si es delivery de plataforma (Uber/Rappi/Didi)
-    const isPlatform = customerName && (customerName.startsWith('Uber') || customerName.startsWith('Rappi') || customerName.startsWith('Didi'));
-    const priceToUse = isPlatform && product.platformPrice ? parseFloat(product.platformPrice) : parseFloat(product.price);
-    
-    if (isPlatform) {
-      console.log(`🚨 Producto ${product.name}:`, {
-        isPlatform,
-        hasPlatformPrice: !!product.platformPrice,
-        platformPrice: product.platformPrice,
-        normalPrice: product.price,
-        priceUsed: priceToUse,
-      });
-    }
-    
-    const newItem: CartItem = {
-      productId: product.id,
-      productName: product.name,
-      unitPrice: priceToUse,
-      quantity: 1,
-      notes: "",
-      frostingId: undefined,
-      frostingName: undefined,
-      dryToppingId: undefined,
-      dryToppingName: undefined,
-      extraId: undefined,
-      extraName: undefined,
-      customModifiers: null,
-    };
-    setPendingCartItem(newItem);
-    setTempNotes("");
-    setShowNotesDialog(true);
+    void beginProductFlow(product, null);
   }
 
-  // Agregar producto con variante seleccionada
   function handleAddVariant(variantName: string, variantPrice: string, variantPlatformPrice?: string) {
     if (!selectedProductForVariant) return;
-
-    // Usar precio de plataforma si es delivery de plataforma (Uber/Rappi/Didi)
-    const isPlatform = customerName && (customerName.startsWith('Uber') || customerName.startsWith('Rappi') || customerName.startsWith('Didi'));
-    const priceToUse = isPlatform && variantPlatformPrice ? parseFloat(variantPlatformPrice) : parseFloat(variantPrice);
-
-    const newItem: CartItem = {
-      productId: selectedProductForVariant.id,
-      productName: `${selectedProductForVariant.name} - ${variantName}`,
-      unitPrice: priceToUse,
-      quantity: 1,
-      notes: "",
-      frostingId: undefined,
-      frostingName: undefined,
-      dryToppingId: undefined,
-      dryToppingName: undefined,
-      extraId: undefined,
-      extraName: undefined,
-      customModifiers: null,
+    const variant: FlowVariant = {
+      name: variantName,
+      price: isPlatformOrder() && variantPlatformPrice ? parseFloat(variantPlatformPrice) : parseFloat(variantPrice),
     };
-    
-    // Cerrar diálogo de variantes y abrir diálogo de comentarios
     setShowVariantDialog(false);
-    setPendingCartItem(newItem);
-    setTempNotes("");
-    setShowNotesDialog(true);
+    void beginProductFlow(selectedProductForVariant, variant);
   }
   
   // Confirmar y agregar item con comentarios al carrito
@@ -1493,169 +1490,174 @@ export default function BarPage() {
     // Aquí podrías abrir un dialog de personalización si lo necesitas
   }
 
-  function handleStepSelection(selection: any) {
-    if (!categoryFlow || currentStepIndex < 0) return;
-    
-    const currentStep = categoryFlow.steps[currentStepIndex];
-    
-    // Support multi-select for custom steps
-    if (currentStep.stepType === "custom" && currentStep.allowMultiple) {
-      const current = (stepSelections[currentStep.id] as ModifierOption[]) || [];
-      let next: ModifierOption[];
-      if (selection === null) {
-        next = [];
-      } else {
-        const exists = current.find((o: any) => o.id === selection.id);
-        if (exists) {
-          next = current.filter((o: any) => o.id !== selection.id);
-        } else {
-          next = [...current, selection];
-        }
-      }
-      setStepSelections({
-        ...stepSelections,
-        [currentStep.id]: next,
-      });
-      return; // Don't auto-advance for multi-select
+  function advanceFlow(selectionIds = currentNodeSelectionIds) {
+    if (!productFlow || !selectedProduct || !currentFlowNodeId) return;
+    const node = productFlow.nodes.find((candidate) => candidate.id === currentFlowNodeId);
+    if (!node || !canAdvance(node, selectionIds)) {
+      toast.error("Selecciona las opciones requeridas para continuar");
+      return;
     }
-    
-    // Guardar selección del paso actual
-    setStepSelections({
-      ...stepSelections,
-      [currentStep.id]: selection,
-    });
-    
-    // Avanzar al siguiente paso o mostrar pantalla de notas
-    if (currentStepIndex < categoryFlow.steps.length - 1) {
-      setCurrentStepIndex(currentStepIndex + 1);
-    } else {
-      // Último paso completado, mostrar pantalla de notas
-      setCurrentStepIndex(categoryFlow.steps.length); // Índice especial para notas
+
+    const nextPath = [...flowPath, { nodeId: node.id, selectedOptionIds: selectionIds }];
+    try {
+      const next = nextNode(
+        productFlow,
+        node.id,
+        selectionIds,
+        flowContext(selectedProduct, selectedFlowVariant, nextPath),
+      );
+      setFlowHistory((history) => [...history, { nodeId: node.id, selectedOptionIds: selectionIds, path: flowPath }]);
+      setFlowPath(nextPath);
+      setCurrentFlowNodeId(next);
+      setCurrentNodeSelectionIds([]);
+    } catch (error) {
+      console.error("Error advancing product flow:", error);
+      toast.error("El flujo de modificadores no es válido");
     }
   }
 
-  function advanceToNextStep() {
-    if (!categoryFlow || currentStepIndex < 0) return;
-    if (currentStepIndex < categoryFlow.steps.length - 1) {
-      setCurrentStepIndex(currentStepIndex + 1);
-    } else {
-      setCurrentStepIndex(categoryFlow.steps.length);
+  function selectFlowOption(optionId: string) {
+    if (!productFlow || !currentFlowNodeId) return;
+    const node = productFlow.nodes.find((candidate) => candidate.id === currentFlowNodeId);
+    if (!node) return;
+    if (node.selectMode === "single") {
+      setCurrentNodeSelectionIds([optionId]);
+      advanceFlow([optionId]);
+      return;
     }
+    setCurrentNodeSelectionIds((selected) =>
+      selected.includes(optionId) ? selected.filter((id) => id !== optionId) : [...selected, optionId],
+    );
+  }
+
+  function selectFlowNone() {
+    if (!productFlow || !currentFlowNodeId) return;
+    const node = productFlow.nodes.find((candidate) => candidate.id === currentFlowNodeId);
+    if (!node) return;
+    setCurrentNodeSelectionIds([]);
+    if (node.selectMode === "single") advanceFlow([]);
   }
 
   function finishFlowAndAddToCart() {
-    if (!selectedProduct || !categoryFlow) return;
-
-    // Usar precio de plataforma si es delivery de plataforma (Uber/Rappi/Didi)
-    const isPlatform = customerName && (customerName.startsWith('Uber') || customerName.startsWith('Rappi') || customerName.startsWith('Didi'));
-    const basePrice = isPlatform && selectedProduct.platformPrice ? parseFloat(selectedProduct.platformPrice) : parseFloat(selectedProduct.price);
-    
-    // Calcular precio total con modificadores custom
-    let totalPrice = basePrice;
-    const customModifiersData: Record<string, any> = {};
-
-    categoryFlow.steps.forEach((step) => {
-      const selection = stepSelections[step.id];
-      if (!selection) return;
-
-      if (step.stepType === "custom" && step.options) {
-        // Para pasos custom, guardar en customModifiers y sumar precio
-        const selectedOptions = Array.isArray(selection) ? selection : [selection];
-        if (selectedOptions.length > 0) {
-          customModifiersData[step.id] = {
-            stepName: step.stepName,
-            options: selectedOptions.map((opt: ModifierOption) => {
-              totalPrice += parseFloat(opt.price);
-              return {
-                id: opt.id,
-                name: opt.name,
-                price: opt.price,
-              };
-            }),
-          };
-        }
-      } else if (step.stepType === "extra") {
-        // Para extras, sumar precio
-        const selectedExtras = Array.isArray(selection) ? selection : [selection];
-        selectedExtras.forEach((extra: Extra) => {
-          totalPrice += parseFloat(extra.price);
-        });
-      }
-    });
-
-    const isBev = categories.find(c => c.id === selectedProduct.categoryId)?.isBeverage || false;
-    const newItem: CartItem = {
-      productId: selectedProduct.id,
-      productName: selectedProduct.name,
-      unitPrice: totalPrice,
-      quantity: 1,
-      notes: productNotes,
-      frostingId: selectedFrosting?.id,
-      frostingName: selectedFrosting?.name,
-      dryToppingId: selectedTopping?.id,
-      dryToppingName: selectedTopping?.name,
-      extraId: selectedExtras.length > 0 ? selectedExtras[0].id : undefined,
-      extraName: selectedExtras.length > 0 ? selectedExtras[0].name : undefined,
-      customModifiers: Object.keys(customModifiersData).length > 0 ? JSON.stringify(customModifiersData) : null,
-      seat: selectedTable ? activeSeat : "C",
-      course: activeCourse,
-      isBeverage: isBev,
-    };
-
-    // Buscar si ya existe un item idéntico en el carrito (mismo producto, mismos mods, mismo asiento)
-    const existingItemIndex = cart.findIndex((item) => 
-      item.productId === newItem.productId &&
-      item.frostingId === newItem.frostingId &&
-      item.dryToppingId === newItem.dryToppingId &&
-      item.extraId === newItem.extraId &&
-      item.customModifiers === newItem.customModifiers &&
-      item.seat === newItem.seat
-    );
-
-    if (existingItemIndex >= 0) {
-      // Si existe, incrementar cantidad
-      const updatedCart = [...cart];
-      updatedCart[existingItemIndex].quantity += 1;
-      setCart(updatedCart);
-      toast.success(`${selectedProduct.name} agregado (${updatedCart[existingItemIndex].quantity})`);
-    } else {
-      // Si no existe, agregar nuevo item
-      setCart([...cart, newItem]);
-      toast.success(`${selectedProduct.name} agregado`);
+    if (!selectedProduct || !productFlow) return;
+    try {
+      const product: FlowProduct = {
+        id: selectedProduct.id,
+        name: selectedProduct.name,
+        price: priceForProduct(selectedProduct, selectedFlowVariant),
+        seat: selectedTable ? activeSeat : "C",
+        course: activeCourse,
+      };
+      const built = buildItems(
+        productFlow,
+        flowPath,
+        product,
+        selectedFlowVariant,
+        flowContext(selectedProduct, selectedFlowVariant, flowPath),
+      );
+      const packageGroupId = crypto.randomUUID();
+      const parent: BarCartItem = {
+        ...built.parent,
+        seat: built.parent.seat ?? undefined,
+        course: built.parent.course ?? undefined,
+        quantity: 1,
+        notes: productNotes,
+        customModifiers: null,
+        isBeverage: categories.find((category) => category.id === selectedProduct.categoryId)?.isBeverage || false,
+        packageGroupId,
+        packageLabel: built.parent.packageLabel,
+        flowSelections: built.selections,
+      };
+      const children: BarCartItem[] = built.children.map((child) => ({
+        ...child,
+        seat: child.seat ?? undefined,
+        course: child.course ?? undefined,
+        quantity: 1,
+        notes: "",
+        customModifiers: null,
+        packageGroupId,
+        isPackageChild: true,
+        parentItemId: packageGroupId,
+      }));
+      setCart((current) => [...current, parent, ...children]);
+      toast.success(`${built.parent.productName} agregado`);
+      resetFlow();
+    } catch (error) {
+      console.error("Error building product flow items:", error);
+      toast.error("No se pudo agregar el producto con sus modificadores");
     }
-    
-    resetFlow();
   }
 
   function resetFlow() {
-    setCurrentStepIndex(-1);
+    setProductFlow(null);
+    setCurrentFlowNodeId(null);
+    setCurrentNodeSelectionIds([]);
+    setFlowPath([]);
+    setFlowHistory([]);
     setSelectedProduct(null);
-    setStepSelections({});
-    setSelectedFrosting(null);
-    setSelectedTopping(null);
-    setSelectedExtras([]);
+    setSelectedFlowVariant(null);
     setProductNotes("");
   }
 
   function handleBackInFlow() {
-    if (currentStepIndex === 0) {
+    const previous = flowHistory[flowHistory.length - 1];
+    if (!previous) {
       resetFlow();
-    } else if (currentStepIndex > 0) {
-      setCurrentStepIndex(currentStepIndex - 1);
+      return;
     }
+    setFlowHistory((history) => history.slice(0, -1));
+    setCurrentFlowNodeId(previous.nodeId);
+    setCurrentNodeSelectionIds(previous.selectedOptionIds);
+    setFlowPath(previous.path);
   }
 
-  function toggleExtra(extra: Extra) {
-    if (selectedExtras.find(e => e.id === extra.id)) {
-      setSelectedExtras(selectedExtras.filter(e => e.id !== extra.id));
-    } else {
-      setSelectedExtras([...selectedExtras, extra]);
-    }
+  function orderItemPayloads(items: BarCartItem[], includeServiceFields = false) {
+    const parentIndexes = new Map<string, number>();
+    items.forEach((item, index) => {
+      if (!item.isPackageChild && item.packageGroupId) parentIndexes.set(item.packageGroupId, index);
+    });
+
+    return items.map((item) => {
+      const legacyBody = !includeServiceFields && !item.packageGroupId;
+      const childIndexes = items
+        .map((candidate, index) => ({ candidate, index }))
+        .filter(({ candidate }) => candidate.isPackageChild && candidate.packageGroupId === item.packageGroupId)
+        .map(({ index }) => index);
+      const selections = item.flowSelections?.map(({ childItemIndex, ...selection }) => ({
+        ...selection,
+        childIndex: childItemIndex === null ? null : childIndexes[childItemIndex] ?? null,
+      }));
+
+      return {
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        notes: legacyBody ? item.notes : item.notes || null,
+        frostingId: legacyBody ? item.frostingId : item.frostingId || null,
+        frostingName: legacyBody ? item.frostingName : item.frostingName || null,
+        dryToppingId: legacyBody ? item.dryToppingId : item.dryToppingId || null,
+        dryToppingName: legacyBody ? item.dryToppingName : item.dryToppingName || null,
+        extraId: legacyBody ? item.extraId : item.extraId || null,
+        extraName: legacyBody ? item.extraName : item.extraName || null,
+        customModifiers: legacyBody ? item.customModifiers : item.customModifiers || null,
+        isGuest: item.isGuest || false,
+        ...(includeServiceFields || item.packageGroupId ? { seat: item.seat || "C", course: item.course || 1 } : {}),
+        ...(item.isPackageChild ? { parentIndex: parentIndexes.get(item.packageGroupId || "") } : {}),
+        ...(!item.isPackageChild && item.packageLabel ? { packageLabel: item.packageLabel } : {}),
+        ...(selections ? { selections } : {}),
+      };
+    });
   }
 
   function updateQuantity(index: number, delta: number) {
     const item = cart[index];
     if (!item) return;
+
+    if (item.packageGroupId) {
+      toast.info("Cada paquete se agrega como una selección independiente");
+      return;
+    }
 
     // No permitir editar items enviados a cocina
     if (item.sentToKitchen) {
@@ -1684,7 +1686,9 @@ export default function BarPage() {
       return;
     }
     
-    setCart(cart.filter((_, i) => i !== index));
+    setCart(cart.filter((candidate, i) =>
+      i !== index && (!item?.packageGroupId || candidate.packageGroupId !== item.packageGroupId),
+    ));
   }
 
   async function handleVoidItem() {
@@ -1706,7 +1710,9 @@ export default function BarPage() {
       }
 
       // Remover del carrito local
-      setCart(cart.filter((_, i) => i !== voidItemIndex));
+      setCart(cart.filter((candidate, i) =>
+        i !== voidItemIndex && (!item.packageGroupId || candidate.packageGroupId !== item.packageGroupId),
+      ));
       toast.success(`Item eliminado: ${item.productName} — ${voidReason || "Sin razón"}`);
     } catch (error) {
       console.error("Error voiding item:", error);
@@ -2032,22 +2038,7 @@ export default function BarPage() {
           const res = await fetch(`/api/orders/${currentOrderId}/items`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              items: unsentItems.map(item => ({
-                productId: item.productId,
-                productName: item.productName,
-                quantity: item.quantity,
-                unitPrice: item.unitPrice,
-                notes: item.notes || null,
-                frostingId: item.frostingId || null,
-                frostingName: item.frostingName || null,
-                dryToppingId: item.dryToppingId || null,
-                dryToppingName: item.dryToppingName || null,
-                extraId: item.extraId || null,
-                extraName: item.extraName || null,
-                customModifiers: item.customModifiers || null,
-              })),
-            }),
+            body: JSON.stringify({ items: orderItemPayloads(unsentItems) }),
           });
           if (res.ok) {
             const updatedOrder = await res.json();
@@ -2101,23 +2092,7 @@ export default function BarPage() {
           const res = await fetch(`/api/orders/${existingOrderId}/items`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              items: unsentItems.map(item => ({
-                productId: item.productId,
-                productName: item.productName,
-                quantity: item.quantity,
-                unitPrice: item.unitPrice,
-                notes: item.notes || null,
-                frostingId: item.frostingId || null,
-                frostingName: item.frostingName || null,
-                dryToppingId: item.dryToppingId || null,
-                dryToppingName: item.dryToppingName || null,
-                extraId: item.extraId || null,
-                extraName: item.extraName || null,
-                customModifiers: item.customModifiers || null,
-                isGuest: item.isGuest || false, // IMPORTANTE: Persistir items invitados
-              })),
-            }),
+            body: JSON.stringify({ items: orderItemPayloads(unsentItems) }),
           });
           if (res.ok) {
             const updatedCart = cart.map(item => 
@@ -2141,21 +2116,7 @@ export default function BarPage() {
     setSubmitting(true);
     try {
       const orderData = {
-        items: cart.map((item) => ({
-          productId: item.productId,
-          productName: item.productName,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          notes: item.notes,
-          frostingId: item.frostingId,
-          frostingName: item.frostingName,
-          dryToppingId: item.dryToppingId,
-          dryToppingName: item.dryToppingName,
-          extraId: item.extraId,
-          extraName: item.extraName,
-          customModifiers: item.customModifiers,
-          isGuest: item.isGuest || false, // IMPORTANTE: Persistir items invitados
-        })),
+        items: orderItemPayloads(cart),
         employeeId,
         tableId: selectedTable?.id || null,
         paymentStatus: "pending",
@@ -3472,7 +3433,9 @@ export default function BarPage() {
               const seatOrder = selectedTable 
                 ? [...Array.from({ length: guestCount }, (_, i) => `A${i + 1}`), "C"]
                 : ["C"];
-              const sortedCart = [...cart].map((item, idx) => ({ item, idx }));
+              const sortedCart = cart
+                .map((item, idx) => ({ item, idx }))
+                .filter(({ item }) => !item.isPackageChild);
               // Ordenar: primero por curso, luego por asiento
               sortedCart.sort((a, b) => {
                 const courseA = a.item.course || 1;
@@ -3492,6 +3455,9 @@ export default function BarPage() {
               let lastPromotionId: string | null = null;
               
               return sortedCart.map(({ item, idx: index }, arrayIndex) => {
+                const packageChildren = item.packageGroupId
+                  ? cart.filter((candidate) => candidate.isPackageChild && candidate.packageGroupId === item.packageGroupId)
+                  : [];
                 const itemCourse = item.course || 1;
                 const showCourseHeader = showCourseHeaders && itemCourse !== lastCourse;
                 if (showCourseHeader) {
@@ -3574,6 +3540,7 @@ export default function BarPage() {
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <div className="font-medium text-sm text-white">{item.productName}</div>
+                                  {item.packageLabel && <Badge variant="secondary" className="text-xs bg-violet-900/60 text-violet-200">{item.packageLabel}</Badge>}
                                   {item.sentToKitchen && item.orderStatus === "ready" && !item.deliveredToTable && (
                                     <Badge variant="default" className="text-xs bg-green-600">✓ Listo</Badge>
                                   )}
@@ -3601,6 +3568,16 @@ export default function BarPage() {
                                 <>{formatCurrency(item.unitPrice)} c/u</>
                               )}
                             </div>
+                            {packageChildren.length > 0 && (
+                              <div className="mt-2 space-y-1 border-l-2 border-violet-700/60 pl-3">
+                                {packageChildren.map((child, childIndex) => (
+                                  <div key={`${child.productId}-${childIndex}`} className="flex justify-between gap-2 text-xs text-violet-200">
+                                    <span>↳ {child.quantity}x {child.productName}</span>
+                                    <span>{formatCurrency(0)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             {(item.frostingName || item.dryToppingName || item.extraName || item.customModifiers || item.notes) && (
                               <div className="mt-1 space-y-0.5">
                                 {item.frostingName && (
@@ -4767,24 +4744,17 @@ export default function BarPage() {
 
           {/* AREA PRINCIPAL - FLUJO DINÁMICO */}
           <div className="flex-1 flex flex-col overflow-hidden bg-neutral-900">
-        {/* Header con título y botón back */}
         <div className="p-4 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between">
           <div>
-            {currentStepIndex === -1 && <h2 className="text-2xl font-bold text-white">Selecciona un producto</h2>}
-            {currentStepIndex >= 0 && categoryFlow && currentStepIndex === categoryFlow.steps.length && (
-              <div>
-                <h2 className="text-2xl font-bold text-white">Notas (opcional)</h2>
-                <p className="text-sm text-neutral-400">{selectedProduct?.name}</p>
-              </div>
+            {!selectedProduct && <h2 className="text-2xl font-bold text-white">Selecciona un producto</h2>}
+            {selectedProduct && currentFlowNodeId === null && (
+              <div><h2 className="text-2xl font-bold text-white">Notas (opcional)</h2><p className="text-sm text-neutral-400">{selectedProduct.name}</p></div>
             )}
-            {currentStepIndex >= 0 && categoryFlow && categoryFlow.steps[currentStepIndex] && (
-              <div>
-                <h2 className="text-2xl font-bold text-white">{categoryFlow.steps[currentStepIndex].stepName}</h2>
-                <p className="text-sm text-neutral-400">{selectedProduct?.name}</p>
-              </div>
+            {selectedProduct && currentFlowNodeId !== null && productFlow && (
+              <div><h2 className="text-2xl font-bold text-white">{productFlow.nodes.find((node) => node.id === currentFlowNodeId)?.title}</h2><p className="text-sm text-neutral-400">{selectedProduct.name}</p></div>
             )}
           </div>
-          {currentStepIndex >= 0 && (
+          {selectedProduct && (
             <Button 
               variant="outline" 
               onClick={handleBackInFlow}
@@ -4796,7 +4766,7 @@ export default function BarPage() {
         </div>
 
         {/* VISTA: PRODUCTOS */}
-        {currentStepIndex === -1 && (
+        {!selectedProduct && (
           <div className="flex-1 overflow-auto p-6">
             {!selectedCategory ? (
               <div className="flex items-center justify-center h-full text-neutral-500">
@@ -4862,258 +4832,23 @@ export default function BarPage() {
           </div>
         )}
 
-        {/* VISTAS DINÁMICAS DE PASOS */}
-        {currentStepIndex >= 0 && categoryFlow && categoryFlow.steps[currentStepIndex] && (() => {
-          const currentStep = categoryFlow.steps[currentStepIndex];
-          
-          // Renderizar según tipo de paso
-          if (currentStep.stepType === "frosting") {
-            const stepOptions = currentStep.options?.filter((o) => o.active).sort((a, b) => a.sortOrder - b.sortOrder) || [];
-            if (stepOptions.length > 0) {
-              const selectedOption = stepSelections[currentStep.id] as ModifierOption | undefined;
-              return (
-                <div className="flex-1 p-8 overflow-auto">
-                  <div className="grid grid-cols-4 gap-4 max-w-6xl">
-                    {currentStep.includeNoneOption && (
-                      <button
-                        onClick={() => handleStepSelection(null)}
-                        className={`h-32 rounded-lg flex items-center justify-center font-semibold transition-colors border-2 ${!selectedOption ? "bg-primary text-primary-foreground border-primary" : "bg-muted hover:bg-muted/80 border-transparent hover:border-primary"}`}
-                      >
-                        Sin {currentStep.stepName.toLowerCase()}
-                      </button>
-                    )}
-                    {stepOptions.map((option) => (
-                      <button
-                        key={option.id}
-                        onClick={() => handleStepSelection(option)}
-                        className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold transition-colors border-2 ${selectedOption?.id === option.id ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 hover:bg-primary/20 border-transparent hover:border-primary"}`}
-                      >
-                        <div>{option.name}</div>
-                        {parseFloat(option.price) > 0 && <div className="text-sm opacity-80 mt-1">+{formatCurrency(parseFloat(option.price))}</div>}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            }
-            return (
-              <div className="flex-1 p-8 overflow-auto">
-                <div className="grid grid-cols-4 gap-4 max-w-6xl">
-                  {currentStep.includeNoneOption && (
-                    <button
-                      onClick={() => handleStepSelection(null)}
-                      className="h-32 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center font-semibold transition-colors border-2 border-transparent hover:border-primary"
-                    >
-                      Sin {currentStep.stepName.toLowerCase()}
-                    </button>
-                  )}
-                  {frostings.map((frosting) => (
-                    <button
-                      key={frosting.id}
-                      onClick={() => {
-                        setSelectedFrosting(frosting);
-                        handleStepSelection(frosting);
-                      }}
-                      className="h-32 rounded-lg bg-primary/10 hover:bg-primary/20 flex items-center justify-center font-semibold transition-colors border-2 border-transparent hover:border-primary"
-                    >
-                      {frosting.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          } else if (currentStep.stepType === "topping") {
-            const stepOptions = currentStep.options?.filter((o) => o.active).sort((a, b) => a.sortOrder - b.sortOrder) || [];
-            if (stepOptions.length > 0) {
-              const selectedOption = stepSelections[currentStep.id] as ModifierOption | undefined;
-              return (
-                <div className="flex-1 p-8 overflow-auto">
-                  <div className="grid grid-cols-4 gap-4 max-w-6xl">
-                    {currentStep.includeNoneOption && (
-                      <button
-                        onClick={() => handleStepSelection(null)}
-                        className={`h-32 rounded-lg flex items-center justify-center font-semibold transition-colors border-2 ${!selectedOption ? "bg-primary text-primary-foreground border-primary" : "bg-muted hover:bg-muted/80 border-transparent hover:border-primary"}`}
-                      >
-                        Sin {currentStep.stepName.toLowerCase()}
-                      </button>
-                    )}
-                    {stepOptions.map((option) => (
-                      <button
-                        key={option.id}
-                        onClick={() => handleStepSelection(option)}
-                        className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold transition-colors border-2 ${selectedOption?.id === option.id ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 hover:bg-primary/20 border-transparent hover:border-primary"}`}
-                      >
-                        <div>{option.name}</div>
-                        {parseFloat(option.price) > 0 && <div className="text-sm opacity-80 mt-1">+{formatCurrency(parseFloat(option.price))}</div>}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            }
-            return (
-              <div className="flex-1 p-8 overflow-auto">
-                <div className="grid grid-cols-4 gap-4 max-w-6xl">
-                  {currentStep.includeNoneOption && (
-                    <button
-                      onClick={() => handleStepSelection(null)}
-                      className="h-32 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center font-semibold transition-colors border-2 border-transparent hover:border-primary"
-                    >
-                      Sin {currentStep.stepName.toLowerCase()}
-                    </button>
-                  )}
-                  {toppings.map((topping) => (
-                    <button
-                      key={topping.id}
-                      onClick={() => {
-                        setSelectedTopping(topping);
-                        handleStepSelection(topping);
-                      }}
-                      className="h-32 rounded-lg bg-primary/10 hover:bg-primary/20 flex items-center justify-center font-semibold transition-colors border-2 border-transparent hover:border-primary"
-                    >
-                      {topping.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          } else if (currentStep.stepType === "extra") {
-            const stepOptions = currentStep.options?.filter((o) => o.active).sort((a, b) => a.sortOrder - b.sortOrder) || [];
-            if (stepOptions.length > 0) {
-              const selectedOptions = (stepSelections[currentStep.id] as ModifierOption[]) || [];
-              const isMulti = currentStep.allowMultiple;
-              return (
-                <div className="flex-1 flex flex-col p-8 overflow-auto">
-                  <div className="grid grid-cols-4 gap-4 max-w-6xl mb-6">
-                    {currentStep.includeNoneOption && (
-                      <button
-                        onClick={() => handleStepSelection([])}
-                        className={`h-32 rounded-lg flex items-center justify-center font-semibold transition-colors border-2 ${selectedOptions.length === 0 ? "bg-primary text-primary-foreground border-primary" : "bg-muted hover:bg-muted/80 border-transparent hover:border-primary"}`}
-                      >
-                        Sin {currentStep.stepName.toLowerCase()}
-                      </button>
-                    )}
-                    {stepOptions.map((option) => {
-                      const isSelected = selectedOptions.some((o) => o.id === option.id);
-                      return (
-                        <button
-                          key={option.id}
-                          onClick={() => handleStepSelection(option)}
-                          className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold transition-colors border-2 ${isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 hover:bg-primary/20 border-transparent hover:border-primary"}`}
-                        >
-                          <div>{option.name}</div>
-                          {parseFloat(option.price) > 0 && <div className="text-sm opacity-80 mt-1">+{formatCurrency(parseFloat(option.price))}</div>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {isMulti && (
-                    <div className="max-w-6xl">
-                      <button
-                        onClick={advanceToNextStep}
-                        className="w-full h-14 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors"
-                      >
-                        Siguiente
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            }
-            return (
-              <div className="flex-1 flex flex-col p-8 overflow-auto">
-                <div className="grid grid-cols-4 gap-4 max-w-6xl mb-6">
-                  {currentStep.includeNoneOption && (
-                    <button
-                      onClick={() => handleStepSelection([])}
-                      className="h-32 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center font-semibold transition-colors border-2 border-transparent hover:border-primary"
-                    >
-                      Sin {currentStep.stepName.toLowerCase()}
-                    </button>
-                  )}
-                  {extras.map((extra) => (
-                    <button
-                      key={extra.id}
-                      onClick={() => {
-                        const newExtras = selectedExtras.find(e => e.id === extra.id)
-                          ? selectedExtras.filter(e => e.id !== extra.id)
-                          : [...selectedExtras, extra];
-                        setSelectedExtras(newExtras);
-                        setTimeout(() => handleStepSelection(newExtras), 300);
-                      }}
-                      className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold transition-colors border-2 ${
-                        selectedExtras.find(e => e.id === extra.id)
-                          ? 'bg-primary text-primary-foreground border-primary'
-                          : 'bg-muted hover:bg-muted/80 border-transparent hover:border-primary'
-                      }`}
-                    >
-                      <div>{extra.name}</div>
-                      <div className="text-sm opacity-80">{formatCurrency(parseFloat(extra.price))}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          } else if (currentStep.stepType === "custom" && currentStep.options) {
-            // Renderizar opciones personalizadas
-            const selectedOptions = (stepSelections[currentStep.id] as ModifierOption[]) || [];
-            const isMulti = currentStep.allowMultiple;
-            return (
-              <div className="flex-1 p-8 overflow-auto">
-                <div className="grid grid-cols-4 gap-4 max-w-6xl">
-                  {currentStep.includeNoneOption && (
-                    <button
-                      onClick={() => handleStepSelection(null)}
-                      className={`h-32 rounded-lg flex items-center justify-center font-semibold transition-colors border-2 ${
-                        selectedOptions.length === 0
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-muted hover:bg-muted/80 border-transparent hover:border-primary"
-                      }`}
-                    >
-                      Sin {currentStep.stepName.toLowerCase()}
-                    </button>
-                  )}
-                  {currentStep.options.map((option) => {
-                    const isSelected = selectedOptions.some((o) => o.id === option.id);
-                    return (
-                      <button
-                        key={option.id}
-                        onClick={() => handleStepSelection(option)}
-                        className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold transition-colors border-2 ${
-                          isSelected
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-primary/10 hover:bg-primary/20 border-transparent hover:border-primary"
-                        }`}
-                      >
-                        <div>{option.name}</div>
-                        {parseFloat(option.price) > 0 && (
-                          <div className="text-sm opacity-80 mt-1">
-                            +{formatCurrency(parseFloat(option.price))}
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-                {isMulti && (
-                  <div className="max-w-6xl mt-6">
-                    <button
-                      onClick={advanceToNextStep}
-                      className="w-full h-14 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors"
-                    >
-                      Siguiente
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          }
-          
-          return null;
+        {currentFlowNodeId && productFlow && (() => {
+          const node = productFlow.nodes.find((candidate) => candidate.id === currentFlowNodeId);
+          if (!node) return null;
+          return <div className="flex-1 flex flex-col p-8 overflow-auto">
+            {node.subtitle && <p className="text-neutral-400 mb-4">{node.subtitle}</p>}
+            <div className="grid grid-cols-4 gap-4 max-w-6xl mb-6">
+              {node.includeNoneOption && <button onClick={selectFlowNone} className={`h-32 rounded-lg border-2 ${currentNodeSelectionIds.length === 0 ? "bg-primary text-primary-foreground border-primary" : "bg-muted hover:bg-muted/80 border-transparent hover:border-primary"}`}>{node.noneLabel || `Sin ${node.title.toLowerCase()}`}</button>}
+              {node.options.map((option) => {
+                const selected = currentNodeSelectionIds.includes(option.id);
+                return <button key={option.id} onClick={() => selectFlowOption(option.id)} className={`h-32 rounded-lg flex flex-col items-center justify-center font-semibold border-2 ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-primary/10 hover:bg-primary/20 border-transparent hover:border-primary"}`}><div>{option.label}</div>{option.effectivePrice !== 0 && <div className="text-sm opacity-80 mt-1">{option.effectivePrice > 0 ? "+" : ""}{formatCurrency(option.effectivePrice)}</div>}</button>;
+              })}
+            </div>
+            {node.selectMode === "multi" && <Button onClick={() => advanceFlow()} className="max-w-6xl h-14 bg-blue-600 hover:bg-blue-500">Siguiente</Button>}
+          </div>;
         })()}
 
-        {/* VISTA: NOTAS (después del último paso) */}
-        {currentStepIndex >= 0 && categoryFlow && currentStepIndex === categoryFlow.steps.length && (
+        {selectedProduct && currentFlowNodeId === null && productFlow && (
           <div className="flex-1 flex flex-col p-8 overflow-auto">
             <div className="max-w-2xl mx-auto w-full space-y-6">
               <div>

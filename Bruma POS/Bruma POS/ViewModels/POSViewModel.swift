@@ -137,15 +137,15 @@ class POSViewModel: ObservableObject {
     @Published var searchQuery = ""
     
     // MARK: - Modifier Flow
-    @Published var categoryFlow: CategoryFlow?
-    @Published var currentStepIndex = -1
-    @Published var stepSelections: [String: Any] = [:]
+    @Published var flowGraph: FlowGraph?
+    @Published var flowPath: [FlowPathVisit] = []
+    @Published var showingFlowSummary = false
     @Published var selectedProduct: Product?
-    @Published var selectedFrosting: Frosting?
-    @Published var selectedTopping: DryTopping?
-    @Published var selectedExtras: [Extra] = []
     @Published var productNotes = ""
-    
+    private var flowGraphCache: [String: FlowGraph] = [:]
+    private var selectedFlowVariant: FlowVariant?
+    private var pendingFlowItems: [CartItem] = []
+
     // MARK: - Variant Dialog
     @Published var showVariantDialog = false
     @Published var selectedProductForVariant: Product?
@@ -670,6 +670,13 @@ class POSViewModel: ObservableObject {
         socketService.connect()
         setupSyncEngine()
         setupOnlineOrderReconciliation()
+        $selectedCategory
+            .dropFirst()
+            .sink { [weak self] categoryId in
+                guard let self, let categoryId else { return }
+                Task { await self.prefetchFlowGraphs(for: self.products.filter { $0.active && $0.categoryId == categoryId }) }
+            }
+            .store(in: &cancellables)
         // Re-emit payment display when method or tip changes while on confirmation
         Publishers.CombineLatest3($paymentMethod, $tipPercentage, $customTip)
             .dropFirst()
@@ -900,6 +907,10 @@ class POSViewModel: ObservableObject {
                     self?.applyPromotions()
                 }
             }
+        }
+
+        socketService.onFlowsUpdated = { [weak self] in
+            Task { @MainActor in self?.flowGraphCache.removeAll() }
         }
     }
     
@@ -2279,27 +2290,10 @@ class POSViewModel: ObservableObject {
             return
         }
         
-        // Check product flow (hybrid: product-specific or inherited from category)
         Task {
-            let flow = try? await APIService.shared.fetchProductFlow(productId: product.id)
-            print("🎯 Flow decision for \(product.name):")
-            print("   - Has flow: \(flow != nil)")
-            print("   - Use default: \(flow?.useDefaultFlow ?? true)")
-            print("   - Steps count: \(flow?.steps.count ?? 0)")
-            
-            if let flow = flow, !flow.useDefaultFlow, !flow.steps.isEmpty {
-                print("   ✅ Using flow with \(flow.steps.count) steps")
-                print("📊 Detalles de los steps:")
-                for (idx, step) in flow.steps.enumerated() {
-                    print("     Step[\(idx)]: id=\(step.id), name=\(step.stepName), type=\(step.stepType), options=\(step.options?.count ?? 0)")
-                }
-                categoryFlow = flow
-                selectedProduct = product
-                currentStepIndex = 0
-                stepSelections = [:]
+            if let graph = await graphForProduct(product) {
+                startFlow(graph, product: product)
             } else {
-                print("   ⏭️ Adding product directly (no flow)")
-                // No flow — add directly
                 addProductDirectly(product)
             }
         }
@@ -2350,31 +2344,12 @@ class POSViewModel: ObservableObject {
         let isBev = product.category?.isBeverage ?? false
         let displayName = "\(product.name) - \(variantName)"
         
-        // Check for product flow (hybrid: product-specific or inherited from category)
         Task {
-            let flow = try? await APIService.shared.fetchProductFlow(productId: product.id)
-            print("🎯 Variant flow decision for \(product.name) - \(variantName):")
-            print("   - Has flow: \(flow != nil)")
-            print("   - Use default: \(flow?.useDefaultFlow ?? true)")
-            print("   - Steps count: \(flow?.steps.count ?? 0)")
-            
-            if let flow = flow, !flow.useDefaultFlow, !flow.steps.isEmpty {
-                print("   ✅ Using flow with \(flow.steps.count) steps")
-                // Aquí sí es un cierre real: el flujo personalizado vive en
-                // ProductGridView, no en este sheet.
+            if let graph = await graphForProduct(product) {
                 showVariantDialog = false
-                categoryFlow = flow
-                selectedProduct = product
-                currentStepIndex = 0
-                stepSelections = [:]
-                // Store variant info for later
-                stepSelections["_variantName"] = variantName as Any
-                stepSelections["_variantPrice"] = variantPrice as Any
-                stepSelections["_displayName"] = displayName as Any
+                startFlow(graph, product: product, variant: FlowVariant(name: variantName, price: variantPrice))
                 return
             }
-            
-            print("   ⏭️ Adding variant directly (no flow)")
             
             let newItem = CartItem(
                 productId: product.id,
@@ -2401,224 +2376,181 @@ class POSViewModel: ObservableObject {
     }
 
     // MARK: - Modifier Flow
-    
-    func handleStepSelection(_ selection: Any?) {
-        guard let flow = categoryFlow, currentStepIndex < flow.steps.count else { return }
-        let step = flow.steps[currentStepIndex]
-        
-        // Support multi-select for custom/category/products/extra steps
-        if (step.stepType == "custom" || step.stepType == "category" || step.stepType == "products" || step.stepType == "extra") && step.allowMultiple {
-            var current = (stepSelections[step.id] as? [ModifierOption]) ?? []
-            if let opt = selection as? ModifierOption {
-                if current.contains(where: { $0.id == opt.id }) {
-                    current.removeAll { $0.id == opt.id }
-                } else {
-                    current.append(opt)
-                }
-                stepSelections[step.id] = current
-            } else if selection == nil {
-                stepSelections[step.id] = nil
-            }
-            return // Don't auto-advance for multi-select
-        }
-        
-        stepSelections[step.id] = selection
-        
-        let nextIndex = currentStepIndex + 1
-        if nextIndex < flow.steps.count {
-            currentStepIndex = nextIndex
-        } else {
-            prepareFlowItemAndShowNotes()
+
+    var activeFlowNode: FlowNode? {
+        guard let graph = flowGraph, let nodeId = flowPath.last?.nodeId else { return nil }
+        return graph.nodes.first { $0.id == nodeId }
+    }
+
+    var activeFlowSelectedOptionIds: [String] { flowPath.last?.selectedOptionIds ?? [] }
+
+    var flowBreadcrumbs: [(index: Int, title: String)] {
+        guard let graph = flowGraph else { return [] }
+        return flowPath.enumerated().compactMap { index, visit in
+            guard let node = graph.nodes.first(where: { $0.id == visit.nodeId }) else { return nil }
+            let labels = node.options.filter { visit.selectedOptionIds.contains($0.id) }.map(\.label)
+            return (index, ([node.title] + labels).joined(separator: " › "))
         }
     }
-    
+
+    var flowSelectionSummaries: [FlowSelectionSummary] {
+        guard let graph = flowGraph else { return [] }
+        return flowPath.compactMap { visit in
+            guard let node = graph.nodes.first(where: { $0.id == visit.nodeId }),
+                  !node.options.isEmpty else { return nil }
+            let selectedOptions = node.options.filter { visit.selectedOptionIds.contains($0.id) }
+            guard !selectedOptions.isEmpty else { return nil }
+            let detail = selectedOptions.map { option in
+                option.emitsChildItem ? "Componente: \(option.label)" : option.label
+            }.joined(separator: ", ")
+            return FlowSelectionSummary(id: node.id, title: node.title, detail: detail)
+        }
+    }
+
+    func returnToFlowVisit(_ index: Int) {
+        guard flowPath.indices.contains(index) else { return }
+        flowPath = Array(flowPath.prefix(index + 1))
+        showingFlowSummary = false
+    }
+
+    func flowLiveTotal() -> Double {
+        guard let product = selectedProduct else { return 0 }
+        let base = selectedFlowVariant?.price ?? (customerName.hasPrefix("Uber") || customerName.hasPrefix("Rappi") || customerName.hasPrefix("Didi") ? product.numericPlatformPrice : product.numericPrice)
+        return (try? FlowEngine.computeTotal(in: flowGraph ?? FlowGraph(productId: product.id, format: "graph", source: "", flows: [], entryNodeId: "", nodes: [], edges: []), path: flowPath, basePrice: base)) ?? base
+    }
+
+    func flowSummaryItems() -> [CartItem] { buildFlowCartItems() ?? [] }
+
+    func confirmFlowSummary() {
+        showingFlowSummary = false
+        prepareFlowItemAndShowNotes()
+    }
+
+    private var currentFlowContext: FlowContext? {
+        guard let product = selectedProduct else { return nil }
+        return FlowContext(
+            productId: product.id,
+            categoryId: product.categoryId,
+            subcategoryId: product.subcategoryId,
+            variantName: selectedFlowVariant?.name,
+            flowTags: product.flowTags,
+            pathOptionIds: flowPath.flatMap(\.selectedOptionIds)
+        )
+    }
+
+    private func graphForProduct(_ product: Product) async -> FlowGraph? {
+        if let cached = flowGraphCache[product.id] { return cached }
+        guard let graph = try? await APIService.shared.fetchProductFlowGraph(productId: product.id), !graph.nodes.isEmpty else { return nil }
+        flowGraphCache[product.id] = graph
+        return graph
+    }
+
+    private func prefetchFlowGraphs(for products: [Product]) async {
+        for product in products where flowGraphCache[product.id] == nil {
+            _ = await graphForProduct(product)
+        }
+    }
+
+    private func startFlow(_ graph: FlowGraph, product: Product, variant: FlowVariant? = nil) {
+        selectedProduct = product
+        selectedFlowVariant = variant
+        flowGraph = graph
+        let initialId: String?
+        if let entry = graph.nodes.first(where: { $0.id == graph.entryNodeId }), !entry.options.isEmpty {
+            initialId = entry.id
+        } else {
+            initialId = try? FlowEngine.nextNode(
+                in: graph,
+                currentNodeId: graph.entryNodeId,
+                selectedOptionIds: [],
+                context: currentFlowContext ?? FlowContext(productId: product.id, categoryId: product.categoryId, subcategoryId: product.subcategoryId, variantName: variant?.name, flowTags: product.flowTags, pathOptionIds: [])
+            )
+        }
+        guard let initialId else {
+            prepareFlowItemAndShowNotes()
+            return
+        }
+        flowPath = [FlowPathVisit(nodeId: initialId, selectedOptionIds: [])]
+    }
+
+    func handleStepSelection(_ option: FlowNodeOption?) {
+        guard let node = activeFlowNode, !flowPath.isEmpty else { return }
+        let selectedIds = option.map {
+            node.selectMode == "multi"
+                ? toggled($0.id, in: flowPath[flowPath.count - 1].selectedOptionIds)
+                : [$0.id]
+        } ?? []
+        flowPath[flowPath.count - 1] = FlowPathVisit(nodeId: node.id, selectedOptionIds: selectedIds)
+        if node.selectMode == "single" && FlowEngine.canAdvance(node: node, selectedOptionIds: selectedIds) {
+            advanceToNextStep()
+        }
+    }
+
+    private func toggled(_ id: String, in ids: [String]) -> [String] {
+        ids.contains(id) ? ids.filter { $0 != id } : ids + [id]
+    }
+
     func advanceToNextStep() {
-        guard let flow = categoryFlow, currentStepIndex < flow.steps.count else { return }
-        let nextIndex = currentStepIndex + 1
-        if nextIndex < flow.steps.count {
-            currentStepIndex = nextIndex
-        } else {
-            prepareFlowItemAndShowNotes()
-        }
-    }
-    
-    func handleBackInFlow() {
-        if currentStepIndex > 0 {
-            currentStepIndex -= 1
-        } else {
+        guard let graph = flowGraph, let node = activeFlowNode, let context = currentFlowContext,
+              let visit = flowPath.last, FlowEngine.canAdvance(node: node, selectedOptionIds: visit.selectedOptionIds) else { return }
+        do {
+            if let next = try FlowEngine.nextNode(in: graph, currentNodeId: node.id, selectedOptionIds: visit.selectedOptionIds, context: context) {
+                flowPath.append(FlowPathVisit(nodeId: next, selectedOptionIds: []))
+            } else {
+                showingFlowSummary = true
+            }
+        } catch {
+            showToast("El flujo tiene una ruta inválida", isError: true)
             resetFlow()
         }
     }
-    
+
+    func handleBackInFlow() {
+        guard !flowPath.isEmpty else { return }
+        if flowPath.count == 1 {
+            resetFlow()
+        } else {
+            flowPath.removeLast()
+        }
+    }
+
     func resetFlow() {
-        currentStepIndex = -1
-        categoryFlow = nil
+        flowGraph = nil
+        flowPath = []
+        showingFlowSummary = false
         selectedProduct = nil
-        stepSelections = [:]
-        selectedFrosting = nil
-        selectedTopping = nil
-        selectedExtras = []
+        selectedFlowVariant = nil
+        pendingFlowItems = []
         productNotes = ""
     }
-    
-    private func buildFlowCartItem() -> CartItem? {
-        guard let product = selectedProduct else { return nil }
-        
+
+    private func buildFlowCartItems() -> [CartItem]? {
+        guard let graph = flowGraph, let product = selectedProduct, let context = currentFlowContext else { return nil }
         let isPlatform = customerName.hasPrefix("Uber") || customerName.hasPrefix("Rappi") || customerName.hasPrefix("Didi")
-        var price: Double
-        var displayName: String
-        
-        if let variantPrice = stepSelections["_variantPrice"] as? Double,
-           let vName = stepSelections["_displayName"] as? String {
-            price = variantPrice
-            displayName = vName
-        } else {
-            price = isPlatform ? product.numericPlatformPrice : product.numericPrice
-            displayName = product.name
+        let basePrice = isPlatform ? product.numericPlatformPrice : product.numericPrice
+        let variant = selectedFlowVariant.map { FlowVariant(name: $0.name, price: isPlatform ? $0.price : $0.price) }
+        let flowProduct = FlowProduct(id: product.id, name: product.name, price: variant == nil ? basePrice : nil, seat: activeSeat, course: activeCourse)
+        guard let built = try? FlowEngine.buildItems(in: graph, path: flowPath, product: flowProduct, variant: variant, context: context) else { return nil }
+        var parent = CartItem(productId: built.parent.productId, productName: built.parent.productName, unitPrice: built.parent.unitPrice, quantity: 1, notes: productNotes, seat: built.parent.seat ?? activeSeat, course: built.parent.course ?? activeCourse, sentToKitchen: false, isBeverage: product.category?.isBeverage ?? false, deliveredToTable: false, variantName: selectedFlowVariant?.name, isGuest: false)
+        parent.packageLabel = built.parent.packageLabel
+        parent.flowSelections = built.selections
+        let children = built.children.map { child in
+            CartItem(productId: child.productId, productName: child.productName, unitPrice: 0, quantity: 1, notes: "", seat: child.seat ?? parent.seat, course: child.course ?? parent.course, sentToKitchen: false, isBeverage: child.isBeverage, deliveredToTable: false, variantName: nil, isGuest: false, parentLocalId: parent.id)
         }
-        
-        var frostId: String?, frostName: String?
-        var topId: String?, topName: String?
-        var extId: String?, extName: String?
-        var customMods: String?
-        var customModsDict: [String: Any] = [:]
-        
-        if let flow = categoryFlow {
-            for step in flow.steps {
-                if let sel = stepSelections[step.id] {
-                    switch step.stepType {
-                    case "frosting":
-                        if let f = sel as? Frosting {
-                            // Frosting real de la tabla "frostings" — id válido para el FK.
-                            frostId = f.id; frostName = f.name
-                        } else if let opt = sel as? ModifierOption {
-                            // Opción definida en el flujo personalizado — su id viene de
-                            // "modifier_options", NO existe en "frostings" (violaría el FK
-                            // de order_items.frosting_id), así que se guarda en customModifiers.
-                            customModsDict[step.id] = [
-                                "stepName": step.stepName,
-                                "stepType": step.stepType,
-                                "options": [["id": opt.id, "name": opt.name, "price": opt.price]]
-                            ]
-                            price += opt.numericPrice
-                        } else if let opts = sel as? [ModifierOption], !opts.isEmpty {
-                            customModsDict[step.id] = [
-                                "stepName": step.stepName,
-                                "stepType": step.stepType,
-                                "options": opts.map { ["id": $0.id, "name": $0.name, "price": $0.price] }
-                            ]
-                            price += opts.reduce(0.0) { $0 + $1.numericPrice }
-                        }
-                    case "topping":
-                        if let t = sel as? DryTopping {
-                            // Topping real de la tabla "dry_toppings" — id válido para el FK.
-                            topId = t.id; topName = t.name
-                        } else if let opt = sel as? ModifierOption {
-                            // Opción definida en el flujo personalizado — mismo caso que
-                            // "frosting" arriba: su id no existe en "dry_toppings".
-                            customModsDict[step.id] = [
-                                "stepName": step.stepName,
-                                "stepType": step.stepType,
-                                "options": [["id": opt.id, "name": opt.name, "price": opt.price]]
-                            ]
-                            price += opt.numericPrice
-                        } else if let opts = sel as? [ModifierOption], !opts.isEmpty {
-                            customModsDict[step.id] = [
-                                "stepName": step.stepName,
-                                "stepType": step.stepType,
-                                "options": opts.map { ["id": $0.id, "name": $0.name, "price": $0.price] }
-                            ]
-                            price += opts.reduce(0.0) { $0 + $1.numericPrice }
-                        }
-                    case "extra":
-                        if let exts = sel as? [Extra], !exts.isEmpty {
-                            // Real extras from DB table — valid UUID
-                            let names = exts.map { $0.name }.joined(separator: ", ")
-                            extId = exts.first?.id; extName = names
-                            let extrasPrice = exts.reduce(0.0) { $0 + $1.numericPrice }
-                            price += extrasPrice
-                        } else if let opt = sel as? ModifierOption {
-                            // Flow step option — NOT a valid DB UUID, store in customModifiers
-                            customModsDict[step.id] = [
-                                "stepName": step.stepName,
-                                "stepType": step.stepType,
-                                "options": [["id": opt.id, "name": opt.name, "price": opt.price]]
-                            ]
-                            price += opt.numericPrice
-                        } else if let opts = sel as? [ModifierOption], !opts.isEmpty {
-                            // Flow step options — NOT valid DB UUIDs, store in customModifiers
-                            customModsDict[step.id] = [
-                                "stepName": step.stepName,
-                                "stepType": step.stepType,
-                                "options": opts.map { ["id": $0.id, "name": $0.name, "price": $0.price] }
-                            ]
-                            price += opts.reduce(0.0) { $0 + $1.numericPrice }
-                        }
-                    case "custom", "category", "products":
-                        if let opts = sel as? [ModifierOption], !opts.isEmpty {
-                            customModsDict[step.id] = [
-                                "stepName": step.stepName,
-                                "stepType": step.stepType,
-                                "options": opts.map { ["id": $0.id, "name": $0.name, "price": $0.price] }
-                            ]
-                            price += opts.reduce(0.0) { $0 + $1.numericPrice }
-                        } else if let opt = sel as? ModifierOption {
-                            customModsDict[step.id] = [
-                                "stepName": step.stepName,
-                                "stepType": step.stepType,
-                                "options": [["id": opt.id, "name": opt.name, "price": opt.price]]
-                            ]
-                            price += opt.numericPrice
-                        }
-                    default: break
-                    }
-                }
-            }
-        }
-        
-        if !customModsDict.isEmpty {
-            if let data = try? JSONSerialization.data(withJSONObject: customModsDict),
-               let str = String(data: data, encoding: .utf8) {
-                customMods = str
-            }
-        }
-        
-        let isBev = product.category?.isBeverage ?? false
-        let variantName = stepSelections["_variantName"] as? String
-        
-        return CartItem(
-            productId: product.id,
-            productName: displayName,
-            unitPrice: price,
-            quantity: 1,
-            notes: productNotes,
-            frostingId: frostId,
-            frostingName: frostName,
-            dryToppingId: topId,
-            dryToppingName: topName,
-            extraId: extId,
-            extraName: extName,
-            customModifiers: customMods,
-            seat: activeSeat,
-            course: activeCourse,
-            sentToKitchen: false,
-            isBeverage: isBev,
-            deliveredToTable: false,
-            variantName: variantName,
-            isGuest: false
-        )
+        return [parent] + children
     }
-    
+
     func prepareFlowItemAndShowNotes() {
-        guard let item = buildFlowCartItem() else { return }
-        pendingCartItem = item
+        guard let items = buildFlowCartItems(), let parent = items.first else { return }
+        pendingFlowItems = items
+        pendingCartItem = parent
         tempNotes = productNotes
         showNotesDialog = true
     }
 
     func finishFlowAndAddToCart() {
-        guard let item = buildFlowCartItem() else { return }
-        addToCart(item)
+        guard let items = buildFlowCartItems() else { return }
+        addToCart(items)
         resetFlow()
     }
 
@@ -2629,14 +2561,20 @@ class POSViewModel: ObservableObject {
         let labels = quickNotes.filter { selectedQuickNoteIds.contains($0.id) }.map { $0.label }
         let freeText = tempNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         item.notes = (labels + (freeText.isEmpty ? [] : [freeText])).joined(separator: ", ")
-        addToCart(item)
+        if !pendingFlowItems.isEmpty {
+            var items = pendingFlowItems
+            items[0].notes = item.notes
+            addToCart(items)
+        } else {
+            addToCart(item)
+        }
         showNotesDialog = false
         pendingCartItem = nil
         tempNotes = ""
         selectedQuickNoteIds = []
         showFreeTextNotes = false
         // If this came from a custom flow, reset it
-        if categoryFlow != nil {
+        if flowGraph != nil {
             resetFlow()
         }
     }
@@ -2644,7 +2582,7 @@ class POSViewModel: ObservableObject {
     func handleCancelNotes() {
         showNotesDialog = false
         // Only clear pending item if not in a custom flow (so user can go back)
-        if categoryFlow == nil {
+        if flowGraph == nil {
             pendingCartItem = nil
             tempNotes = ""
             selectedQuickNoteIds = []
@@ -2683,9 +2621,18 @@ class POSViewModel: ObservableObject {
         applyPromotions()
         emitCustomerDisplayState()
     }
+
+    /// Appends a package parent and all of its children as one unmergeable cart group.
+    private func addToCart(_ items: [CartItem]) {
+        guard !items.isEmpty else { return }
+        cart.append(contentsOf: items)
+        applyPromotions()
+        emitCustomerDisplayState()
+    }
     
     func updateQuantity(at index: Int, delta: Int) {
         guard index < cart.count else { return }
+        guard cart[index].parentLocalId == nil else { return }
         if cart[index].sentToKitchen {
             showToast("No se puede modificar un item ya enviado a cocina", isError: true)
             return
@@ -2704,13 +2651,18 @@ class POSViewModel: ObservableObject {
     
     func removeFromCart(at index: Int) {
         guard index < cart.count else { return }
+        if cart[index].parentLocalId != nil {
+            showToast("Los componentes de un paquete se eliminan junto con el platillo", isError: true)
+            return
+        }
         if cart[index].sentToKitchen {
             voidItemIndex = index
             voidReason = ""
             showVoidDialog = true
             return
         }
-        cart.remove(at: index)
+        let parentId = cart[index].id
+        cart.removeAll { $0.id == parentId || $0.parentLocalId == parentId }
         applyPromotions()
         emitCustomerDisplayState()
     }
@@ -2718,6 +2670,7 @@ class POSViewModel: ObservableObject {
     func updateCartQuantity(at index: Int, delta: Int) {
         guard index < cart.count else { return }
         let item = cart[index]
+        guard item.parentLocalId == nil else { return }
         
         // Don't allow changing quantity of items already sent to kitchen
         if item.sentToKitchen {
@@ -3247,7 +3200,7 @@ class POSViewModel: ObservableObject {
             do {
                 if let orderId = currentOrderId {
                     // Add items to existing order
-                    let itemDicts = unsentItems.map { itemToDict($0) }
+                    let itemDicts = itemDicts(for: unsentItems)
                     let updated = try await APIService.shared.addItemsToOrder(orderId: orderId, items: itemDicts)
                     
                     // Send to kitchen (mark as preparing)
@@ -3282,7 +3235,7 @@ class POSViewModel: ObservableObject {
                     print("🔥 Creating NEW order - tableId=\(selectedTable?.id ?? "nil")")
                     print("🔥 selectedTable object: \(String(describing: selectedTable))")
                     print("🔥 isEmployeeOrder: \(isEmployeeOrder), isHomeDelivery: \(isHomeDelivery)")
-                    let itemDicts = unsentItems.map { itemToDict($0) }
+                    let itemDicts = itemDicts(for: unsentItems)
                     var body: [String: Any] = [
                         "items": itemDicts,
                         "status": "preparing",
@@ -3417,6 +3370,40 @@ class POSViewModel: ObservableObject {
         if let v = item.promotionDiscount { dict["promotionDiscount"] = v }
         return dict
     }
+
+    private func itemDicts(for items: [CartItem]) -> [[String: Any]] {
+        let parentIndices = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
+        return items.map { item in
+            var dict = itemToDict(item)
+            if let parentId = item.parentLocalId, let parentIndex = parentIndices[parentId] {
+                dict["parentIndex"] = parentIndex
+            }
+            if let selections = item.flowSelections {
+                let parentIndex = parentIndices[item.id]
+                dict["selections"] = selections.map { selection in
+                    var payload: [String: Any] = [
+                        "flowId": selection.flowId,
+                        "nodeId": selection.nodeId,
+                        "optionId": selection.optionId,
+                        "nodeTitle": selection.nodeTitle,
+                        "optionLabel": selection.optionLabel,
+                        "priceDelta": selection.priceDelta,
+                        "sortOrder": selection.sortOrder
+                    ]
+                    if let productId = selection.refProductId { payload["refProductId"] = productId }
+                    if let variant = selection.refVariantName { payload["refVariantName"] = variant }
+                    if let price = selection.refListPrice { payload["refListPrice"] = price }
+                    if let offset = selection.childItemIndex, let parentIndex {
+                        // The engine indexes only its children; this adapter owns
+                        // the full request array where the parent precedes them.
+                        payload["childIndex"] = parentIndex + offset + 1
+                    }
+                    return payload
+                }
+            }
+            return dict
+        }
+    }
     
     /// Parses an item's `customModifiers` JSON into `{name, price}` entries for display on
     /// customer-facing tickets (only priced modifiers — frosting/topping have no price and
@@ -3527,7 +3514,7 @@ class POSViewModel: ObservableObject {
             let unsentItems = cart.filter { !$0.sentToKitchen && $0.itemId == nil }
             if !unsentItems.isEmpty {
                 Task {
-                    let itemDicts = unsentItems.map { itemToDict($0) }
+                    let itemDicts = itemDicts(for: unsentItems)
                     let _ = try? await APIService.shared.addItemsToOrder(orderId: orderId, items: itemDicts)
                     for i in cart.indices {
                         if !cart[i].sentToKitchen && cart[i].itemId == nil {
@@ -3558,7 +3545,7 @@ class POSViewModel: ObservableObject {
         submitting = true
         Task {
             do {
-                let itemDicts = cart.map { itemToDict($0) }
+                let itemDicts = itemDicts(for: cart)
                 var body: [String: Any] = [
                     "items": itemDicts,
                     "employeeId": employeeId ?? "",
@@ -3716,7 +3703,7 @@ class POSViewModel: ObservableObject {
             assignments[i] = [:]
         }
         for (cartIndex, item) in cart.enumerated() {
-            guard item.seat != "C" else { continue }
+            guard item.seat != "C", item.parentLocalId == nil else { continue }
             if item.seat.hasPrefix("A"), let seatNum = Int(item.seat.dropFirst()), seatNum >= 1, seatNum <= guestCount {
                 assignments[seatNum - 1, default: [:]][cartIndex] = item.quantity
             }
@@ -4820,6 +4807,12 @@ struct ProductSubcategoryGroup: Identifiable {
     let id: String
     let title: String?
     let products: [Product]
+}
+
+struct FlowSelectionSummary: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
 }
 
 struct GuestProductItem: Identifiable {

@@ -15,9 +15,13 @@ import { db, schema } from "../db";
 import { inArray, and, eq } from "drizzle-orm";
 
 export interface PrintableItem {
+  orderItemId?: string | null;
   productId?: string | null;
   productName: string;
   quantity: number;
+  parentName?: string | null;
+  isPackageChild?: boolean;
+  packageLabel?: string | null;
   seat?: string | null;
   course?: number | null;
   notes?: string | null;
@@ -123,6 +127,36 @@ function buildFlowSteps(customModifiers: string | null | undefined): { name: str
   }
 }
 
+async function resolveSelectionSteps(items: PrintableItem[]): Promise<Map<string, { name: string }[]>> {
+  const orderItemIds = items
+    .map((item) => item.orderItemId)
+    .filter((id): id is string => !!id);
+  if (orderItemIds.length === 0) return new Map();
+
+  const selections = await db
+    .select({
+      orderItemId: schema.orderItemSelections.orderItemId,
+      nodeTitle: schema.orderItemSelections.nodeTitle,
+      optionLabel: schema.orderItemSelections.optionLabel,
+      sortOrder: schema.orderItemSelections.sortOrder,
+    })
+    .from(schema.orderItemSelections)
+    .where(inArray(schema.orderItemSelections.orderItemId, orderItemIds));
+
+  const byItemId = new Map<string, { name: string; sortOrder: number }[]>();
+  for (const selection of selections) {
+    const steps = byItemId.get(selection.orderItemId) ?? [];
+    steps.push({ name: `${selection.nodeTitle}: ${selection.optionLabel}`, sortOrder: selection.sortOrder });
+    byItemId.set(selection.orderItemId, steps);
+  }
+  return new Map(
+    Array.from(byItemId.entries()).map(([id, steps]) => [
+      id,
+      steps.sort((a, b) => a.sortOrder - b.sortOrder).map(({ name }) => ({ name })),
+    ])
+  );
+}
+
 async function postWithRetry(url: string, body: unknown, attempts = 3): Promise<boolean> {
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
@@ -159,24 +193,29 @@ export async function printKitchenComanda(opts: PrintKitchenComandaOptions): Pro
     .filter((id): id is string => !!id);
   const beverageIds = await resolveBeverageFlags(productIds);
   const subcategoryNames = await resolveSubcategoryNames(productIds);
+  const selectionStepsByItemId = await resolveSelectionSteps(opts.items);
 
   const items = opts.items.map((item) => {
     const baseName = comandaItemName(item.productName);
     const subName = item.productId ? subcategoryNames.get(item.productId) : undefined;
+    const selectionSteps = item.orderItemId ? selectionStepsByItemId.get(item.orderItemId) : undefined;
+    const flowSteps = selectionSteps && selectionSteps.length > 0
+      ? selectionSteps
+      : buildFlowSteps(item.customModifiers);
     return {
-    name: subName ? `${subName} - ${baseName}` : baseName,
-    qty: item.quantity,
-    seat: item.seat || "C",
-    course: item.course || 1,
-    isBeverage: item.productId ? beverageIds.has(item.productId) : false,
-    ...(item.notes ? { notes: item.notes } : {}),
-    ...(item.frostingName ? { frosting: item.frostingName } : {}),
-    ...(item.dryToppingName ? { topping: item.dryToppingName } : {}),
-    ...(item.extraName ? { extra: item.extraName } : {}),
-    ...(() => {
-      const flowSteps = buildFlowSteps(item.customModifiers);
-      return flowSteps.length > 0 ? { flowSteps } : {};
-    })(),
+      name: subName ? `${subName} - ${baseName}` : baseName,
+      qty: item.quantity,
+      seat: item.seat || "C",
+      course: item.course || 1,
+      isBeverage: item.productId ? beverageIds.has(item.productId) : false,
+      ...(item.parentName ? { parentName: item.parentName } : {}),
+      ...(item.isPackageChild ? { isPackageChild: true } : {}),
+      ...(item.packageLabel ? { packageLabel: item.packageLabel } : {}),
+      ...(item.notes ? { notes: item.notes } : {}),
+      ...(item.frostingName ? { frosting: item.frostingName } : {}),
+      ...(item.dryToppingName ? { topping: item.dryToppingName } : {}),
+      ...(item.extraName ? { extra: item.extraName } : {}),
+      ...(flowSteps.length > 0 ? { flowSteps } : {}),
     };
   });
 

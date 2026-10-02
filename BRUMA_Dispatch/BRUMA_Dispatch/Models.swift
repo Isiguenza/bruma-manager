@@ -51,6 +51,8 @@ struct OrderItem: Identifiable {
     let createdAt: String?
     let deliveredToTable: Bool?
     let isBeverage: Bool?  // categoría es bebida O flujo del producto marcado como bebida
+    let parentItemId: String?
+    let packageLabel: String?
 
     /// Bebida efectiva: usa el flag del backend (categoría o flujo) y cae a la
     /// categoría por compatibilidad si el backend no lo mandó.
@@ -64,7 +66,7 @@ extension OrderItem: Codable {
         case id, orderId, productId, productName, quantity, unitPrice, subtotal
         case notes, voided, course, seat
         case frostingName, dryToppingName, extraName, customModifiers
-        case product, createdAt, deliveredToTable, isBeverage
+        case product, createdAt, deliveredToTable, isBeverage, parentItemId, packageLabel
     }
     
     init(from decoder: Decoder) throws {
@@ -88,6 +90,8 @@ extension OrderItem: Codable {
         deliveredToTable = try container.decodeIfPresent(Bool.self, forKey: .deliveredToTable)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
         isBeverage = try container.decodeIfPresent(Bool.self, forKey: .isBeverage)
+        parentItemId = try container.decodeIfPresent(String.self, forKey: .parentItemId)
+        packageLabel = try container.decodeIfPresent(String.self, forKey: .packageLabel)
     }
 }
 

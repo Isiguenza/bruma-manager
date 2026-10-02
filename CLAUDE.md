@@ -578,3 +578,97 @@ hay 4 capas, todas independientes:
    lista de delivery), el botón grande deja de ser "Marcar listo" y muestra
    **Confirmar / Rechazar** apilados (`confirmOnlineOrderFromCart` /
    `rejectOnlineOrderFromCart`).
+
+## Flujos v2: grafo con ramas, paquetes padre/hijo
+
+Reemplazó el motor lineal (`steps[]` + `currentStepIndex++`) por un **grafo
+real**: nodos + aristas con condiciones. Contrato completo en
+`docs/FLOWS_V2_PLAN.md`; cómo probar en `docs/FLOWS_V2_COMO_PROBAR.md`;
+pendiente de la web pública en `docs/FLOWS_FASE2_WEB_PUBLICA.md`.
+
+Tablas: `flow_definitions` / `flow_targets` / `flow_nodes` /
+`flow_node_options` / `flow_option_price_overrides` / `flow_edges`, más
+`order_item_selections` y las columnas `order_items.parent_item_id`,
+`order_items.package_label`, `products.flow_tags`.
+`modifier_steps` / `modifier_options` / `product_flows` quedan **legacy
+solo-lectura** (se borran en la fase final).
+
+**Evaluación: el servidor resuelve, el cliente camina.** El resolver compone el
+grafo completo (selección por targets, splice de varios flujos, expansión de
+categorías a productos, `effectivePrice`, `isBeverage`, `variantChoices`) y lo
+manda de un jalón. El cliente no hace **ninguna** petición entre nodo y nodo —
+eso es requisito de UX, no detalle.
+
+**Un nodo sin opciones es un NODO DE PASO**: invisible para el mesero, el motor
+lo atraviesa evaluando sus aristas. Es lo que permite ramificar según
+producto/variante antes de preguntar nada (así el paso "Tipo de leche" solo
+aplica a `variantNameIn:["Caliente"]` + `productHasTag:"con-leche"`).
+
+**`childIndex` vs `childItemIndex` — la frontera donde ya se rompió una vez:**
+el motor (TS y Swift) expone `childItemIndex`, que es el índice dentro del array
+de **hijos**. El cable usa `childIndex`, que es el índice dentro del array
+`items` **completo** del body, y el backend valida
+`records[childIndex].parentIndex === record.index`. La traducción va **en la capa
+adaptadora** (`POSViewModel.itemDicts(for:)` y el armado del body de
+`app/bar/page.tsx`), nunca dentro del motor: cambiarla ahí hace divergir las dos
+implementaciones y rompe los vectores compartidos. Mandar el nombre equivocado
+no da error — `child_item_id` queda en `null` en silencio.
+
+**Tres copias a mano que hay que mantener en sync (el repo ya vivía así):**
+`lib/flows/compose.ts` ↔ `api-server/src/lib/flowCompose.ts` (duplicadas porque
+`api-server` es un proyecto TS aparte, `rootDir:"."`, que no puede importar de la
+raíz), y los motores `lib/flows/engine.ts` ↔
+`Bruma POS/Bruma POS/Services/FlowEngine.swift`. La protección NO es la
+disciplina: son los **vectores compartidos**
+`lib/flows/fixtures/{engine,compose}-vectors.json`, que ambos lados cargan y
+corren. Si agregas una regla, agrega su vector o la divergencia vuelve a ser
+silenciosa.
+
+**Gotcha ya corregido — igualdad con nulos en el match de targets:** el
+`matches(target, product)` del composer comparaba
+`target.subcategoryId === product.subcategoryId` sin excluir nulos. Un target de
+scope *producto* trae `subcategory_id` y `category_id` en `NULL`, así que contra
+cualquier producto sin subcategoría daba `null === null` → **todo flujo aplicaba
+a todo producto**. Se destapó al consolidar Café (los cafés quedaron con
+`subcategory_id = NULL`): un Capuccino pedía "Proteínas: camarón/pulpo" y
+"¿Paquete? +$61". Los 7 compose-vectors pasaban igual porque sus fixtures nunca
+traían nulos. Un target solo matchea por el campo que **tiene seteado**.
+
+**Gotcha ya corregido — el aplanado legacy y el `stepType` inventado:**
+`GET /api/products/:id/flow` **sin** `?format=graph` sigue devolviendo el formato
+viejo (`{productId, useDefaultFlow, steps[], source}`), aplanando el grafo por la
+arista de menor `sortOrder` y omitiendo los nodos de paso. Es lo único que
+mantiene vivas la web pública en Vercel y las apps viejas en TestFlight. Una
+versión intermedia emitía `stepType:"selection"`, que **no existe**: el `switch`
+de iOS lo manda a `default: EmptyView()` y el paso se renderiza **vacío y sin
+error**. El valor correcto es `"custom"`, el único que se comporta bien en single
+y multi en los dos consumidores.
+
+**Soft delete de productos = `deleted_at` Y `active = false`.** El endpoint de
+productos del api-server **no filtra `deleted_at`** y el modelo `Product` de
+Swift ni conoce esa columna, así que un producto con solo `deleted_at` **sigue
+saliendo en el grid del POS**. La migración de Café lo olvidó y por un rato
+hubo dos Capuccinos. Los 12 soft-deletes previos del repo ya seguían la
+convención: respétala.
+
+**Levantar `api-server` en local necesita una `STRIPE_SECRET_KEY` dummy.**
+`api-server/.env` no la trae y `src/routes/online-orders.ts` construye el cliente
+de Stripe **en tiempo de carga del módulo**: sin la key lanza
+`Neither apiKey nor config.authenticator provided` y mata el proceso antes de
+escuchar. `STRIPE_SECRET_KEY=sk_test_dummy_local_only npm run dev`.
+
+**Items hijos de un paquete tocan más de lo que parece.** Un `order_item` a $0
+colgado de `parent_item_id` rompe en silencio todo lo que asume que cada item es
+independiente y cobrable. Ya está resuelto en: `applyPromotions` (ignora hijos —
+ese motor **muta** `unitPrice`), `calculateSupplierTotals` (`fixed_cost` **sí**
+cuenta hijos porque el insumo se consumió; `percentage` los **excluye** porque el
+revenue vive en el padre), los conteos de platillos del corte y de
+`dashboard/stats` (las sumas de dinero no, los **conteos** sí), el split de
+cuenta (los hijos no son asignables), la cascada de anulación y el rechazo de
+editar un hijo. Si agregas una query nueva sobre `order_items`, pregúntate si
+debe contar hijos.
+
+**El Pase marca cada componente por separado, a propósito.** Marcar el padre
+**no** marca a los hijos. En `convertOrdersToBatches` el hijo hereda el batch de
+su raíz de forma explícita (`rootId(for:)` sube la cadena), no por coincidencia
+de los 30s de gap.

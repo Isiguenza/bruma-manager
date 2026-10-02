@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { productFlows, products, modifierSteps, modifierOptions } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { resolveFlowGraph } from "@/lib/flows/resolve";
 
 // GET /api/products/[id]/flow - Get product flow (or inherit from category)
 export async function GET(
@@ -10,6 +11,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    if (request.nextUrl.searchParams.get("format") === "graph") {
+      const graph = await resolveFlowGraph(id);
+      if (!graph) return NextResponse.json({ error: "Product not found or no V2 flow" }, { status: 404 });
+      return NextResponse.json(graph);
+    }
     console.log("🔍 GET /api/products/[id]/flow - Product ID:", id);
 
     // Get product to know its category

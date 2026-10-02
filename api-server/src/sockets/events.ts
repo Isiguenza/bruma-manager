@@ -151,3 +151,11 @@ export function emitPromotionsUpdated(promotion?: any) {
   io.to("room:waitress").emit("promotions:updated", promotion || {});
   console.log(`📡 Emitted promotions:updated`);
 }
+
+export function emitFlowsUpdated() {
+  if (!io) return;
+  io.to("room:pos").emit("flows:updated", {});
+  io.to("room:waitress").emit("flows:updated", {});
+  io.to("room:bar").emit("flows:updated", {});
+  console.log("📡 Emitted flows:updated");
+}

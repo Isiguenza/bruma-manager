@@ -8,6 +8,13 @@
 import SwiftUI
 
 struct BatchCardView: View {
+    private struct DisplayItem: Identifiable {
+        let item: OrderItem
+        let isChild: Bool
+
+        var id: String { item.id }
+    }
+
     let batch: OrderBatch
     let isExpanded: Bool
     let onToggleExpand: () -> Void
@@ -237,7 +244,7 @@ struct BatchCardView: View {
     private var itemsSection: some View {
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 4) {
-                let grouped = groupItemsBySeat(batch.items)
+                let grouped = groupItemsBySeat(displayItems)
                 let keys = grouped.keys.sorted()
                 ForEach(keys, id: \.self) { seat in
                     if let items = grouped[seat] {
@@ -396,7 +403,7 @@ struct BatchCardView: View {
     }
     
     private func seatBlock(seat: String, items: [OrderItem]) -> some View {
-        let totalQty = items.reduce(0) { $0 + $1.quantity }
+        let totalQty = items.filter(matchesViewMode).reduce(0) { $0 + $1.quantity }
         let byCourse = groupItemsByCourse(items)
         let courseKeys = byCourse.keys.sorted()
         let hasMultipleCourses = courseKeys.count > 1
@@ -426,15 +433,15 @@ struct BatchCardView: View {
                                 Spacer()
                             }
                             .padding(.top, 4)
-                            ForEach(courseItems) { item in
-                                itemRow(item)
+                            ForEach(hierarchicalItems(courseItems)) { displayItem in
+                                itemRow(displayItem.item, isChild: displayItem.isChild)
                             }
                         }
                     }
                 }
             } else {
-                ForEach(items) { item in
-                    itemRow(item)
+                ForEach(hierarchicalItems(items)) { displayItem in
+                    itemRow(displayItem.item, isChild: displayItem.isChild)
                 }
             }
         }
@@ -450,8 +457,8 @@ struct BatchCardView: View {
                 .background(Color.green.opacity(0.12))
                 .cornerRadius(4)
                 .padding(.top, 4)
-            ForEach(items) { item in
-                itemRow(item)
+            ForEach(hierarchicalItems(items)) { displayItem in
+                itemRow(displayItem.item, isChild: displayItem.isChild)
             }
         }
     }
@@ -470,20 +477,67 @@ struct BatchCardView: View {
             }
             .padding(.top, 4)
             
-            ForEach(items) { item in
-                itemRow(item)
+            ForEach(hierarchicalItems(items)) { displayItem in
+                itemRow(displayItem.item, isChild: displayItem.isChild)
             }
         }
     }
     
+    private var displayItems: [OrderItem] {
+        let matchingIds = Set(batch.items.filter(matchesViewMode).map(\.id))
+        let contextParentIds = Set(batch.items.compactMap { item in
+            matchingIds.contains(item.id) ? item.parentItemId : nil
+        })
+        return batch.items.filter { matchingIds.contains($0.id) || contextParentIds.contains($0.id) }
+    }
+
+    private func matchesViewMode(_ item: OrderItem) -> Bool {
+        switch viewModel.viewMode {
+        case "food": return !item.effectiveIsBeverage
+        case "beverages": return item.effectiveIsBeverage
+        default: return true
+        }
+    }
+
+    private func hierarchicalItems(_ items: [OrderItem]) -> [DisplayItem] {
+        let itemIds = Set(items.map(\.id))
+        let childrenByParent = Dictionary(grouping: items.compactMap { item -> OrderItem? in
+            guard let parentId = item.parentItemId, itemIds.contains(parentId) else { return nil }
+            return item
+        }, by: { $0.parentItemId! })
+        var result: [DisplayItem] = []
+        var emitted: Set<String> = []
+
+        func append(_ item: OrderItem, isChild: Bool) {
+            guard emitted.insert(item.id).inserted else { return }
+            result.append(DisplayItem(item: item, isChild: isChild))
+            for child in childrenByParent[item.id] ?? [] {
+                append(child, isChild: true)
+            }
+        }
+
+        for item in items where item.parentItemId == nil || !itemIds.contains(item.parentItemId ?? "") {
+            append(item, isChild: false)
+        }
+        for item in items { append(item, isChild: item.parentItemId != nil) }
+        return result
+    }
+
     @ViewBuilder
-    private func itemRow(_ item: OrderItem) -> some View {
+    private func itemRow(_ item: OrderItem, isChild: Bool) -> some View {
         let delivered = viewModel.isDelivered(item)
         let urgent = batch.urgency == .warning || batch.urgency == .urgent
         let mods = buildModifierLines(item)
+        let isContextOnly = !matchesViewMode(item)
 
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .top, spacing: 8) {
+                if isChild {
+                    Image(systemName: "arrow.turn.down.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(Color(UIColor.secondaryLabel))
+                        .frame(width: 18)
+                }
                 Image(systemName: delivered ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 22))
                     .foregroundColor(delivered ? .green : (urgent ? .orange : Color(UIColor.tertiaryLabel)))
@@ -502,10 +556,29 @@ struct BatchCardView: View {
                 Spacer(minLength: 0)
             }
 
+            if let packageLabel = item.packageLabel, !packageLabel.isEmpty {
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: isChild ? 48 : 30)
+                    Text(packageLabel)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.purple)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.12))
+                        .cornerRadius(4)
+                    if isContextOnly {
+                        Text("contexto")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color(UIColor.secondaryLabel))
+                            .padding(.leading, 5)
+                    }
+                }
+            }
+
             // Modifier / note lines
             if !mods.isEmpty {
                 HStack(spacing: 0) {
-                    Color.clear.frame(width: 30)
+                    Color.clear.frame(width: isChild ? 48 : 30)
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(Array(mods.enumerated()), id: \.offset) { _, line in
                             HStack(spacing: 4) {
@@ -521,7 +594,7 @@ struct BatchCardView: View {
                 }
             }
         }
-        .opacity(delivered ? 0.5 : 1)
+        .opacity(delivered ? 0.5 : (isContextOnly ? 0.72 : 1))
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .onTapGesture { Task { await viewModel.toggleItemDelivered(item) } }

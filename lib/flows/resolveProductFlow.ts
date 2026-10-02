@@ -1,12 +1,39 @@
 import { db } from "@/lib/db";
 import { productFlows, products, modifierSteps, modifierOptions } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { resolveFlowGraph } from "./resolve";
 
 // Resuelve el flujo efectivo de un producto: flujo propio (JSON) si existe y no usa el
 // default; si no, hereda el flujo de la categoría (modifierSteps). Expande los pasos
 // tipo "category" a los productos activos de esa categoría. Misma lógica que
 // app/api/products/[id]/flow (extraída para reusar en el endpoint público).
 export async function resolveProductFlow(productId: string) {
+  const graph = await resolveFlowGraph(productId);
+  if (graph) {
+    const steps: any[] = [];
+    const seen = new Set<string>();
+    let nodeId: string | null = graph.entryNodeId;
+    while (nodeId && !seen.has(nodeId)) {
+      seen.add(nodeId);
+      const node = graph.nodes.find((candidate) => candidate.id === nodeId);
+      if (!node) break;
+      if (node.options.length > 0) {
+        steps.push({
+          id: node.id,
+          stepName: node.title,
+          stepType: node.selectMode === "multi" ? "extra" : "selection",
+          sortOrder: steps.length,
+          isRequired: node.minSelections > 0,
+          allowMultiple: node.selectMode === "multi",
+          includeNoneOption: node.includeNoneOption,
+          active: true,
+          options: node.options.map((option, index) => ({ id: option.id, stepId: node.id, name: option.label, description: null, price: String(option.effectivePrice), sortOrder: index, active: true })),
+        });
+      }
+      nodeId = graph.edges.filter((edge) => edge.fromNodeId === node.id).sort((a, b) => a.sortOrder - b.sortOrder)[0]?.toNodeId ?? null;
+    }
+    return { productId, useDefaultFlow: false, steps, source: "composed" };
+  }
   const [product] = await db
     .select()
     .from(products)

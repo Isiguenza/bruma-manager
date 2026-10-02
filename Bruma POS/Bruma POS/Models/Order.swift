@@ -210,6 +210,13 @@ struct CartItem: Identifiable, Codable {
     
     // Guest fields
     var isGuest: Bool
+
+    /// Non-persisted link used to keep package children attached to their parent in the cart.
+    var parentLocalId: UUID? = nil
+    /// Snapshot of the flow that turned this item into a package parent.
+    var packageLabel: String? = nil
+    /// Snapshots posted to `order_item_selections` with the parent item.
+    var flowSelections: [BuiltSelection]? = nil
     
     var total: Double {
         unitPrice * Double(quantity)

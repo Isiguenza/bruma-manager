@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveProductFlow } from "@/lib/flows/resolveProductFlow";
+import { resolveFlowGraph } from "@/lib/flows/resolve";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -14,11 +15,16 @@ export async function OPTIONS() {
 
 // Flujo de modificadores de un producto para ordenar en línea (público, CORS).
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
+    if (request.nextUrl.searchParams.get("format") === "graph") {
+      const graph = await resolveFlowGraph(id);
+      if (!graph) return NextResponse.json({ error: "Producto no encontrado o sin flujo v2" }, { status: 404, headers: CORS });
+      return NextResponse.json(graph, { headers: CORS });
+    }
     const flow = await resolveProductFlow(id);
     if (!flow) {
       return NextResponse.json({ error: "Producto no encontrado" }, { status: 404, headers: CORS });

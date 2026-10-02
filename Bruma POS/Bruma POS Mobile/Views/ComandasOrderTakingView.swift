@@ -4,8 +4,7 @@ import SwiftUI
 /// `MainPOSView`/`ProductGridView` de Bruma POS (adaptada a una sola
 /// columna para iPhone en vez del panel lado-a-lado de iPad): el mismo
 /// contenedor cambia entre "explorar productos" y "flujo de modificadores"
-/// según `vm.currentStepIndex` (-1 = explorando, >= 0 = dentro de un paso),
-/// exactamente como hace POS. Variante y notas se muestran en una hoja
+/// según el nodo activo del grafo. Variante y notas se muestran en una hoja
 /// inferior compartida (`ComandasProductAddDialog`, igual que
 /// `ProductAddDialog` de POS) — el carrito vive en su propia hoja aparte,
 /// accesible desde una barra flotante (en POS el carrito es un panel fijo
@@ -26,17 +25,22 @@ struct ComandasOrderTakingView: View {
                 header
                 Divider().background(Color.white.opacity(0.1))
 
-                if vm.currentStepIndex == -1 {
+                if vm.showingFlowSummary {
+                    MobileFlowSummary(items: vm.flowSummaryItems(), formatCurrency: vm.formatCurrency, confirm: vm.confirmFlowSummary)
+                } else if let node = vm.activeFlowNode {
+                    MobileFlowNode(
+                        node: node,
+                        selectedOptionIds: vm.activeFlowSelectedOptionIds,
+                        total: vm.formatCurrency(vm.flowLiveTotal()),
+                        select: { option in
+                            Haptics.tap()
+                            vm.handleStepSelection(option)
+                        },
+                        clear: { Haptics.tap(); vm.handleStepSelection(nil) },
+                        advance: { Haptics.tap(); vm.advanceToNextStep() }
+                    )
+                } else {
                     browseContent
-                } else if let flow = vm.categoryFlow {
-                    if vm.currentStepIndex < flow.steps.count {
-                        ModifierStepView(vm: vm, step: flow.steps[vm.currentStepIndex])
-                    } else {
-                        // Igual que POS: este índice es un disparador invisible,
-                        // el sheet de notas se muestra solo.
-                        Color.clear
-                            .onAppear { vm.prepareFlowItemAndShowNotes() }
-                    }
                 }
 
                 Spacer(minLength: 0)
@@ -135,8 +139,8 @@ struct ComandasOrderTakingView: View {
                     .font(.headline.weight(.bold))
                     .foregroundColor(.white)
                     .lineLimit(1)
-                if vm.currentStepIndex >= 0, let flow = vm.categoryFlow, vm.currentStepIndex < flow.steps.count {
-                    Text(flow.steps[vm.currentStepIndex].stepName)
+                if let node = vm.activeFlowNode {
+                    Text(node.title)
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
@@ -144,7 +148,7 @@ struct ComandasOrderTakingView: View {
 
             Spacer()
 
-            if vm.currentStepIndex >= 0 {
+            if vm.activeFlowNode != nil {
                 Button {
                     Haptics.tap()
                     vm.handleBackInFlow()
@@ -162,7 +166,7 @@ struct ComandasOrderTakingView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .animation(.easeInOut(duration: 0.2), value: vm.currentStepIndex)
+        .animation(.easeInOut(duration: 0.2), value: vm.activeFlowNode?.id)
     }
 
     /// Recordatorio persistente de que esto SÍ imprime y SÍ aparece en el
@@ -365,6 +369,84 @@ struct ComandasOrderTakingView: View {
     }
 }
 
+private struct MobileFlowNode: View {
+    let node: FlowNode
+    let selectedOptionIds: [String]
+    let total: String
+    let select: (FlowNodeOption) -> Void
+    let clear: () -> Void
+    let advance: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(node.title).font(.headline.weight(.bold)).foregroundColor(.white)
+                    if let subtitle = node.subtitle { Text(subtitle).font(.caption).foregroundColor(.gray) }
+                }
+                Spacer()
+                Text(total).font(.headline.weight(.bold)).foregroundColor(.green)
+            }
+            .padding(16)
+            ScrollView(showsIndicators: false) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    if node.includeNoneOption {
+                        MobileFlowOption(label: node.noneLabel ?? "Sin \(node.title.lowercased())", price: nil, selected: selectedOptionIds.isEmpty, action: clear)
+                    }
+                    ForEach(node.options, id: \.id) { option in
+                        MobileFlowOption(label: option.label, price: option.effectivePrice == 0 ? nil : option.effectivePrice, selected: selectedOptionIds.contains(option.id)) { select(option) }
+                    }
+                }
+                .padding(16)
+            }
+            if node.selectMode == "multi" {
+                Button("Siguiente") { advance() }
+                    .buttonStyle(.flatCapsule(.blue))
+                    .padding(16)
+                    .disabled(selectedOptionIds.count < node.minSelections || (node.maxSelections != nil && selectedOptionIds.count > node.maxSelections!))
+            }
+        }
+    }
+}
+
+private struct MobileFlowOption: View {
+    let label: String
+    let price: Double?
+    let selected: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .topTrailing) {
+                VStack(spacing: 6) {
+                    Text(label).font(.subheadline.weight(.medium)).foregroundColor(.white).multilineTextAlignment(.center)
+                    if let price { Text(String(format: "+$%.2f", price)).font(.caption).foregroundColor(.blue) }
+                }
+                .frame(maxWidth: .infinity).frame(height: 90)
+                .modifier(FlatCardTinted(color: selected ? .blue : .gray))
+                if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue).padding(6) }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct MobileFlowSummary: View {
+    let items: [CartItem]
+    let formatCurrency: (Double) -> String
+    let confirm: () -> Void
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Resumen").font(.title3.weight(.bold)).foregroundColor(.white)
+            ForEach(items) { item in
+                HStack { Text(item.parentLocalId == nil ? item.productName : "↳ \(item.productName)").foregroundColor(.white); Spacer(); Text(formatCurrency(item.unitPrice)).foregroundColor(.gray) }
+                    .padding(12).modifier(FlatCard(cornerRadius: 10))
+            }
+            Button("Confirmar") { confirm() }.buttonStyle(.flatCapsule(.green))
+        }
+        .padding(16)
+    }
+}
+
 // MARK: - Send-to-kitchen success overlay
 
 /// Pantalla completa verde al confirmar el envío a cocina — gap real que
@@ -460,201 +542,5 @@ private struct ComandasTilePressStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
-    }
-}
-
-// MARK: - Modifier step (mismo modelo de interacción que ProductGridView de POS)
-
-private struct ModifierStepView: View {
-    @ObservedObject var vm: POSViewModel
-    let step: ModifierStep
-
-    private var showNextButton: Bool {
-        guard step.allowMultiple else { return false }
-        switch step.stepType {
-        case "extra": return step.options != nil && !step.options!.isEmpty
-        case "custom", "category", "products": return true
-        default: return false
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ScrollView(showsIndicators: false) {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                    if step.includeNoneOption {
-                        noneOptionCard
-                    }
-                    optionCards
-                }
-                .padding(16)
-                .padding(.bottom, 100)
-            }
-
-            if showNextButton {
-                nextButton
-            }
-        }
-    }
-
-    private var noneOptionCard: some View {
-        Button {
-            Haptics.tap()
-            if step.stepType == "extra" {
-                vm.handleStepSelection([] as [Extra])
-            } else {
-                vm.handleStepSelection(nil)
-            }
-        } label: {
-            VStack(spacing: 6) {
-                Image(systemName: "xmark.circle").font(.title3).foregroundColor(.gray)
-                Text("Sin \(step.stepName.lowercased())")
-                    .font(.caption.weight(.medium))
-                    .foregroundColor(.white)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 90)
-            .modifier(FlatCard(cornerRadius: 12))
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private var optionCards: some View {
-        switch step.stepType {
-        case "frosting":
-            if let options = step.options, !options.isEmpty {
-                ForEach(options) { option in
-                    let isSelected = (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
-                    optionButton(name: option.name, price: option.numericPrice, selected: isSelected) {
-                        vm.handleStepSelection(option)
-                    }
-                }
-            } else {
-                ForEach(vm.frostings) { frosting in
-                    optionButton(name: frosting.name, price: nil, selected: vm.selectedFrosting?.id == frosting.id) {
-                        vm.selectedFrosting = frosting
-                        vm.handleStepSelection(frosting)
-                    }
-                }
-            }
-        case "topping":
-            if let options = step.options, !options.isEmpty {
-                ForEach(options) { option in
-                    let isSelected = (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
-                    optionButton(name: option.name, price: option.numericPrice, selected: isSelected) {
-                        vm.handleStepSelection(option)
-                    }
-                }
-            } else {
-                ForEach(vm.toppings) { topping in
-                    optionButton(name: topping.name, price: nil, selected: vm.selectedTopping?.id == topping.id) {
-                        vm.selectedTopping = topping
-                        vm.handleStepSelection(topping)
-                    }
-                }
-            }
-        case "extra":
-            if let options = step.options, !options.isEmpty {
-                let selectedArray = (vm.stepSelections[step.id] as? [ModifierOption]) ?? []
-                ForEach(options) { option in
-                    let isSelected = step.allowMultiple
-                        ? selectedArray.contains(where: { $0.id == option.id })
-                        : (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
-                    optionButton(name: option.name, price: option.numericPrice, selected: isSelected) {
-                        vm.handleStepSelection(option)
-                    }
-                }
-            } else {
-                ForEach(vm.extras) { extra in
-                    let isSelected = vm.selectedExtras.contains(where: { $0.id == extra.id })
-                    optionButton(name: extra.name, price: extra.numericPrice, selected: isSelected) {
-                        if isSelected {
-                            vm.selectedExtras.removeAll { $0.id == extra.id }
-                        } else {
-                            vm.selectedExtras.append(extra)
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            vm.handleStepSelection(vm.selectedExtras)
-                        }
-                    }
-                }
-            }
-        case "custom", "category", "products":
-            let selectedArray = (vm.stepSelections[step.id] as? [ModifierOption]) ?? []
-            if let options = step.options {
-                ForEach(options) { option in
-                    let isSelected = step.allowMultiple
-                        ? selectedArray.contains(where: { $0.id == option.id })
-                        : (vm.stepSelections[step.id] as? ModifierOption)?.id == option.id
-                    optionButton(name: option.name, price: option.numericPrice, selected: isSelected) {
-                        vm.handleStepSelection(option)
-                    }
-                }
-            }
-        default:
-            EmptyView()
-        }
-    }
-
-    private func optionButton(name: String, price: Double?, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            Haptics.tap()
-            action()
-        } label: {
-            ZStack(alignment: .topTrailing) {
-                VStack(spacing: 6) {
-                    Text(name).font(.subheadline.weight(.medium)).foregroundColor(.white).multilineTextAlignment(.center)
-                    if let price, price > 0 {
-                        Text("+\(vm.formatCurrency(price))").font(.caption).foregroundColor(.blue)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 90)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(selected ? Color.blue.opacity(0.15) : Color.white.opacity(0.05))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? Color.blue.opacity(0.4) : Color.white.opacity(0.1), lineWidth: selected ? 1.5 : 1))
-                )
-                if selected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.blue)
-                        .padding(6)
-                        .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: selected)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var nextButton: some View {
-        let hasSelection: Bool = {
-            guard let sel = vm.stepSelections[step.id] else { return false }
-            if let arr = sel as? [ModifierOption] { return !arr.isEmpty }
-            if let arr = sel as? [Extra] { return !arr.isEmpty }
-            return true
-        }()
-
-        return Button {
-            Haptics.tap()
-            vm.advanceToNextStep()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: hasSelection ? "checkmark.circle.fill" : "arrow.right.circle.fill")
-                    .font(.callout)
-                    .contentTransition(.symbolEffect(.replace))
-                Text(hasSelection ? "Continuar" : "Continuar sin \(step.stepName.lowercased())")
-                    .font(.callout.weight(.semibold))
-                    .contentTransition(.numericText())
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 52)
-        }
-        .buttonStyle(.flatCapsule(.blue))
-        .padding(16)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hasSelection)
     }
 }

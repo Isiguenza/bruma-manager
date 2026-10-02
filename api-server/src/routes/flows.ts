@@ -1,8 +1,43 @@
 import { Router } from "express";
 import { db, schema } from "../db";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, inArray } from "drizzle-orm";
+import { composeFlowGraph } from "../lib/flowCompose";
 
 const router = Router();
+
+async function resolveGraph(productId: string) {
+  const [product] = await db.select().from(schema.products).where(eq(schema.products.id, productId)).limit(1);
+  if (!product) return null;
+  const [definitions, targets, allProducts, categories] = await Promise.all([db.select().from(schema.flowDefinitions), db.select().from(schema.flowTargets), db.select().from(schema.products), db.select().from(schema.categories)]);
+  const flowIds = definitions.map((flow: any) => flow.id);
+  const nodes = flowIds.length ? await db.select().from(schema.flowNodes).where(inArray(schema.flowNodes.flowId, flowIds)) : [];
+  const nodeIds = nodes.map((node: any) => node.id);
+  const options = nodeIds.length ? await db.select().from(schema.flowNodeOptions).where(inArray(schema.flowNodeOptions.nodeId, nodeIds)) : [];
+  const optionIds = options.map((option: any) => option.id);
+  const [overrides, edges] = await Promise.all([optionIds.length ? db.select().from(schema.flowOptionPriceOverrides).where(inArray(schema.flowOptionPriceOverrides.optionId, optionIds)) : Promise.resolve([]), flowIds.length ? db.select().from(schema.flowEdges).where(inArray(schema.flowEdges.flowId, flowIds)) : Promise.resolve([])]);
+  return composeFlowGraph({ product, definitions, targets, nodes, options, overrides, edges, products: allProducts, categories });
+}
+
+function flattenLegacyGraph(graph: any) {
+  const steps: any[] = [];
+  const visited = new Set<string>();
+  let nodeId: string | null = graph.entryNodeId;
+  while (nodeId && !visited.has(nodeId)) {
+    visited.add(nodeId);
+    const node = graph.nodes.find((candidate: any) => candidate.id === nodeId);
+    if (!node) break;
+    if (node.options.length) {
+      steps.push({
+        id: node.id, stepName: node.title, stepType: "custom",
+        sortOrder: steps.length, isRequired: node.minSelections > 0, allowMultiple: node.selectMode === "multi",
+        includeNoneOption: node.includeNoneOption, active: true,
+        options: node.options.map((option: any, index: number) => ({ id: option.id, stepId: node.id, name: option.label, description: null, price: String(option.effectivePrice), sortOrder: index, active: true })),
+      });
+    }
+    nodeId = graph.edges.filter((edge: any) => edge.fromNodeId === node.id).sort((a: any, b: any) => a.sortOrder - b.sortOrder)[0]?.toNodeId ?? null;
+  }
+  return { productId: graph.productId, useDefaultFlow: false, steps, source: graph.source };
+}
 
 // GET /api/categories/:id/flow
 router.get("/categories/:id/flow", async (req, res) => {
@@ -103,6 +138,13 @@ router.get("/subcategories/:id/flow", async (req, res) => {
 router.get("/products/:id/flow", async (req, res) => {
   try {
     const { id } = req.params;
+    if (req.query.format === "graph") {
+      const graph = await resolveGraph(id);
+      if (!graph) return res.status(404).json({ error: "Producto no encontrado o sin flujo v2" });
+      return res.json(graph);
+    }
+    const graph = await resolveGraph(id);
+    if (graph) return res.json(flattenLegacyGraph(graph));
 
     // First check if product has a custom flow (plain SQL - no relations)
     const [productFlow] = await db

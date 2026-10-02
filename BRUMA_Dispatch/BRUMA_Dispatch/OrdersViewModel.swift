@@ -298,7 +298,8 @@ class OrdersViewModel: ObservableObject {
         }
     }
     
-    // Convert orders to batches (group items by createdAt timestamp)
+    // Convert orders to batches. Los items raíz conservan la agrupación por
+    // timestamp; un hijo siempre se adjunta al batch de su padre.
     private func convertOrdersToBatches(_ orders: [Order]) -> [OrderBatch] {
         var allBatches: [OrderBatch] = []
         
@@ -308,58 +309,63 @@ class OrdersViewModel: ObservableObject {
             // board cuando ya está todo entregado (pasa a "ready" en el backend).
             let activeItems = (order.items ?? []).filter { $0.voided != true }
             
-            // Apply KDS view mode filter (food / beverages / all)
-            let filteredItems: [OrderItem]
-            switch viewMode {
-            case "food":
-                filteredItems = activeItems.filter { !$0.effectiveIsBeverage }
-            case "beverages":
-                filteredItems = activeItems.filter { $0.effectiveIsBeverage }
-            default:
-                filteredItems = activeItems
-            }
-            
-            guard !filteredItems.isEmpty else { continue }
+            guard !activeItems.isEmpty else { continue }
 
-            print("🔍 Order #\(order.orderNumber): \(filteredItems.count) filtered items (total: \(order.items?.count ?? 0))")
-            
-            // Sort items by createdAt
-            let sortedItems = filteredItems.sorted { item1, item2 in
-                guard let date1 = item1.createdAt.flatMap({ parseDate($0) }),
-                      let date2 = item2.createdAt.flatMap({ parseDate($0) }) else {
-                    return false
+            let itemsById = Dictionary(uniqueKeysWithValues: activeItems.map { ($0.id, $0) })
+            let roots = activeItems.filter { item in
+                guard let parentId = item.parentItemId else { return true }
+                return itemsById[parentId] == nil
+            }
+            let sortedRoots = roots.sorted { itemDate($0) < itemDate($1) }
+
+            // Las rondas se calculan solo con padres/items sueltos. Esto impide
+            // que el timestamp de una bebida hija abra una tarjeta nueva.
+            var rootGroups: [[OrderItem]] = []
+            var currentGroup: [OrderItem] = []
+            var lastRootDate = Date.distantPast
+            for root in sortedRoots {
+                let date = itemDate(root)
+                if !currentGroup.isEmpty && abs(date.timeIntervalSince(lastRootDate)) > 30 {
+                    rootGroups.append(currentGroup)
+                    currentGroup = []
                 }
-                return date1 < date2
+                currentGroup.append(root)
+                lastRootDate = date
             }
-            
-            // Debug: print all item timestamps
-            for (idx, item) in sortedItems.enumerated() {
-                print("  📋 Item[\(idx)] \(item.productName): createdAt=\(item.createdAt ?? "nil"), deliveredToTable=\(item.deliveredToTable ?? false)")
+            if !currentGroup.isEmpty { rootGroups.append(currentGroup) }
+
+            var groupedItems = rootGroups
+            var batchIndexByRootId: [String: Int] = [:]
+            for (index, rootsInBatch) in rootGroups.enumerated() {
+                for root in rootsInBatch { batchIndexByRootId[root.id] = index }
             }
-            
-            // Group items into batches (items within 30 seconds of EACH OTHER = same batch)
-            var currentBatch: [OrderItem] = [sortedItems[0]]
-            var lastItemDate = sortedItems[0].createdAt.flatMap { parseDate($0) } ?? Date.distantPast
-            
-            for i in 1..<sortedItems.count {
-                let itemDate = sortedItems[i].createdAt.flatMap { parseDate($0) } ?? Date.distantPast
-                let gap = abs(itemDate.timeIntervalSince(lastItemDate))
-                
-                print("  ⏱️ Gap between item[\(i-1)] and item[\(i)]: \(Int(gap))s")
-                
-                // If within 30 seconds of the LAST item, same batch
-                if gap <= 30 {
-                    currentBatch.append(sortedItems[i])
-                    lastItemDate = itemDate
-                } else {
-                    // Create batch from current items
-                    let batchId = "\(order.id)_\(currentBatch[0].id)"
-                    let batch = OrderBatch(
-                        id: batchId,
+
+            func rootId(for item: OrderItem) -> String? {
+                var current = item
+                var visited: Set<String> = []
+                while let parentId = current.parentItemId {
+                    guard visited.insert(parentId).inserted,
+                          let parent = itemsById[parentId] else { return nil }
+                    current = parent
+                }
+                return current.id
+            }
+
+            for child in activeItems.filter({ $0.parentItemId != nil }).sorted(by: { itemDate($0) < itemDate($1) }) {
+                guard let rootId = rootId(for: child),
+                      let batchIndex = batchIndexByRootId[rootId] else { continue }
+                groupedItems[batchIndex].append(child)
+            }
+
+            for items in groupedItems where items.contains(where: matchesViewMode) {
+                guard let firstRoot = items.first(where: { $0.parentItemId == nil || itemsById[$0.parentItemId ?? ""] == nil }) else { continue }
+                allBatches.append(
+                    OrderBatch(
+                        id: "\(order.id)_\(firstRoot.id)",
                         orderId: order.id,
                         orderNumber: order.orderNumber,
-                        items: currentBatch,
-                        createdAt: currentBatch[0].createdAt ?? order.createdAt,
+                        items: items,
+                        createdAt: firstRoot.createdAt ?? order.createdAt,
                         table: order.table,
                         customerName: order.customerName,
                         preparationTime: order.preparationTime,
@@ -368,39 +374,23 @@ class OrdersViewModel: ObservableObject {
                         holdAccumulatedSeconds: order.holdAccumulatedSeconds ?? 0,
                         isPractice: order.isPractice ?? false
                     )
-                    allBatches.append(batch)
-                    print("  ✅ Batch created: \(currentBatch.count) items")
-                    
-                    // Start new batch
-                    currentBatch = [sortedItems[i]]
-                    lastItemDate = itemDate
-                }
-            }
-            
-            // Add final batch
-            if !currentBatch.isEmpty {
-                let batchId = "\(order.id)_\(currentBatch[0].id)"
-                let batch = OrderBatch(
-                    id: batchId,
-                    orderId: order.id,
-                    orderNumber: order.orderNumber,
-                    items: currentBatch,
-                    createdAt: currentBatch[0].createdAt ?? order.createdAt,
-                    table: order.table,
-                    customerName: order.customerName,
-                    preparationTime: order.preparationTime,
-                    isRush: order.priority == 1,
-                    isOnHold: order.onHold ?? false,
-                    holdAccumulatedSeconds: order.holdAccumulatedSeconds ?? 0
                 )
-                allBatches.append(batch)
-                print("  ✅ Final batch: \(currentBatch.count) items")
             }
-            
-            print("📊 Order #\(order.orderNumber) → \(allBatches.count) total batches")
         }
         
         return allBatches
+    }
+
+    private func itemDate(_ item: OrderItem) -> Date {
+        item.createdAt.flatMap { parseDate($0) } ?? .distantPast
+    }
+
+    private func matchesViewMode(_ item: OrderItem) -> Bool {
+        switch viewMode {
+        case "food": return !item.effectiveIsBeverage
+        case "beverages": return item.effectiveIsBeverage
+        default: return true
+        }
     }
     
     // Mark batch as ready (delivered to table)

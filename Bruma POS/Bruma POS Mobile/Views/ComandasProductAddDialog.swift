@@ -111,19 +111,17 @@ struct ComandasProductAddDialog: View {
     @ViewBuilder
     private var notesSection: some View {
         VStack(spacing: 16) {
-            if let flow = vm.categoryFlow {
+            if !vm.flowSelectionSummaries.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Resumen de selección")
                         .font(.subheadline.bold())
                         .foregroundColor(.white)
-                    ForEach(flow.steps) { step in
-                        if let sel = vm.stepSelections[step.id] {
-                            HStack(alignment: .top, spacing: 6) {
-                                Text("•").foregroundColor(.blue)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(step.stepName).font(.caption.weight(.medium)).foregroundColor(.white)
-                                    Text(selectionSummary(for: sel)).font(.caption).foregroundColor(.gray)
-                                }
+                    ForEach(vm.flowSelectionSummaries) { selection in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("•").foregroundColor(.blue)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(selection.title).font(.caption.weight(.medium)).foregroundColor(.white)
+                                Text(selection.detail).font(.caption).foregroundColor(.gray)
                             }
                         }
                     }
@@ -226,18 +224,4 @@ struct ComandasProductAddDialog: View {
         vm.quickNotes.filter { $0.applies(toProductId: currentProductId, variantName: vm.pendingCartItem?.variantName) }
     }
 
-    private func selectionSummary(for selection: Any) -> String {
-        if let opts = selection as? [ModifierOption], !opts.isEmpty {
-            return opts.map { $0.name }.joined(separator: ", ")
-        } else if let opt = selection as? ModifierOption {
-            return opt.name
-        } else if let exts = selection as? [Extra], !exts.isEmpty {
-            return exts.map { $0.name }.joined(separator: ", ")
-        } else if let f = selection as? Frosting {
-            return f.name
-        } else if let t = selection as? DryTopping {
-            return t.name
-        }
-        return ""
-    }
 }

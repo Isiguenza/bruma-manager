@@ -167,7 +167,7 @@ async function sendWhatsAppConfirmation(params: {
 }) {
   const phoneId  = process.env.META_WA_PHONE_ID;
   const token    = process.env.META_WA_TOKEN;
-  const template = process.env.META_WA_TEMPLATE ?? "reservacion_confirmada";
+  const template = process.env.META_WA_TEMPLATE ?? "reservaciones";
   if (!phoneId || !token) return;
 
   const { phone, name, date, time, guestCount } = params;
@@ -191,7 +191,9 @@ async function sendWhatsAppConfirmation(params: {
           type: "template",
           template: {
             name: template,
-            language: { code: "es_MX" },
+            // Las plantillas se crearon con idioma "Spanish" (código `es`), no
+            // "Spanish (MEX)" (`es_MX`) — ver mismo fix en lib/whatsapp.ts.
+            language: { code: "es" },
             components: [
               {
                 type: "body",

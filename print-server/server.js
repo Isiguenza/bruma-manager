@@ -1261,6 +1261,50 @@ app.post('/print-comanda', async (req, res) => {
     // Separar bebidas y alimentos
     const beverages = items.filter(item => item.isBeverage);
     const food = items.filter(item => !item.isBeverage);
+
+    const appendItem = (item, { packageChild = false } = {}) => {
+      const childPrefix = packageChild ? "   ↳ " : "";
+      const parentContext = packageChild && item.parentName ? `${item.parentName}: ` : "";
+      const packageBadge = !packageChild && item.packageLabel
+        ? ` [${String(item.packageLabel).toUpperCase()}]`
+        : "";
+      const detailIndent = packageChild ? "      " : "   ";
+
+      content += commands.bold;
+      content += commands.textSizeTall;
+      content += `${childPrefix}${parentContext}${item.qty}x ${item.name}${packageBadge}\n`;
+      content += commands.textSizeNormal;
+      content += commands.boldOff;
+
+      if (item.frosting) {
+        content += commands.bold;
+        content += `${detailIndent}+ Frosting: ${item.frosting}\n`;
+        content += commands.boldOff;
+      }
+      if (item.topping) {
+        content += commands.bold;
+        content += `${detailIndent}+ Topping: ${item.topping}\n`;
+        content += commands.boldOff;
+      }
+      if (item.extra) {
+        content += commands.bold;
+        content += `${detailIndent}+ Extra: ${item.extra}\n`;
+        content += commands.boldOff;
+      }
+      if (item.flowSteps && item.flowSteps.length > 0) {
+        for (const step of item.flowSteps) {
+          content += commands.bold;
+          content += `${detailIndent}+ ${step.name}\n`;
+          content += commands.boldOff;
+        }
+      }
+      if (item.notes) {
+        content += commands.bold;
+        content += `${detailIndent}> Nota: ${item.notes}\n`;
+        content += commands.boldOff;
+      }
+      content += commands.feedLine;
+    };
     
     // 1. BEBIDAS PRIMERO
     if (beverages.length > 0) {
@@ -1274,29 +1318,9 @@ app.post('/print-comanda', async (req, res) => {
       content += commands.feedLine;
 
       for (const item of beverages) {
-        content += commands.bold;
-        content += commands.textSizeTall;
-        content += `${item.qty}x ${item.name}\n`;
-        content += commands.textSizeNormal;
-        content += commands.boldOff;
-
-        // Modifiers for beverages (flowSteps, etc.)
-        if (item.flowSteps && item.flowSteps.length > 0) {
-          for (const step of item.flowSteps) {
-            content += commands.bold;
-            content += `   + ${step.name}\n`;
-            content += commands.boldOff;
-          }
-        }
-
-        if (item.notes) {
-          content += commands.bold;
-          content += `   > Nota: ${item.notes}\n`;
-          content += commands.boldOff;
-        }
-
-        // Separación entre items — que no se vean pegados uno con otro.
-        content += commands.feedLine;
+        // Beverage children stay in BEBIDAS for routing, while parentName
+        // preserves their package relationship even across sections.
+        appendItem(item, { packageChild: item.isPackageChild === true });
       }
 
       if (food.length > 0) {
@@ -1358,47 +1382,23 @@ app.post('/print-comanda', async (req, res) => {
             content += commands.boldOff;
           }
           
-          // Items
-          for (const item of courseItems) {
-            content += commands.bold;
-            content += commands.textSizeTall;
-            content += `${item.qty}x ${item.name}\n`;
-            content += commands.textSizeNormal;
-            content += commands.boldOff;
-
-            // Modifiers (frosting, topping, extra, flowSteps)
-            if (item.frosting) {
-              content += commands.bold;
-              content += `   + Frosting: ${item.frosting}\n`;
-              content += commands.boldOff;
+          // Parent and child rows arrive adjacent from the order writer. Keep
+          // food children physically below their parent; a stray historical
+          // child still renders safely with its parent context.
+          for (let itemIndex = 0; itemIndex < courseItems.length; itemIndex++) {
+            const item = courseItems[itemIndex];
+            if (item.isPackageChild) {
+              appendItem(item, { packageChild: true });
+              continue;
             }
-            if (item.topping) {
-              content += commands.bold;
-              content += `   + Topping: ${item.topping}\n`;
-              content += commands.boldOff;
+            appendItem(item);
+            while (
+              itemIndex + 1 < courseItems.length &&
+              courseItems[itemIndex + 1].isPackageChild
+            ) {
+              itemIndex += 1;
+              appendItem(courseItems[itemIndex], { packageChild: true });
             }
-            if (item.extra) {
-              content += commands.bold;
-              content += `   + Extra: ${item.extra}\n`;
-              content += commands.boldOff;
-            }
-            // Flow steps (category, products, custom modifiers)
-            if (item.flowSteps && item.flowSteps.length > 0) {
-              for (const step of item.flowSteps) {
-                content += commands.bold;
-                content += `   + ${step.name}\n`;
-                content += commands.boldOff;
-              }
-            }
-            
-            if (item.notes) {
-              content += commands.bold;
-              content += `   > Nota: ${item.notes}\n`;
-              content += commands.boldOff;
-            }
-
-            // Separación entre items — que no se vean pegados uno con otro.
-            content += commands.feedLine;
           }
         }
 

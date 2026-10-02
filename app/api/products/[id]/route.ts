@@ -3,6 +3,19 @@ import { db } from "@/lib/db";
 import { products } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
+function normalizeFlowTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return Array.from(
+    new Set(
+      value
+        .filter((tag): tag is string => typeof tag === "string")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -46,6 +59,8 @@ export async function PUT(
         imageUrl: imageUrl || null,
         hasVariants: hasVariants ?? false,
         variants: variants || null,
+        // An omitted field must leave tags intact for partial product edits.
+        flowTags: body.flowTags !== undefined ? normalizeFlowTags(body.flowTags) : undefined,
         active,
         menuImages: menuImages !== undefined ? menuImages : undefined,
         menuVideo: menuVideo !== undefined ? menuVideo : undefined,
@@ -54,6 +69,38 @@ export async function PUT(
       })
       .where(eq(products.id, id))
       .returning();
+
+    return NextResponse.json(product);
+  } catch (error) {
+    console.error("Error updating product:", error);
+    return NextResponse.json({ error: "Error" }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+
+    const update: { flowTags?: string[]; updatedAt: Date } = {
+      updatedAt: new Date(),
+    };
+    if (body.flowTags !== undefined) {
+      update.flowTags = normalizeFlowTags(body.flowTags);
+    }
+
+    const [product] = await db
+      .update(products)
+      .set(update)
+      .where(eq(products.id, id))
+      .returning();
+
+    if (!product) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     return NextResponse.json(product);
   } catch (error) {

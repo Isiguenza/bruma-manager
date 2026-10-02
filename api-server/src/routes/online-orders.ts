@@ -606,6 +606,7 @@ router.post("/orders/:id/accept-online", async (req, res) => {
         items: complete.items
           .filter((i: any) => !i.voided)
           .map((item: any) => ({
+            orderItemId: item.id,
             productId: item.productId,
             productName: item.productName,
             quantity: item.quantity,

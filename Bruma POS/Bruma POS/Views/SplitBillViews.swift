@@ -171,6 +171,7 @@ private struct QuantityAssignRow: View {
     }
 
     private func setAssigned(_ qty: Int) {
+        guard item.parentLocalId == nil else { return }
         if qty <= 0 {
             vm.itemAssignments[personIndex]?.removeValue(forKey: cartIndex)
         } else {
@@ -266,7 +267,7 @@ struct SplitSeatView: View {
     // Items del centro que todavía tienen cantidad sin repartir entre asientos.
     private var centroItemsWithRemaining: [Int] {
         vm.cart.indices.filter { ci in
-            guard vm.cart[ci].seat == "C" else { return false }
+            guard vm.cart[ci].seat == "C", vm.cart[ci].parentLocalId == nil else { return false }
             let assigned = vm.itemAssignments.values.reduce(0) { $0 + ($1[ci] ?? 0) }
             return assigned < vm.cart[ci].quantity
         }

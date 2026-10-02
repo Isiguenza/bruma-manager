@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { orderItems, orders, supplierItems } from "@/lib/db/schema";
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import type { SupplierCalculationLine } from "@/lib/types";
 
 export interface SupplierBucket {
@@ -51,8 +51,17 @@ export async function calculateSupplierTotals(params: {
   for (const item of items) {
     if (!item.product) continue;
 
+    const pricingType = (item.pricingType ?? "fixed_cost") as "fixed_cost" | "percentage";
+
     const nameFilter = item.variantName
       ? eq(orderItems.productName, `${item.product.name} - ${item.variantName}`)
+      : undefined;
+
+    // A $0 child still consumed a real supplier ingredient, so fixed_cost
+    // counts it; percentage excludes children because their revenue lives on
+    // the package parent and including $0 would dilute the revenue base.
+    const parentItemFilter = pricingType === "percentage"
+      ? isNull(orderItems.parentItemId)
       : undefined;
 
     const [row] = await db
@@ -70,7 +79,8 @@ export async function calculateSupplierTotals(params: {
           eq(orders.isPractice, false),
           gte(orders.createdAt, from),
           lte(orders.createdAt, to),
-          nameFilter
+          nameFilter,
+          parentItemFilter
         )
       );
 
@@ -78,8 +88,6 @@ export async function calculateSupplierTotals(params: {
     const revenue = Number(row?.revenue ?? 0);
     const costPrice = Number(item.costPrice);
     const businessCutPercent = item.businessCutPercent !== null ? Number(item.businessCutPercent) : null;
-    const pricingType = (item.pricingType ?? "fixed_cost") as "fixed_cost" | "percentage";
-
     // "percentage": el proveedor no vende el insumo a costo fijo, se queda
     // con lo que sobra de nuestro % (ej. Bruma se queda 10% -> proveedor 90%
     // de lo vendido). "fixed_cost": le pagamos costPrice por unidad vendida.

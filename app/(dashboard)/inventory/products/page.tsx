@@ -113,6 +113,7 @@ interface ProductForm {
   menuImages: string[];
   menuVideo: string;
   menuWebVisible: boolean;
+  flowTags: string[];
 }
 
 interface CropModalState {
@@ -138,6 +139,7 @@ const emptyForm: ProductForm = {
   menuImages: [],
   menuVideo: "",
   menuWebVisible: true,
+  flowTags: [],
 };
 
 type FilterOption = { value: string; label: string; hint?: string };
@@ -313,6 +315,7 @@ export default function ProductsPage() {
       menuImages,
       menuVideo: (product as any).menuVideo || "",
       menuWebVisible: (product as any).menuWebVisible !== false,
+      flowTags: Array.isArray((product as any).flowTags) ? (product as any).flowTags : [],
     });
     setEditingId(product.id);
     setDialogOpen(true);
@@ -1339,6 +1342,33 @@ export default function ProductsPage() {
                     rows={3}
                     className="resize-none"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="flow-tag" className="text-sm font-medium">Tags de flujo</Label>
+                  <p className="text-xs text-muted-foreground">Los flujos pueden preguntar según un tag; por ejemplo <code>con-leche</code> para cafés que sí llevan leche.</p>
+                  <div className="flex flex-wrap gap-1.5 rounded-md border bg-muted/20 p-2">
+                    {form.flowTags.map((tag) => (
+                      <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-xs text-primary">
+                        {tag}
+                        <button type="button" aria-label={`Quitar ${tag}`} onClick={() => setForm((prev) => ({ ...prev, flowTags: prev.flowTags.filter((current) => current !== tag) }))}>×</button>
+                      </span>
+                    ))}
+                    <Input
+                      id="flow-tag"
+                      list="existing-flow-tags"
+                      className="h-7 min-w-32 flex-1 border-0 bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
+                      placeholder="Escribe y Enter"
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        event.preventDefault();
+                        const tag = event.currentTarget.value.trim().toLowerCase();
+                        if (tag) setForm((prev) => ({ ...prev, flowTags: Array.from(new Set([...prev.flowTags, tag])) }));
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </div>
+                  <datalist id="existing-flow-tags">{Array.from(new Set(products.flatMap((product) => Array.isArray((product as any).flowTags) ? (product as any).flowTags : []))).map((tag) => <option key={tag} value={tag} />)}</datalist>
                 </div>
 
                 <div className="space-y-2">

@@ -228,6 +228,15 @@ private struct ComandasCartItemRow: View {
                         .foregroundColor(.white)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    if let packageLabel = item.packageLabel {
+                        Text(packageLabel)
+                            .font(.caption2.weight(.bold))
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.orange.opacity(0.16)))
+                    }
+
                     if showCourseBadge {
                         Text("T\(item.course)")
                             .font(.caption2.weight(.semibold))
@@ -266,6 +275,7 @@ private struct ComandasCartItemRow: View {
             }
         }
         .padding(12)
+        .padding(.leading, item.parentLocalId == nil ? 0 : 20)
         .modifier(FlatCard(cornerRadius: 10))
         .contextMenu {
             if item.sentToKitchen {

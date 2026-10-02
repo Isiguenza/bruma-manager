@@ -3,6 +3,19 @@ import { db } from "@/lib/db";
 import { products, categories, productFlows } from "@/lib/db/schema";
 import { eq, desc, isNull, and } from "drizzle-orm";
 
+function normalizeFlowTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return Array.from(
+    new Set(
+      value
+        .filter((tag): tag is string => typeof tag === "string")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -30,6 +43,7 @@ export async function GET(request: NextRequest) {
         imageUrl: includeImages,
         hasVariants: true,
         variants: true,
+        flowTags: true,
         active: true,
         menuImages: true,
         menuVideo: true,
@@ -100,6 +114,7 @@ export async function POST(request: NextRequest) {
         imageUrl: imageUrl || null,
         hasVariants: hasVariants || false,
         variants: variants || null,
+        flowTags: normalizeFlowTags(body.flowTags),
         active: active ?? true,
       })
       .returning();

@@ -25,6 +25,7 @@ class SocketService: ObservableObject {
     var onCustomerDisplayUpdate: (([String: Any]) -> Void)?
     var onReservationNew: (() -> Void)?
     var onPromotionsUpdated: (() -> Void)?
+    var onFlowsUpdated: (() -> Void)?
     /// Se dispara en cada RE-conexión (no en la primera) — momento ideal para
     /// re-sincronizar lo que se haya podido perder mientras el socket estuvo caído.
     var onReconnect: (() -> Void)?
@@ -187,6 +188,11 @@ class SocketService: ObservableObject {
         socket?.on("promotions:updated") { [weak self] _, _ in
             print("🏷️ promotions:updated received")
             self?.onPromotionsUpdated?()
+        }
+
+        socket?.on("flows:updated") { [weak self] _, _ in
+            print("🧭 flows:updated received")
+            self?.onFlowsUpdated?()
         }
     }
     
