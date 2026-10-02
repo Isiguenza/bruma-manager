@@ -50,7 +50,10 @@ export function composeFlowGraph(input: ComposeRows): FlowGraph | null {
   const add = (nodeId: string, option: FlowNodeOption) => byNode.set(nodeId, [...(byNode.get(nodeId) ?? []), option])
   const materialize = (raw: any, ref: any, variantName: string | null, listPrice?: number): FlowNodeOption => {
     const candidates = input.overrides.filter((row) => row.optionId === raw.id)
-    const override = candidates.find((row) => row.productId === product.id) ?? candidates.find((row) => row.subcategoryId === product.subcategoryId) ?? candidates.find((row) => row.categoryId === product.categoryId)
+    const override =
+      candidates.find((row) => row.productId !== null && row.productId === product.id) ??
+      candidates.find((row) => row.subcategoryId !== null && product.subcategoryId !== null && row.subcategoryId === product.subcategoryId) ??
+      candidates.find((row) => row.categoryId !== null && product.categoryId !== null && row.categoryId === product.categoryId)
     const effectivePrice = raw.priceMode === "free" ? 0 : raw.priceMode === "product_price" ? (listPrice ?? number(ref?.price)) : number(override?.priceDelta ?? raw.priceDelta)
     return { id: raw.source === "category" && ref ? `${raw.id}:${ref.id}:${variantName ?? ""}` : raw.id, label: raw.source === "category" && ref && variantName ? `${ref.name} - ${variantName}` : raw.label ?? ref?.name ?? "", source: raw.source, priceMode: raw.priceMode, effectivePrice, refProductId: ref?.id ?? raw.refProductId ?? null, refCategoryId: raw.refCategoryId ?? null, refVariantName: variantName, refListPrice: ref ? (listPrice ?? number(ref.price)) : null, variantChoices: raw.allowVariantChoice && ref ? parseVariants(ref.variants) : null, emitsChildItem: raw.emitsChildItem, isBeverage: ref?.categoryId ? (beverages.get(ref.categoryId) ?? false) : false, refProductActive: ref?.active, refCategoryActive: raw.refCategoryId ? true : undefined }
   }

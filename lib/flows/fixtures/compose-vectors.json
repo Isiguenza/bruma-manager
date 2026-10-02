@@ -266,6 +266,24 @@
     "expected": null
   },
   {
+    "name": "override-de-categoria-no-confunde-subcategorias-nulas",
+    "input": {
+      "product": { "id": "taco", "categoryId": "tacos", "subcategoryId": null },
+      "definitions": [{ "id": "flow", "name": "Paquete", "scopeKind": "product", "priority": 0, "active": true }],
+      "targets": [{ "flowId": "flow", "mode": "include", "productId": "taco", "subcategoryId": null, "categoryId": null }],
+      "nodes": [{ "id": "entry", "flowId": "flow", "title": "¿Paquete?", "subtitle": null, "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "noneLabel": null, "isEntry": true, "active": true, "sortOrder": 0 }],
+      "options": [{ "id": "hacer-paquete", "nodeId": "entry", "label": "Hacer paquete", "source": "manual", "priceMode": "delta", "priceDelta": 0, "refProductId": null, "refCategoryId": null, "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": false, "active": true, "sortOrder": 0 }],
+      "overrides": [{ "optionId": "hacer-paquete", "productId": null, "subcategoryId": null, "categoryId": "aguachiles", "priceDelta": 61 }, { "optionId": "hacer-paquete", "productId": null, "subcategoryId": null, "categoryId": "tacos", "priceDelta": 50 }],
+      "edges": [], "products": [], "categories": []
+    },
+    "expected": {
+      "productId": "taco", "format": "graph", "source": "composed", "flows": [{ "id": "flow", "name": "Paquete", "scopeKind": "product", "priority": 0 }], "entryNodeId": "entry",
+      "nodes": [{ "id": "entry", "flowId": "flow", "title": "¿Paquete?", "subtitle": null, "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "noneLabel": null, "isEntry": true,
+        "options": [{ "id": "hacer-paquete", "label": "Hacer paquete", "source": "manual", "priceMode": "delta", "effectivePrice": 50, "refProductId": null, "refCategoryId": null, "refVariantName": null, "refListPrice": null, "variantChoices": null, "emitsChildItem": false, "isBeverage": false }]
+      }], "edges": []
+    }
+  },
+  {
     "name": "etiquetas-de-variantes-en-expansion-de-categoria",
     "input": {
       "product": { "id": "plato", "categoryId": "platos", "subcategoryId": null },

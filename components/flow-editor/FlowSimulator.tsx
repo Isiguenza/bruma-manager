@@ -12,7 +12,10 @@ const variants = (product: Product): Variant[] => { try { return product.variant
 function resolvedPrice(option: EditorOption, referenced: Product | undefined, base: Product) {
   if (option.priceMode === "free") return 0
   if (option.priceMode === "product_price") return Number(referenced?.price ?? 0)
-  const override = option.priceOverrides.find((item) => item.productId === base.id || item.subcategoryId === base.subcategoryId || item.categoryId === base.categoryId)
+  const override =
+    option.priceOverrides.find((item) => item.productId !== null && item.productId === base.id) ??
+    option.priceOverrides.find((item) => item.subcategoryId !== null && base.subcategoryId !== null && item.subcategoryId === base.subcategoryId) ??
+    option.priceOverrides.find((item) => item.categoryId !== null && base.categoryId !== null && item.categoryId === base.categoryId)
   return Number(override?.priceDelta ?? option.priceDelta) || 0
 }
 
