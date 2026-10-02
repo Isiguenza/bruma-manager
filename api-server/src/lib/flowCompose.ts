@@ -69,10 +69,12 @@ export function composeFlowGraph(input: ComposeRows): FlowGraph | null {
   }
   for (const [id, options] of byNode) {
     const explicitVariants = new Map<string, Set<string | null>>()
-    for (const option of options.filter((option) => option.source === "product" && option.refProductId)) {
-      const variants = explicitVariants.get(option.refProductId) ?? new Set<string | null>()
+    for (const option of options) {
+      const productId = option.source === "product" ? option.refProductId : null
+      if (productId === null) continue
+      const variants = explicitVariants.get(productId) ?? new Set<string | null>()
       variants.add(option.refVariantName)
-      explicitVariants.set(option.refProductId, variants)
+      explicitVariants.set(productId, variants)
     }
     byNode.set(id, options.filter((option) => {
       if (option.source !== "category") return true
