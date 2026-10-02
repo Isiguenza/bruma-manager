@@ -1347,6 +1347,15 @@ export default function ProductsPage() {
                 <div className="space-y-2">
                   <Label htmlFor="flow-tag" className="text-sm font-medium">Tags de flujo</Label>
                   <p className="text-xs text-muted-foreground">Los flujos pueden preguntar según un tag; por ejemplo <code>con-leche</code> para cafés que sí llevan leche.</p>
+                  {categories.find((category) => category.id === form.categoryId)?.name === "Café" && (
+                    <div className="flex items-center justify-between rounded-md border bg-amber-500/5 px-3 py-2 text-sm">
+                      <div><p className="font-medium">Este café permite elegir leche</p><p className="text-xs text-muted-foreground">Se pregunta tanto en Frío como en Caliente.</p></div>
+                      <Switch
+                        checked={form.flowTags.includes("con-leche")}
+                        onCheckedChange={(checked) => setForm((prev) => ({ ...prev, flowTags: checked ? Array.from(new Set([...prev.flowTags, "con-leche"])) : prev.flowTags.filter((tag) => tag !== "con-leche") }))}
+                      />
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-1.5 rounded-md border bg-muted/20 p-2">
                     {form.flowTags.map((tag) => (
                       <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-xs text-primary">
@@ -1512,6 +1521,10 @@ export default function ProductsPage() {
                   <Label className="text-sm cursor-pointer">Activar</Label>
                 </div>
               </div>
+
+              {categories.find((category) => category.id === form.categoryId)?.name === "Café" && (
+                <p className="rounded-md bg-blue-500/5 p-3 text-xs text-muted-foreground">Para decidir las temperaturas disponibles de este café, agrega únicamente las variantes <strong>Frío</strong> y/o <strong>Caliente</strong> que correspondan. El POS mostrará solo esas opciones.</p>
+              )}
 
               {!form.hasVariants && (
                 <p className="text-sm text-muted-foreground">
