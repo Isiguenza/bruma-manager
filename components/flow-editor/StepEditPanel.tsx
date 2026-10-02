@@ -16,10 +16,22 @@ export function StepEditPanel({ node, products, categories, onUpdate, onMarkAsEn
   const updateOption = (index: number, patch: Partial<EditorOption>) => update({ options: node.options.map((option, current) => current === index ? { ...option, ...patch } : option) })
   const removeOption = (index: number) => update({ options: node.options.filter((_, current) => current !== index).map((option, current) => ({ ...option, sortOrder: current })) })
   const addOption = () => update({ options: [...node.options, { id: temporaryId("option"), source: "manual", label: "Nueva opción", refProductId: null, refCategoryId: null, refVariantName: null, allowVariantChoice: false, priceMode: "delta", priceDelta: "0", emitsChildItem: false, sortOrder: node.options.length, active: true, priceOverrides: [] }] })
-  const selectionFor = (option: EditorOption): PromotionProductSelection => option.source === "category" && option.refCategoryId ? { applyTo: "category", categoryId: option.refCategoryId, productIds: [] } : { applyTo: "specific_products", categoryId: "", productIds: option.refProductId ? [option.refProductId] : [] }
+  const selectionFor = (option: EditorOption): PromotionProductSelection => option.source === "category" && option.refCategoryId
+    ? { applyTo: "category", categoryId: option.refCategoryId, productIds: [] }
+    : { applyTo: "specific_products", categoryId: "", productIds: option.refProductId ? [option.refVariantName ? `${option.refProductId}::${option.refVariantName}` : option.refProductId] : [] }
   const setReference = (index: number, next: PromotionProductSelection) => {
-    if (next.applyTo === "category") updateOption(index, { source: "category", refCategoryId: next.categoryId || null, refProductId: null })
-    else updateOption(index, { source: "product", refProductId: next.productIds[0] ?? null, refCategoryId: null })
+    if (next.applyTo === "category") {
+      updateOption(index, { source: "category", refCategoryId: next.categoryId || null, refProductId: null, refVariantName: null })
+      return
+    }
+    // PromotionProductPicker identifies a variant as `productId::variant`.
+    // The old code saved that whole value as a product UUID (or discarded the
+    // variant) and appeared to retain only the first variant in a flow.
+    const selected = next.productIds[0] ?? ""
+    const separator = selected.indexOf("::")
+    const refProductId = separator === -1 ? selected || null : selected.slice(0, separator) || null
+    const refVariantName = separator === -1 ? null : selected.slice(separator + 2) || null
+    updateOption(index, { source: "product", refProductId, refCategoryId: null, refVariantName })
   }
   return <aside className="absolute right-0 top-0 z-20 h-full w-[28rem] overflow-y-auto border-l bg-card shadow-xl">
     <div className="space-y-5 p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Editar nodo</h2><p className="text-xs text-muted-foreground">{node.options.length === 0 ? "Nodo de paso: el motor lo atraviesa sin mostrarlo." : "Configura la pregunta y sus opciones."}</p></div><Button size="sm" variant="ghost" onClick={onClose}>Cerrar</Button></div>

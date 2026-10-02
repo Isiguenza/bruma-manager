@@ -166,7 +166,9 @@ function isPackageChild(item, { allowZeroPriceFallback = false } = {}) {
 
 function receiptItemLabel(item) {
   const child = isPackageChild(item, { allowZeroPriceFallback: true });
-  const prefix = child ? "   ↳ " : "";
+  // ESC/POS printers commonly use a CP1252-style codepage; Unicode ↳ can
+  // render as a tiny "3". Keep the package hierarchy entirely ASCII.
+  const prefix = child ? "   -> " : "";
   return { child, label: `${prefix}${item.qty}x ${item.name}` };
 }
 
@@ -1377,7 +1379,7 @@ app.post('/print-comanda', async (req, res) => {
     const packageAwareItems = inferLegacyPackageChildren(items);
 
     const appendItem = (item, { packageChild = false } = {}) => {
-      const childPrefix = packageChild ? "   ↳ " : "";
+      const childPrefix = packageChild ? "   -> " : "";
       const packageBadge = !packageChild && isPackageParent(item)
         ? ` [${String(item.packageLabel || "PAQUETE").toUpperCase()}]`
         : "";
@@ -1404,10 +1406,20 @@ app.post('/print-comanda', async (req, res) => {
         content += `${detailIndent}+ Extra: ${item.extra}\n`;
         content += commands.boldOff;
       }
-      // Entrada y bebida ya se imprimen debajo del fuerte; repetirlas como
-      // pasos del padre hace que parezcan instrucciones en vez de componentes.
-      if (!isPackageParent(item) && item.flowSteps && item.flowSteps.length > 0) {
-        for (const step of item.flowSteps) {
+      // Entrada y bebida ya están debajo del fuerte como componentes. Las
+      // demás notas del flujo sí se conservan; el API marca las selecciones
+      // que ya tienen un hijo para no repetirlas aquí.
+      const hasSelectionMetadata = Array.isArray(item.flowSteps)
+        && item.flowSteps.some((step) => Object.prototype.hasOwnProperty.call(step || {}, "isChildItemSelection"));
+      const printableFlowSteps = Array.isArray(item.flowSteps) && (!isPackageParent(item) || hasSelectionMetadata)
+        ? item.flowSteps.filter((step) => {
+            const name = String(step?.name || "");
+            if (/hacer\s+paquete/i.test(name)) return false;
+            return step?.isChildItemSelection !== true;
+          })
+        : [];
+      if (printableFlowSteps.length > 0) {
+        for (const step of printableFlowSteps) {
           content += commands.bold;
           content += `${detailIndent}+ ${step.name}\n`;
           content += commands.boldOff;

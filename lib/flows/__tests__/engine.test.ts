@@ -61,6 +61,12 @@ export function runEngineVectors(): number {
         assert.fail(`${vector.name}: operación de vector desconocida`)
     }
   }
+
+  const prepared = buildItems({
+    productId: "bebida", format: "graph", source: "test", flows: [], entryNodeId: "prepared", edges: [],
+    nodes: [{ id: "prepared", flowId: "flow", title: "Bebida preparada", subtitle: null, selectMode: "single", minSelections: 1, maxSelections: 1, includeNoneOption: false, noneLabel: null, isEntry: true, options: [{ id: "yes", label: "Preparado", source: "manual", priceMode: "delta", effectivePrice: 5, refProductId: null, refVariantName: null, variantChoices: null, emitsChildItem: false, isBeverage: false }] }],
+  }, [{ nodeId: "prepared", selectedOptionIds: ["yes"] }], { id: "bebida", name: "Limonada", price: 40 }, null, { productId: "bebida", categoryId: "drinks", subcategoryId: null, variantName: null, flowTags: [], pathOptionIds: ["yes"] })
+  assert.equal(prepared.parent.productName, "Limonada (Prep)", "la selección Preparado debe viajar en el nombre visible")
   return vectors.length
 }
 

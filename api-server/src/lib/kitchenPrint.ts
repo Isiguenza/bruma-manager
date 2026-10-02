@@ -108,11 +108,17 @@ async function resolveSubcategoryNames(
 
 /** Convierte el customModifiers (JSON de flujo por categoría/producto) que ya
  * mandan los clientes al formato plano {name} que espera print-server. */
-function buildFlowSteps(customModifiers: string | null | undefined): { name: string }[] {
+type KitchenFlowStep = {
+  name: string;
+  /** True when this selection already has its own printed package child. */
+  isChildItemSelection?: boolean;
+};
+
+function buildFlowSteps(customModifiers: string | null | undefined): KitchenFlowStep[] {
   if (!customModifiers) return [];
   try {
     const parsed = JSON.parse(customModifiers);
-    const steps: { name: string }[] = [];
+    const steps: KitchenFlowStep[] = [];
     for (const value of Object.values<any>(parsed)) {
       const options = value?.options;
       if (Array.isArray(options)) {
@@ -127,7 +133,7 @@ function buildFlowSteps(customModifiers: string | null | undefined): { name: str
   }
 }
 
-async function resolveSelectionSteps(items: PrintableItem[]): Promise<Map<string, { name: string }[]>> {
+async function resolveSelectionSteps(items: PrintableItem[]): Promise<Map<string, KitchenFlowStep[]>> {
   const orderItemIds = items
     .map((item) => item.orderItemId)
     .filter((id): id is string => !!id);
@@ -138,21 +144,26 @@ async function resolveSelectionSteps(items: PrintableItem[]): Promise<Map<string
       orderItemId: schema.orderItemSelections.orderItemId,
       nodeTitle: schema.orderItemSelections.nodeTitle,
       optionLabel: schema.orderItemSelections.optionLabel,
+      childItemId: schema.orderItemSelections.childItemId,
       sortOrder: schema.orderItemSelections.sortOrder,
     })
     .from(schema.orderItemSelections)
     .where(inArray(schema.orderItemSelections.orderItemId, orderItemIds));
 
-  const byItemId = new Map<string, { name: string; sortOrder: number }[]>();
+  const byItemId = new Map<string, (KitchenFlowStep & { sortOrder: number })[]>();
   for (const selection of selections) {
     const steps = byItemId.get(selection.orderItemId) ?? [];
-    steps.push({ name: `${selection.nodeTitle}: ${selection.optionLabel}`, sortOrder: selection.sortOrder });
+    steps.push({
+      name: `${selection.nodeTitle}: ${selection.optionLabel}`,
+      isChildItemSelection: selection.childItemId !== null,
+      sortOrder: selection.sortOrder,
+    });
     byItemId.set(selection.orderItemId, steps);
   }
   return new Map(
     Array.from(byItemId.entries()).map(([id, steps]) => [
       id,
-      steps.sort((a, b) => a.sortOrder - b.sortOrder).map(({ name }) => ({ name })),
+      steps.sort((a, b) => a.sortOrder - b.sortOrder).map(({ name, isChildItemSelection }) => ({ name, isChildItemSelection })),
     ])
   );
 }

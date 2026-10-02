@@ -23,7 +23,10 @@ function parseVariants(raw: unknown): Array<{ name: string; price: number }> {
   if (typeof raw !== "string") return []
   try {
     const parsed: unknown = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.flatMap((value: any) => typeof value?.name === "string" ? [{ name: value.name, price: number(value.price) }] : []) : []
+    return Array.isArray(parsed) ? parsed.flatMap((value: any) => {
+      const name = typeof value?.name === "string" ? value.name.trim() : ""
+      return name ? [{ name, price: number(value.price) }] : []
+    }) : []
   } catch { return [] }
 }
 
@@ -63,8 +66,19 @@ export function composeFlowGraph(input: ComposeRows): FlowGraph | null {
     } else add(raw.nodeId, materialize(raw, byProduct.get(raw.refProductId), raw.refVariantName ?? null))
   }
   for (const [id, options] of byNode) {
-    const explicit = new Set(options.filter((option) => option.source === "product" && option.refProductId).map((option) => `${option.refProductId}:${option.refVariantName ?? ""}`))
-    byNode.set(id, options.filter((option) => option.source !== "category" || !explicit.has(`${option.refProductId}:${option.refVariantName ?? ""}`)))
+    const explicitVariants = new Map<string, Set<string | null>>()
+    for (const option of options.filter((option) => option.source === "product" && option.refProductId)) {
+      const variants = explicitVariants.get(option.refProductId) ?? new Set<string | null>()
+      variants.add(option.refVariantName)
+      explicitVariants.set(option.refProductId, variants)
+    }
+    byNode.set(id, options.filter((option) => {
+      if (option.source !== "category") return true
+      const variants = explicitVariants.get(option.refProductId ?? "")
+      // A whole-product override replaces every expanded variant. A concrete
+      // variant override replaces only that variant, leaving its siblings.
+      return !variants || (!variants.has(null) && !variants.has(option.refVariantName))
+    }))
   }
   const nodes = rawNodes.map((node) => ({ id: node.id, flowId: node.flowId, title: node.title, subtitle: node.subtitle ?? null, selectMode: node.selectMode, minSelections: node.minSelections, maxSelections: node.maxSelections, includeNoneOption: node.includeNoneOption, noneLabel: node.noneLabel ?? null, isEntry: node.isEntry, options: byNode.get(node.id) ?? [] }))
   const entries = new Map(selected.map((flow) => [flow.id, nodes.find((node) => node.flowId === flow.id && node.isEntry)?.id]))

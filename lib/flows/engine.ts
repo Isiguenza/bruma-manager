@@ -113,6 +113,13 @@ function referencedProductName(option: FlowNodeOption): string {
   return `${option.label}${variantSuffix}`
 }
 
+function preparedProductName(productName: string, graph: FlowGraph, path: FlowPath): string {
+  const isPrepared = selectedOptions(graph, path).some(({ option }) =>
+    /^(preparado|preparada)$/i.test(option.label.trim()),
+  )
+  return isPrepared && !/\(prep\)/i.test(productName) ? `${productName} (Prep)` : productName
+}
+
 function packageLabel(graph: FlowGraph, path: FlowPath): string | null {
   const childFlowIds = new Set(
     selectedOptions(graph, path)
@@ -135,7 +142,11 @@ export function buildItems(
   const basePrice = variant?.price ?? product.price ?? 0
   const parent: BuiltParentItem = {
     productId: product.id,
-    productName: variant === null ? product.name : `${product.name} - ${variant.name}`,
+    productName: preparedProductName(
+      variant === null ? product.name : `${product.name} - ${variant.name}`,
+      graph,
+      path,
+    ),
     unitPrice: computeTotal(graph, path, basePrice),
     subtotal: computeTotal(graph, path, basePrice),
     packageLabel: packageLabel(graph, path),

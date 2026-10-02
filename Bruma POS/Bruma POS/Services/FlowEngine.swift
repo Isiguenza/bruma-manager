@@ -79,7 +79,10 @@ enum FlowEngine {
         let total = basePrice + selectionsInPath.reduce(0) { $0 + $1.option.effectivePrice }
         let parent = BuiltParentItem(
             productId: product.id,
-            productName: variant.map { "\(product.name) - \($0.name)" } ?? product.name,
+            productName: preparedProductName(
+                variant.map { "\(product.name) - \($0.name)" } ?? product.name,
+                selections: selectionsInPath
+            ),
             unitPrice: total,
             subtotal: total,
             packageLabel: packageLabel(in: graph, selections: selectionsInPath),
@@ -207,6 +210,18 @@ enum FlowEngine {
 
     private static func referencedProductName(_ option: FlowNodeOption) -> String {
         option.label + (option.refVariantName.map { " - \($0)" } ?? "")
+    }
+
+    private static func preparedProductName(
+        _ productName: String,
+        selections: [(node: FlowNode, option: FlowNodeOption)]
+    ) -> String {
+        let isPrepared = selections.contains {
+            ["preparado", "preparada"].contains($0.option.label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }
+        return isPrepared && !productName.localizedCaseInsensitiveContains("(prep)")
+            ? "\(productName) (Prep)"
+            : productName
     }
 
     private static func packageLabel(
