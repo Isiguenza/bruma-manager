@@ -23,6 +23,28 @@ const router = Router();
 
 class FlowItemPayloadError extends Error {}
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Category-sourced flow options are materialized for the client with an id of
+ * `<flow-option-uuid>:<product-uuid>:<variant>`. The first segment remains
+ * the row id in flow_node_options; the other segments only identify the
+ * materialized product/variant choice. `order_item_selections.option_id` is a
+ * UUID FK, so persist the source option UUID rather than the client-only id.
+ */
+function selectionUuid(value: unknown, field: string, allowMaterializedOptionId = false): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") {
+    throw new FlowItemPayloadError(`${field} debe ser un UUID`);
+  }
+
+  const candidate = allowMaterializedOptionId ? value.split(":", 1)[0] : value;
+  if (!UUID_PATTERN.test(candidate)) {
+    throw new FlowItemPayloadError(`${field} inválido`);
+  }
+  return candidate;
+}
+
 type PreparedOrderItemWrites = {
   parentRows: any[];
   childRows: any[];
@@ -144,13 +166,13 @@ async function prepareOrderItemWrites(orderId: string, items: any[]): Promise<Pr
       selectionRows.push({
         id: randomUUID(),
         orderItemId: record.id,
-        flowId: selection.flowId || null,
-        nodeId: selection.nodeId || null,
-        optionId: selection.optionId || null,
+        flowId: selectionUuid(selection.flowId, "flowId"),
+        nodeId: selectionUuid(selection.nodeId, "nodeId"),
+        optionId: selectionUuid(selection.optionId, "optionId", true),
         nodeTitle: selection.nodeTitle,
         optionLabel: selection.optionLabel,
         priceDelta: selection.priceDelta != null ? selection.priceDelta.toString() : "0",
-        refProductId: selection.refProductId || null,
+        refProductId: selectionUuid(selection.refProductId, "refProductId"),
         refVariantName: selection.refVariantName || null,
         refListPrice: selection.refListPrice != null ? selection.refListPrice.toString() : null,
         childItemId: childIndex === null ? null : records[childIndex].id,
