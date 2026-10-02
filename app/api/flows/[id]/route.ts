@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { flowDefinitions } from "@/lib/db/schema"
+import { notifyFlowsUpdated } from "@/lib/notify-flows-updated"
 import { getFlow, scopeKinds } from "../_shared"
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -42,6 +43,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     const [updated] = await db.update(flowDefinitions).set(update).where(eq(flowDefinitions.id, id)).returning({ id: flowDefinitions.id })
     if (!updated) return NextResponse.json({ error: "Flow not found" }, { status: 404 })
+    await notifyFlowsUpdated()
     return NextResponse.json(await getFlow(id))
   } catch (error) {
     console.error("Error updating flow:", error)
@@ -54,6 +56,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     const id = (await params).id
     const [deleted] = await db.delete(flowDefinitions).where(eq(flowDefinitions.id, id)).returning({ id: flowDefinitions.id })
     if (!deleted) return NextResponse.json({ error: "Flow not found" }, { status: 404 })
+    await notifyFlowsUpdated()
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error deleting flow:", error)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { db } from "@/lib/db"
 import { flowDefinitions, flowNodes } from "@/lib/db/schema"
+import { notifyFlowsUpdated } from "@/lib/notify-flows-updated"
 import { getFlow, listFlows, scopeKinds } from "./_shared"
 
 export async function GET() {
@@ -36,6 +37,7 @@ export async function POST(request: NextRequest) {
       isEntry: true,
       sortOrder: 0,
     })
+    await notifyFlowsUpdated()
     return NextResponse.json(await getFlow(definition.id), { status: 201 })
   } catch (error) {
     console.error("Error creating flow:", error)

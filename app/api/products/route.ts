@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { products, categories, productFlows } from "@/lib/db/schema";
+import { notifyFlowsUpdated } from "@/lib/notify-flows-updated";
 import { eq, desc, isNull, and } from "drizzle-orm";
 
 function normalizeFlowTags(value: unknown): string[] {
@@ -119,6 +120,9 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
+    // Category-sourced flow options expand from active products at fetch time.
+    // Invalidate POS graph caches so a new packageable item appears promptly.
+    await notifyFlowsUpdated();
     return NextResponse.json(product, { status: 201 });
   } catch (error) {
     console.error("Error creating product:", error);

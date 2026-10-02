@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { flowDefinitions } from "@/lib/db/schema"
+import { notifyFlowsUpdated } from "@/lib/notify-flows-updated"
 import { getTargets, replaceTargets, targetRows, validateTargets } from "../../_shared"
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -25,7 +26,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const targets = targetRows(await request.json())
     const problems = validateTargets(targets)
     if (problems.length > 0) return NextResponse.json({ error: "Targets inválidos", problems }, { status: 400 })
-    return NextResponse.json(await replaceTargets(id, targets))
+    const updatedTargets = await replaceTargets(id, targets)
+    await notifyFlowsUpdated()
+    return NextResponse.json(updatedTargets)
   } catch (error) {
     console.error("Error replacing flow targets:", error)
     return NextResponse.json({ error: "Error replacing flow targets" }, { status: 500 })

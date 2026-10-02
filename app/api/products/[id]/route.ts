@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { products } from "@/lib/db/schema";
+import { notifyFlowsUpdated } from "@/lib/notify-flows-updated";
 import { eq } from "drizzle-orm";
 
 function normalizeFlowTags(value: unknown): string[] {
@@ -70,6 +71,7 @@ export async function PUT(
       .where(eq(products.id, id))
       .returning();
 
+    if (product) await notifyFlowsUpdated();
     return NextResponse.json(product);
   } catch (error) {
     console.error("Error updating product:", error);
@@ -102,6 +104,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    await notifyFlowsUpdated();
     return NextResponse.json(product);
   } catch (error) {
     console.error("Error updating product:", error);
@@ -134,6 +137,7 @@ export async function DELETE(
       })
       .where(eq(products.id, id));
     
+    await notifyFlowsUpdated();
     return NextResponse.json({ 
       success: true,
       message: "Producto eliminado (soft delete)" 

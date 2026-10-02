@@ -247,6 +247,12 @@ function inferLegacyPackageChildren(items) {
   return resolved;
 }
 
+function isPackageParent(item) {
+  if (item?.packageLabel) return true;
+  const steps = Array.isArray(item?.flowSteps) ? item.flowSteps : [];
+  return steps.some((step) => /hacer\s+paquete/i.test(String(step?.name || "")));
+}
+
 // Función para enviar a la impresora con fallback USB
 function sendToPrinter(content) {
   return new Promise((resolve, reject) => {
@@ -1366,23 +1372,20 @@ app.post('/print-comanda', async (req, res) => {
     content += solidLine() + commands.feedLine;
     content += commands.feedLine;
 
-    // Separate after recovering legacy package relationships so a beverage
-    // still carries its parent context when it is routed to BEBIDAS.
+    // Cocina prepara el paquete como un bloque: fuerte, entrada y bebida.
+    // El Pase conserva su propio ruteo; esta agrupación solo cambia papel.
     const packageAwareItems = inferLegacyPackageChildren(items);
-    const beverages = packageAwareItems.filter(item => item.isBeverage);
-    const food = packageAwareItems.filter(item => !item.isBeverage);
 
     const appendItem = (item, { packageChild = false } = {}) => {
       const childPrefix = packageChild ? "   ↳ " : "";
-      const parentContext = packageChild && item.parentName ? `${item.parentName}: ` : "";
-      const packageBadge = !packageChild && item.packageLabel
-        ? ` [${String(item.packageLabel).toUpperCase()}]`
+      const packageBadge = !packageChild && isPackageParent(item)
+        ? ` [${String(item.packageLabel || "PAQUETE").toUpperCase()}]`
         : "";
       const detailIndent = packageChild ? "      " : "   ";
 
       content += commands.bold;
       content += commands.textSizeTall;
-      content += `${childPrefix}${parentContext}${item.qty}x ${item.name}${packageBadge}\n`;
+      content += `${childPrefix}${item.qty}x ${item.name}${packageBadge}\n`;
       content += commands.textSizeNormal;
       content += commands.boldOff;
 
@@ -1401,7 +1404,9 @@ app.post('/print-comanda', async (req, res) => {
         content += `${detailIndent}+ Extra: ${item.extra}\n`;
         content += commands.boldOff;
       }
-      if (item.flowSteps && item.flowSteps.length > 0) {
+      // Entrada y bebida ya se imprimen debajo del fuerte; repetirlas como
+      // pasos del padre hace que parezcan instrucciones en vez de componentes.
+      if (!isPackageParent(item) && item.flowSteps && item.flowSteps.length > 0) {
         for (const step of item.flowSteps) {
           content += commands.bold;
           content += `${detailIndent}+ ${step.name}\n`;
@@ -1416,35 +1421,11 @@ app.post('/print-comanda', async (req, res) => {
       content += commands.feedLine;
     };
     
-    // 1. BEBIDAS PRIMERO
-    if (beverages.length > 0) {
-      content += commands.bold;
-      content += commands.textSizeTall;
-      content += "BEBIDAS\n";
-      content += commands.textSizeNormal;
-      content += commands.boldOff;
-      content += commands.feedLine;
-      content += solidLine() + commands.feedLine;
-      content += commands.feedLine;
-
-      for (const item of beverages) {
-        // Beverage children stay in BEBIDAS for routing, while parentName
-        // preserves their package relationship even across sections.
-        appendItem(item, { packageChild: isPackageChild(item) });
-      }
-
-      if (food.length > 0) {
-        content += commands.feedLine;
-        content += solidLine() + commands.feedLine;
-        content += commands.feedLine;
-      }
-    }
-    
-    // 2. ALIMENTOS POR ASIENTO Y TIEMPO
-    if (food.length > 0) {
+    // Todos los componentes (incluida la bebida) permanecen con el paquete.
+    if (packageAwareItems.length > 0) {
       // Agrupar por asiento
       const bySeat = {};
-      for (const item of food) {
+      for (const item of packageAwareItems) {
         const seat = item.seat || 'C';
         if (!bySeat[seat]) bySeat[seat] = [];
         bySeat[seat].push(item);
