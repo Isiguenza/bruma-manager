@@ -53,6 +53,18 @@ type FlowHistoryEntry = {
   path: FlowPath;
 };
 
+function customModifiersForFlowSelections(selections: BuiltSelection[]): string | null {
+  const steps: Record<string, { stepName: string; options: Array<{ name: string; price: string }> }> = {};
+  for (const selection of selections) {
+    if (selection.childItemIndex !== null || /hacer\s+paquete/i.test(selection.optionLabel)) continue;
+    const key = `flow-${selection.nodeId}`;
+    const step = steps[key] ?? { stepName: selection.nodeTitle, options: [] };
+    step.options.push({ name: selection.optionLabel, price: selection.priceDelta.toFixed(2) });
+    steps[key] = step;
+  }
+  return Object.keys(steps).length > 0 ? JSON.stringify(steps) : null;
+}
+
 export default function BarPage() {
   const router = useRouter();
   
@@ -1562,7 +1574,7 @@ export default function BarPage() {
         course: built.parent.course ?? undefined,
         quantity: 1,
         notes: productNotes,
-        customModifiers: null,
+        customModifiers: customModifiersForFlowSelections(built.selections),
         isBeverage: categories.find((category) => category.id === selectedProduct.categoryId)?.isBeverage || false,
         packageGroupId,
         packageLabel: built.parent.packageLabel,
@@ -3601,7 +3613,12 @@ export default function BarPage() {
                                     return Object.values(modifiers).map((mod: any, idx: number) => (
                                       <div key={idx} className="text-xs text-muted-foreground flex items-start gap-1">
                                         <span className="opacity-50">↳</span>
-                                        <span>{mod.stepName}: {mod.options.map((opt: any) => opt.name).join(', ')}</span>
+                                        <span>{mod.stepName}: {mod.options.map((opt: any) => {
+                                          const price = Number(opt.price ?? 0);
+                                          return Number.isFinite(price) && price !== 0
+                                            ? `${opt.name} +$${Number.isInteger(price) ? price : price.toFixed(2)}`
+                                            : opt.name;
+                                        }).join(', ')}</span>
                                       </div>
                                     ));
                                   } catch { return null; }

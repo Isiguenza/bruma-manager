@@ -106,6 +106,22 @@ export default function DispatchPage() {
     ready: "bg-green-500/10 text-green-600 border-green-500/20",
   };
 
+  function modifierLines(customModifiers: string | null | undefined) {
+    if (!customModifiers) return [] as string[];
+    try {
+      const modifiers = JSON.parse(customModifiers) as Record<string, { stepName?: string; options?: Array<{ name?: string; price?: string | number }> }>;
+      return Object.values(modifiers).flatMap((step) => (step.options ?? [])
+        .filter((option) => option.name)
+        .map((option) => {
+          const price = Number(option.price ?? 0);
+          const suffix = Number.isFinite(price) && price !== 0 ? ` +$${Number.isInteger(price) ? price : price.toFixed(2)}` : "";
+          return `${step.stepName ? `${step.stepName}: ` : ""}${option.name}${suffix}`;
+        }));
+    } catch {
+      return [];
+    }
+  }
+
   function OrderCard({ order }: { order: Order }) {
     const timeAgo = formatDistanceToNow(new Date(order.createdAt), {
       addSuffix: true,
@@ -187,6 +203,9 @@ export default function DispatchPage() {
                         </Badge>
                         <div>
                           <span className="font-medium">{item.productName}</span>
+                          {modifierLines(item.customModifiers).map((line, index) => (
+                            <p key={index} className="text-xs text-amber-600">→ {line}</p>
+                          ))}
                           {item.notes && (
                             <p className="text-xs text-muted-foreground">→ {item.notes}</p>
                           )}
@@ -209,6 +228,9 @@ export default function DispatchPage() {
                           <Badge variant="secondary" className="shrink-0 text-xs">{item.quantity}x</Badge>
                           <div>
                             <span className="font-medium">{item.productName}</span>
+                            {modifierLines(item.customModifiers).map((line, index) => (
+                              <p key={index} className="text-xs text-amber-600">→ {line}</p>
+                            ))}
                             {item.notes && <p className="text-xs text-muted-foreground">→ {item.notes}</p>}
                           </div>
                         </div>

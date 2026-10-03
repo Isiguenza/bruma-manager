@@ -114,6 +114,12 @@ type KitchenFlowStep = {
   isChildItemSelection?: boolean;
 };
 
+function moneySuffix(value: unknown): string {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount === 0) return "";
+  return ` +$${Number.isInteger(amount) ? amount : amount.toFixed(2)}`;
+}
+
 function buildFlowSteps(customModifiers: string | null | undefined): KitchenFlowStep[] {
   if (!customModifiers) return [];
   try {
@@ -123,7 +129,7 @@ function buildFlowSteps(customModifiers: string | null | undefined): KitchenFlow
       const options = value?.options;
       if (Array.isArray(options)) {
         for (const opt of options) {
-          if (opt?.name) steps.push({ name: opt.name });
+          if (opt?.name) steps.push({ name: `${opt.name}${moneySuffix(opt.price)}` });
         }
       }
     }
@@ -144,6 +150,7 @@ async function resolveSelectionSteps(items: PrintableItem[]): Promise<Map<string
       orderItemId: schema.orderItemSelections.orderItemId,
       nodeTitle: schema.orderItemSelections.nodeTitle,
       optionLabel: schema.orderItemSelections.optionLabel,
+      priceDelta: schema.orderItemSelections.priceDelta,
       childItemId: schema.orderItemSelections.childItemId,
       sortOrder: schema.orderItemSelections.sortOrder,
     })
@@ -154,7 +161,7 @@ async function resolveSelectionSteps(items: PrintableItem[]): Promise<Map<string
   for (const selection of selections) {
     const steps = byItemId.get(selection.orderItemId) ?? [];
     steps.push({
-      name: `${selection.nodeTitle}: ${selection.optionLabel}`,
+      name: `${selection.optionLabel}${moneySuffix(selection.priceDelta)}`,
       isChildItemSelection: selection.childItemId !== null,
       sortOrder: selection.sortOrder,
     });

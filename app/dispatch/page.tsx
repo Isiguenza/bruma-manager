@@ -146,6 +146,13 @@ export default function DispatchMonitorPage() {
     }
   }
 
+  function flowOptionLabel(option: { name: string; price?: string | number }) {
+    const price = Number(option.price ?? 0);
+    return Number.isFinite(price) && price !== 0
+      ? `${option.name} +$${Number.isInteger(price) ? price : price.toFixed(2)}`
+      : option.name;
+  }
+
   async function initializeAudio() {
     try {
       console.log("🎵 Intentando inicializar audio...");
@@ -362,8 +369,8 @@ export default function DispatchMonitorPage() {
                                       )}
                                       {customMods && Object.entries(customMods).map(([key, value]) => {
                                         if (typeof value === 'object' && value !== null && 'stepName' in value && 'options' in value) {
-                                          const step = value as { stepName: string; options: Array<{ name: string }> };
-                                          const optionNames = step.options.map(opt => opt.name).join(', ');
+                                          const step = value as { stepName: string; options: Array<{ name: string; price?: string | number }> };
+                                          const optionNames = step.options.map(flowOptionLabel).join(', ');
                                           return (
                                             <div key={key} className="text-amber-400 text-sm flex items-start gap-1 mt-1">
                                               <span className="opacity-50">↳</span>
@@ -421,11 +428,11 @@ export default function DispatchMonitorPage() {
                                           )}
                                           {customMods && Object.entries(customMods).map(([key, value]) => {
                                             if (typeof value === 'object' && value !== null && 'stepName' in value && 'options' in value) {
-                                              const step = value as { stepName: string; options: Array<{ name: string }> };
+                                              const step = value as { stepName: string; options: Array<{ name: string; price?: string | number }> };
                                               return (
                                                 <div key={key} className="text-amber-400 text-sm flex items-start gap-1 mt-1">
                                                   <span className="opacity-50">↳</span>
-                                                  <span>{step.stepName}: {step.options.map(o => o.name).join(', ')}</span>
+                                                  <span>{step.stepName}: {step.options.map(flowOptionLabel).join(', ')}</span>
                                                 </div>
                                               );
                                             }

@@ -105,6 +105,11 @@ struct CartItemRow: View {
                                 HStack(spacing: 4) {
                                     Text("↳").foregroundColor(.gray)
                                     Text(name)
+                                    let price = (opt["price"] as? String).flatMap(Double.init) ?? (opt["price"] as? Double) ?? 0
+                                    if price != 0 {
+                                        Text("+\(vm.formatCurrency(price))")
+                                            .foregroundColor(.orange.opacity(0.9))
+                                    }
                                 }.font(.caption2).foregroundColor(Color(white: 0.55))
                             }
                         }

@@ -484,7 +484,7 @@ app.post('/print', async (req, res) => {
       // Modificadores con precio (extras, flujo, modificador personalizado)
       if (item.modifiers && item.modifiers.length > 0) {
         for (const mod of item.modifiers) {
-          const modLine = `  + ${mod.name}`;
+          const modLine = `  -> ${mod.name}`;
           const modPrice = `+$${mod.price}`;
           const modSpaces = Math.max(1, 48 - modLine.length - modPrice.length);
           content += modLine + " ".repeat(modSpaces) + modPrice + "\n";
@@ -919,7 +919,7 @@ app.post('/print-seat-bill', async (req, res) => {
 
       if (item.modifiers && item.modifiers.length > 0) {
         for (const mod of item.modifiers) {
-          const modLine = `  + ${mod.name}`;
+          const modLine = `  -> ${mod.name}`;
           const modPrice = `+$${mod.price}`;
           const modSpaces = Math.max(1, 48 - modLine.length - modPrice.length);
           content += modLine + " ".repeat(modSpaces) + modPrice + "\n";
@@ -1421,7 +1421,7 @@ app.post('/print-comanda', async (req, res) => {
       if (printableFlowSteps.length > 0) {
         for (const step of printableFlowSteps) {
           content += commands.bold;
-          content += `${detailIndent}+ ${step.name}\n`;
+          content += `${detailIndent}-> ${step.name}\n`;
           content += commands.boldOff;
         }
       }

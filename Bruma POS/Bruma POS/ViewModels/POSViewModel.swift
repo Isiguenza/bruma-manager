@@ -2512,10 +2512,35 @@ class POSViewModel: ObservableObject {
         var parent = CartItem(productId: built.parent.productId, productName: built.parent.productName, unitPrice: built.parent.unitPrice, quantity: 1, notes: productNotes, seat: built.parent.seat ?? activeSeat, course: built.parent.course ?? activeCourse, sentToKitchen: false, isBeverage: product.category?.isBeverage ?? false, deliveredToTable: false, variantName: selectedFlowVariant?.name, isGuest: false)
         parent.packageLabel = built.parent.packageLabel
         parent.flowSelections = built.selections
+        parent.customModifiers = customModifiersForFlowSelections(built.selections)
         let children = built.children.map { child in
             CartItem(productId: child.productId, productName: child.productName, unitPrice: 0, quantity: 1, notes: "", seat: child.seat ?? parent.seat, course: child.course ?? parent.course, sentToKitchen: false, isBeverage: child.isBeverage, deliveredToTable: false, variantName: nil, isGuest: false, parentLocalId: parent.id)
         }
         return [parent] + children
+    }
+
+    /// Graph selections live in their own normalized table on the API. Mirror
+    /// the visible, non-child choices into the existing modifier snapshot too,
+    /// so the cart, Pase and account ticket can all render `Preparado +$5`.
+    private func customModifiersForFlowSelections(_ selections: [BuiltSelection]) -> String? {
+        var steps: [String: [String: Any]] = [:]
+        for selection in selections {
+            guard selection.childItemIndex == nil,
+                  !selection.optionLabel.localizedCaseInsensitiveContains("hacer paquete") else { continue }
+            let key = "flow-\(selection.nodeId)"
+            var step = steps[key] ?? ["stepName": selection.nodeTitle, "options": [[String: Any]]()]
+            var options = step["options"] as? [[String: Any]] ?? []
+            options.append([
+                "name": selection.optionLabel,
+                "price": String(format: "%.2f", selection.priceDelta),
+            ])
+            step["options"] = options
+            steps[key] = step
+        }
+        guard !steps.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: steps),
+              let value = String(data: data, encoding: .utf8) else { return nil }
+        return value
     }
 
     func prepareFlowItemAndShowNotes() {
