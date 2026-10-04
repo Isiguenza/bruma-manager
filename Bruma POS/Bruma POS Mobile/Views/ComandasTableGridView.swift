@@ -142,6 +142,7 @@ struct ComandasTableGridView: View {
             vm.showToast("Pide a un admin que configure la Mesa de Práctica", isError: true)
             return
         }
+        vm.cancelItemComposition()
         vm.resetPaymentState()
         vm.isHomeDelivery = false
         vm.isEmployeeOrder = false

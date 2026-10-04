@@ -124,6 +124,8 @@ struct BuiltParentItem: Codable, Equatable {
 struct BuiltChildItem: Codable, Equatable {
     let productId: String
     let productName: String
+    /// Variant selected by a synthetic child-variant node, if any.
+    let refVariantName: String?
     let unitPrice: Double
     let subtotal: Double
     let parentItemId: String

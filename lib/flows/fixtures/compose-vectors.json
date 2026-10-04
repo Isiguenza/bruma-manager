@@ -1730,5 +1730,26 @@
       "productId": "camarones", "format": "graph", "source": "composed", "flows": [{ "id": "package", "name": "Paquete", "scopeKind": "product", "priority": 0 }], "entryNodeId": "entrada", "edges": [],
       "nodes": [{ "id": "entrada", "flowId": "package", "title": "Entrada", "subtitle": null, "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "noneLabel": null, "isEntry": true, "childOwnerOptionId": null, "options": [{ "id": "pescadito", "label": "Pescadito", "source": "product", "priceMode": "free", "effectivePrice": 0, "refProductId": "pescadito", "refCategoryId": null, "refVariantName": null, "refListPrice": 89, "variantChoices": null, "emitsChildItem": true, "isBeverage": false, "refProductActive": true }] }]
     }
+  },
+  {
+    "name": "categoria-con-variante-una-tarjeta-y-nodo-sintetico",
+    "input": {
+      "product": { "id": "main", "categoryId": "mains", "subcategoryId": null },
+      "definitions": [{ "id": "flow", "name": "Paquete", "scopeKind": "product", "priority": 0, "active": true }],
+      "targets": [{ "flowId": "flow", "mode": "include", "productId": "main" }],
+      "nodes": [{ "id": "drink", "flowId": "flow", "title": "Bebida", "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "isEntry": true, "active": true, "sortOrder": 0 }],
+      "options": [{ "id": "all-drinks", "nodeId": "drink", "source": "category", "label": null, "refCategoryId": "drinks", "allowVariantChoice": true, "variantPriceDeltas": { "limonada::Natural": 5, "limonada::Mineral": 5 }, "priceMode": "free", "priceDelta": 0, "emitsChildItem": true, "active": true, "sortOrder": 0 }],
+      "overrides": [], "edges": [],
+      "products": [{ "id": "limonada", "name": "Limonada", "categoryId": "drinks", "price": 35, "variants": "[{\"name\":\"Natural\",\"price\":35},{\"name\":\"Mineral\",\"price\":35}]", "active": true }],
+      "categories": [{ "id": "drinks", "isBeverage": true }]
+    },
+    "expected": {
+      "productId": "main", "format": "graph", "source": "composed", "flows": [{ "id": "flow", "name": "Paquete", "scopeKind": "product", "priority": 0 }], "entryNodeId": "drink",
+      "nodes": [
+        { "id": "drink", "flowId": "flow", "title": "Bebida", "subtitle": null, "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "noneLabel": null, "isEntry": true, "childOwnerOptionId": null, "options": [{ "id": "all-drinks:limonada:", "label": "Limonada", "source": "category", "priceMode": "free", "effectivePrice": 0, "refProductId": "limonada", "refCategoryId": "drinks", "refVariantName": null, "refListPrice": 35, "variantChoices": [{ "name": "Natural", "price": 35 }, { "name": "Mineral", "price": 35 }], "variantPriceDeltas": { "limonada::Natural": 5, "limonada::Mineral": 5 }, "emitsChildItem": true, "isBeverage": true, "refProductActive": true, "refCategoryActive": true }] },
+        { "id": "drink:sub:all-drinks:limonada:", "sourceNodeId": "drink", "flowId": "flow", "title": "Variante", "subtitle": "Limonada", "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "noneLabel": null, "isEntry": false, "childOwnerOptionId": "all-drinks:limonada:", "options": [{ "id": "all-drinks:Natural:sub:all-drinks:limonada:", "sourceOptionId": "all-drinks", "label": "Limonada", "source": "product", "priceMode": "delta", "effectivePrice": 5, "refProductId": "limonada", "refVariantName": "Natural", "refListPrice": 35, "variantChoices": null, "emitsChildItem": false, "isBeverage": true }, { "id": "all-drinks:Mineral:sub:all-drinks:limonada:", "sourceOptionId": "all-drinks", "label": "Limonada", "source": "product", "priceMode": "delta", "effectivePrice": 5, "refProductId": "limonada", "refVariantName": "Mineral", "refListPrice": 35, "variantChoices": null, "emitsChildItem": false, "isBeverage": true }] }
+      ],
+      "edges": [{ "fromNodeId": "drink", "fromOptionId": "all-drinks:limonada:", "toNodeId": "drink:sub:all-drinks:limonada:", "condition": null, "sortOrder": -1 }]
+    }
   }
 ]

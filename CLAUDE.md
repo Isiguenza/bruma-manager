@@ -138,6 +138,17 @@ quién lo dibuja. Las hojas inferiores (`ProductAddDialog` /
 variantes ahí, se rompe la continuidad con el flujo que arranca justo después
 de elegir variante.
 
+**Flujos v2 — variantes de hijos de categoría:** `flow_node_options.allow_variant_choice`
+también aplica a `source='category'`, pero por compatibilidad solo cambia la
+expansión cuando está prendido: apagado sigue dando una opción por variante;
+prendido da una tarjeta por producto y el composer inserta el nodo sintético de
+variante. `variant_price_deltas` es JSON nullable; para una opción de producto
+usa `{ "Mineral": 5 }`, y para una categoría el editor guarda
+`{ "<productId>::Mineral": 5 }` (el resolver acepta también la clave corta),
+de modo que Limonada/Naranjada pueden llevar +$5 sin cobrar cada bebida Mineral.
+La migración `drizzle/manual_flow_node_option_variant_price_deltas.sql` queda
+sin aplicar: se ejecuta el SQL manualmente en Neon; **nunca** `npm run db:migrate`.
+
 **Gotcha de flujos personalizados por categoría:** en
 `POSViewModel.buildFlowCartItem`, los pasos de flujo tipo `frosting`/`topping`
 solo deben llenar `frostingId`/`dryToppingId` (columnas con FK a las tablas

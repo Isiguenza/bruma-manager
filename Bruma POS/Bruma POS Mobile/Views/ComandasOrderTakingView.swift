@@ -28,10 +28,9 @@ struct ComandasOrderTakingView: View {
         return nil
     }
 
-    private let stepTransition = AnyTransition.asymmetric(
-        insertion: .move(edge: .trailing).combined(with: .opacity),
-        removal: .move(edge: .leading).combined(with: .opacity)
-    )
+    /// Los pasos de composición comparten el mismo encabezado: solo el cuerpo
+    /// hace un fade breve para que no parezca una navegación lateral.
+    private let stepTransition = AnyTransition.opacity
 
     var body: some View {
         ZStack {
@@ -53,7 +52,7 @@ struct ComandasOrderTakingView: View {
                 }
                 .onAppear { visibleStep = activeStep }
                 .onChange(of: activeStep) { _, newStep in
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
+                    withAnimation(.easeInOut(duration: 0.16)) {
                         visibleStep = newStep
                     }
                 }
@@ -127,20 +126,16 @@ struct ComandasOrderTakingView: View {
             }
         case .flowNode:
             if let node = vm.activeFlowNode {
-                VStack(spacing: 0) {
-                    flowBreadcrumbs
-                    MobileFlowNode(
-                        node: node,
-                        selectedOptionIds: vm.activeFlowSelectedOptionIds,
-                        total: vm.formatCurrency(vm.flowLiveTotal()),
-                        select: { option in
-                            Haptics.tap()
-                            vm.handleStepSelection(option)
-                        },
-                        clear: { Haptics.tap(); vm.handleStepSelection(nil) },
-                        advance: { Haptics.tap(); vm.advanceToNextStep() }
-                    )
-                }
+                MobileFlowNode(
+                    node: node,
+                    selectedOptionIds: vm.activeFlowSelectedOptionIds,
+                    select: { option in
+                        Haptics.tap()
+                        vm.handleStepSelection(option)
+                    },
+                    clear: { Haptics.tap(); vm.handleStepSelection(nil) },
+                    advance: { Haptics.tap(); vm.advanceToNextStep() }
+                )
             }
         case .notes:
             MobileNotesNode(vm: vm)
@@ -148,63 +143,91 @@ struct ComandasOrderTakingView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Button {
-                Haptics.tap()
-                if vm.cart.contains(where: { !$0.sentToKitchen }) {
-                    showLeaveConfirm = true
-                } else {
-                    vm.handleBackToTables()
-                }
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                    .padding(8)
-                    .background(FlatCapsuleStyle.neutralFill)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(orderTitle)
-                    .font(.headline.weight(.bold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                if let node = vm.activeFlowNode {
-                    Text(node.title)
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-            }
-
-            Spacer()
-
-            if vm.activeFlowNode != nil || vm.showVariantDialog || vm.showNotesDialog {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
                 Button {
                     Haptics.tap()
-                    if vm.showNotesDialog {
-                        vm.handleCancelNotes()
-                    } else if vm.activeFlowNode != nil {
-                        vm.handleBackInFlow()
+                    if vm.cart.contains(where: { !$0.sentToKitchen }) {
+                        showLeaveConfirm = true
                     } else {
-                        vm.dismissVariantDialog()
+                        vm.handleBackToTables()
                     }
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Atrás")
-                    }
-                    .font(.caption.weight(.medium))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    Image(systemName: "chevron.left")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .padding(8)
+                        .background(FlatCapsuleStyle.neutralFill)
+                        .clipShape(Circle())
                 }
-                .buttonStyle(.flatCapsuleNeutral)
+                .buttonStyle(.plain)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(itemStepTitle ?? orderTitle)
+                        .font(.headline.weight(.bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    if let subtitle = itemStepSubtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                Spacer()
+
+                if vm.activeFlowNode != nil {
+                    Text(vm.formatCurrency(vm.flowLiveTotal()))
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(.green)
+                }
+
+                if activeStep != nil {
+                    Button {
+                        Haptics.tap()
+                        if vm.showNotesDialog {
+                            vm.handleCancelNotes()
+                        } else if vm.activeFlowNode != nil {
+                            vm.handleBackInFlow()
+                        } else {
+                            vm.dismissVariantDialog()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Atrás")
+                        }
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.flatCapsuleNeutral)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            if vm.activeFlowNode != nil {
+                flowBreadcrumbs
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .animation(.easeInOut(duration: 0.2), value: vm.activeFlowNode?.id)
+        .transaction { $0.animation = nil }
+    }
+
+    private var itemStepTitle: String? {
+        if let node = vm.activeFlowNode { return node.title }
+        if vm.showNotesDialog {
+            return vm.pendingCartItem?.productName ?? vm.selectedProductForVariant?.name ?? vm.selectedProduct?.name
+        }
+        if vm.showVariantDialog { return vm.selectedProductForVariant?.name }
+        return nil
+    }
+
+    private var itemStepSubtitle: String? {
+        if let node = vm.activeFlowNode { return node.subtitle }
+        if vm.showNotesDialog { return "Comentarios especiales" }
+        if vm.showVariantDialog { return "Selecciona una opción" }
+        return nil
     }
 
     /// Recordatorio persistente de que esto SÍ imprime y SÍ aparece en el
@@ -276,6 +299,7 @@ struct ComandasOrderTakingView: View {
                     Button {
                         ComandasKeyboard.dismiss()
                         Haptics.tap()
+                        vm.cancelItemComposition()
                         withAnimation(.easeInOut(duration: 0.15)) { vm.selectedCategory = nil }
                     } label: {
                         Text("Todo")
@@ -291,6 +315,7 @@ struct ComandasOrderTakingView: View {
                         Button {
                             ComandasKeyboard.dismiss()
                             Haptics.tap()
+                            vm.cancelItemComposition()
                             withAnimation(.easeInOut(duration: 0.15)) {
                                 vm.selectedCategory = category.id
                             }
@@ -430,22 +455,12 @@ struct ComandasOrderTakingView: View {
 private struct MobileFlowNode: View {
     let node: FlowNode
     let selectedOptionIds: [String]
-    let total: String
     let select: (FlowNodeOption) -> Void
     let clear: () -> Void
     let advance: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(node.title).font(.headline.weight(.bold)).foregroundColor(.white)
-                    if let subtitle = node.subtitle { Text(subtitle).font(.caption).foregroundColor(.gray) }
-                }
-                Spacer()
-                Text(total).font(.headline.weight(.bold)).foregroundColor(.green)
-            }
-            .padding(16)
             ScrollView(showsIndicators: false) {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     if node.includeNoneOption {
@@ -473,13 +488,6 @@ private struct MobileVariantNode: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(product.name).font(.headline.weight(.bold)).foregroundColor(.white)
-                Text("Selecciona una opción").font(.caption).foregroundColor(.gray)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-
             ScrollView(showsIndicators: false) {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(product.parsedVariants) { variant in
@@ -523,13 +531,6 @@ private struct MobileNotesNode: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(productName).font(.headline.weight(.bold)).foregroundColor(.white)
-                Text("Comentarios especiales").font(.caption).foregroundColor(.gray)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
                     let flowItems = vm.flowSummaryItems()
@@ -590,11 +591,18 @@ private struct MobileNotesNode: View {
 
             HStack(spacing: 12) {
                 Button("Cancelar") { vm.handleCancelNotes() }
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 48)
                     .buttonStyle(.flatCapsuleNeutral)
                 Button(hasContent ? "Confirmar" : "Agregar") { vm.handleConfirmNotes() }
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 48)
                     .buttonStyle(.flatCapsule(.blue))
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
         }
     }
 }

@@ -20,14 +20,22 @@ const matches = (target: any, product: any) =>
   (target.categoryId != null && target.categoryId === product.categoryId)
 
 function parseVariants(raw: unknown): Array<{ name: string; price: number }> {
-  if (typeof raw !== "string") return []
   try {
-    const parsed: unknown = JSON.parse(raw)
+    const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw
     return Array.isArray(parsed) ? parsed.flatMap((value: any) => {
       const name = typeof value?.name === "string" ? value.name.trim() : ""
       return name ? [{ name, price: number(value.price) }] : []
     }) : []
   } catch { return [] }
+}
+
+function variantDelta(raw: unknown, productId: string, variantName: string): number {
+  try {
+    const values = (typeof raw === "string" ? JSON.parse(raw) : raw) as Record<string, unknown> | null
+    if (!values || typeof values !== "object" || Array.isArray(values)) return 0
+    // Category options are scoped by product to avoid charging every "Mineral".
+    return number(values[`${productId}::${variantName}`] ?? values[variantName])
+  } catch { return 0 }
 }
 
 /** Same target rules are used for the host product and for a child subflow. */
@@ -61,20 +69,21 @@ export function composeFlowGraph(input: ComposeRows): FlowGraph | null {
     const rawOptions = input.options.filter((option) => nodeIds.has(option.nodeId) && option.active).sort((a, b) => a.sortOrder - b.sortOrder)
     const byNode = new Map<string, FlowNodeOption[]>()
     const add = (nodeId: string, option: FlowNodeOption) => byNode.set(nodeId, [...(byNode.get(nodeId) ?? []), option])
-    const materialize = (raw: any, ref: any, variantName: string | null, listPrice?: number): FlowNodeOption => {
+    const materialize = (raw: any, ref: any, variantName: string | null, listPrice?: number, categoryExpanded = false): FlowNodeOption => {
       const candidates = input.overrides.filter((row) => row.optionId === raw.id)
       const override =
         candidates.find((row) => row.productId !== null && row.productId === baseProduct.id) ??
         candidates.find((row) => row.subcategoryId !== null && baseProduct.subcategoryId !== null && row.subcategoryId === baseProduct.subcategoryId) ??
         candidates.find((row) => row.categoryId !== null && baseProduct.categoryId !== null && row.categoryId === baseProduct.categoryId)
       const effectivePrice = raw.priceMode === "free" ? 0 : raw.priceMode === "product_price" ? (listPrice ?? number(ref?.price)) : number(override?.priceDelta ?? raw.priceDelta)
-      return { id: raw.source === "category" && ref ? `${raw.id}:${ref.id}:${variantName ?? ""}` : raw.id, label: raw.source === "category" && ref && variantName ? `${ref.name} - ${variantName}` : raw.label ?? ref?.name ?? "", source: raw.source, priceMode: raw.priceMode, effectivePrice, refProductId: ref?.id ?? raw.refProductId ?? null, refCategoryId: raw.refCategoryId ?? null, refVariantName: variantName, refListPrice: ref ? (listPrice ?? number(ref.price)) : null, variantChoices: raw.allowVariantChoice && ref ? parseVariants(ref.variants) : null, emitsChildItem: raw.emitsChildItem, isBeverage: ref?.categoryId ? (beverages.get(ref.categoryId) ?? false) : false, refProductActive: ref?.active, refCategoryActive: raw.refCategoryId ? true : undefined }
+      return { id: raw.source === "category" && ref ? `${raw.id}:${ref.id}:${variantName ?? ""}` : raw.id, label: raw.source === "category" && ref && categoryExpanded && variantName ? `${ref.name} - ${variantName}` : raw.source === "category" && ref && raw.allowVariantChoice ? ref.name : raw.label ?? ref?.name ?? "", source: raw.source, priceMode: raw.priceMode, effectivePrice, refProductId: ref?.id ?? raw.refProductId ?? null, refCategoryId: raw.refCategoryId ?? null, refVariantName: variantName, refListPrice: ref ? (listPrice ?? number(ref.price)) : null, variantChoices: raw.allowVariantChoice && ref ? parseVariants(ref.variants) : null, ...(raw.variantPriceDeltas == null ? {} : { variantPriceDeltas: raw.variantPriceDeltas }), emitsChildItem: raw.emitsChildItem, isBeverage: ref?.categoryId ? (beverages.get(ref.categoryId) ?? false) : false, refProductActive: ref?.active, refCategoryActive: raw.refCategoryId ? true : undefined }
     }
     for (const raw of rawOptions) {
       if (raw.source === "category" && raw.refCategoryId) {
         for (const ref of input.products.filter((row) => row.categoryId === raw.refCategoryId && row.active).sort((a, b) => a.name.localeCompare(b.name))) {
           const values = parseVariants(ref.variants)
-          for (const variant of values.length ? values : [null]) add(raw.nodeId, materialize(raw, ref, variant?.name ?? null, variant?.price ?? number(ref.price)))
+          if (raw.allowVariantChoice) add(raw.nodeId, materialize(raw, ref, null, number(ref.price)))
+          else for (const variant of values.length ? values : [null]) add(raw.nodeId, materialize(raw, ref, variant?.name ?? null, variant?.price ?? number(ref.price), true))
         }
       } else add(raw.nodeId, materialize(raw, byProduct.get(raw.refProductId), raw.refVariantName ?? null))
     }
@@ -88,6 +97,9 @@ export function composeFlowGraph(input: ComposeRows): FlowGraph | null {
         explicitVariants.set(productId, variants)
       }
       byNode.set(id, options.filter((option) => {
+        // Old per-variant product overrides are superseded by the category's
+        // per-variant delta map once the category asks for a variant itself.
+        if (option.source === "product" && option.refVariantName !== null && options.some((candidate) => candidate.source === "category" && candidate.refProductId === option.refProductId && candidate.variantChoices !== null)) return false
         if (option.source !== "category") return true
         const variants = explicitVariants.get(option.refProductId ?? "")
         return !variants || (!variants.has(null) && !variants.has(option.refVariantName))
@@ -120,21 +132,20 @@ export function composeFlowGraph(input: ComposeRows): FlowGraph | null {
     if (hostNode.selectMode !== "single") continue
     const hostExits = edges.filter((edge) => edge.fromNodeId === hostNode.id)
     for (const hostOption of hostNode.options) {
-      if (!hostOption.emitsChildItem || hostOption.refProductId === null) continue
+      if (hostOption.refProductId === null) continue
       const childProduct = byProduct.get(hostOption.refProductId)
       // Depth is exactly one; this direct self-reference is the only possible cycle here.
       if (!childProduct || childProduct.id === input.product.id) continue
-      const childFlows = applicableFlows(input, childProduct)
-        .filter((flow) => !hostFlowIds.has(flow.id))
-      if (!childFlows.length) continue
-      const child = materializedOptions(childFlows, childProduct)
-      const childEntries = entryFor(childFlows, child.rawNodes.map((node) => ({ ...node, options: [] }) as FlowNode))
-      const childEntry = childEntries.get(childFlows[0].id)
-      if (!childEntry) continue
+      const childFlows = hostOption.emitsChildItem ? applicableFlows(input, childProduct).filter((flow) => !hostFlowIds.has(flow.id)) : []
+      const child = childFlows.length ? materializedOptions(childFlows, childProduct) : null
+      const childEntries = child ? entryFor(childFlows, child.rawNodes.map((node) => ({ ...node, options: [] }) as FlowNode)) : new Map<string, string | undefined>()
+      const childEntry = child ? childEntries.get(childFlows[0].id) : undefined
+      const needsVariantStep = (hostOption.variantChoices?.length ?? 0) > 0
+      if (!needsVariantStep && !childEntry) continue
       const nodeId = (id: string) => `${id}:sub:${hostOption.id}`
       const optionId = (id: string) => `${id}:sub:${hostOption.id}`
-      for (const rawNode of child.rawNodes) {
-        nodes.push({ id: nodeId(rawNode.id), flowId: rawNode.flowId, title: rawNode.title, subtitle: rawNode.subtitle ?? null, selectMode: rawNode.selectMode, minSelections: rawNode.minSelections, maxSelections: rawNode.maxSelections, includeNoneOption: rawNode.includeNoneOption, noneLabel: rawNode.noneLabel ?? null, isEntry: false, sourceNodeId: rawNode.id, childOwnerOptionId: hostOption.id, options: (child.byNode.get(rawNode.id) ?? []).map((option) => ({ ...option, id: optionId(option.id), sourceOptionId: sourceId(option.id), emitsChildItem: false })) })
+      for (const rawNode of child?.rawNodes ?? []) {
+        nodes.push({ id: nodeId(rawNode.id), flowId: rawNode.flowId, title: rawNode.title, subtitle: rawNode.subtitle ?? null, selectMode: rawNode.selectMode, minSelections: rawNode.minSelections, maxSelections: rawNode.maxSelections, includeNoneOption: rawNode.includeNoneOption, noneLabel: rawNode.noneLabel ?? null, isEntry: false, sourceNodeId: rawNode.id, childOwnerOptionId: hostOption.id, options: (child?.byNode.get(rawNode.id) ?? []).map((option) => ({ ...option, id: optionId(option.id), sourceOptionId: sourceId(option.id), emitsChildItem: false })) })
       }
       const childEdges = composeEdges(childFlows, childEntries)
       for (const edge of childEdges) {
@@ -146,7 +157,17 @@ export function composeFlowGraph(input: ComposeRows): FlowGraph | null {
           edges.push({ id: edge.id ? `${edge.id}:sub:${hostOption.id}:continue:${hostExit.id ?? "edge"}` : undefined, fromNodeId: nodeId(edge.fromNodeId), fromOptionId: edge.fromOptionId === null ? null : optionId(edge.fromOptionId), toNodeId: hostExit.toNodeId, condition: hostExit.condition, sortOrder: hostExit.sortOrder })
         }
       }
-      edges.push({ fromNodeId: hostNode.id, fromOptionId: hostOption.id, toNodeId: nodeId(childEntry), condition: null, sortOrder: -1 })
+      const variantNodeId = `${hostNode.id}:sub:${hostOption.id}`
+      if (needsVariantStep) {
+        const choices = hostOption.variantChoices ?? []
+        nodes.push({ id: variantNodeId, sourceNodeId: hostNode.id, flowId: hostNode.flowId, title: "Variante", subtitle: hostOption.label, selectMode: "single", minSelections: 1, maxSelections: 1, includeNoneOption: false, noneLabel: null, isEntry: false, childOwnerOptionId: hostOption.id, options: choices.map((choice) => ({ id: `${sourceId(hostOption.id)}:${choice.name}:sub:${hostOption.id}`, sourceOptionId: sourceId(hostOption.id), label: hostOption.label, source: "product", priceMode: "delta", effectivePrice: variantDelta(hostOption.variantPriceDeltas, hostOption.refProductId!, choice.name), refProductId: hostOption.refProductId, refVariantName: choice.name, refListPrice: choice.price, variantChoices: null, emitsChildItem: false, isBeverage: hostOption.isBeverage })) })
+        for (const choice of choices) {
+          const fromOptionId = `${sourceId(hostOption.id)}:${choice.name}:sub:${hostOption.id}`
+          if (childEntry) edges.push({ fromNodeId: variantNodeId, fromOptionId, toNodeId: nodeId(childEntry), condition: null, sortOrder: 0 })
+          else for (const hostExit of hostExits) edges.push({ id: hostExit.id ? `${hostExit.id}:variant:${hostOption.id}` : undefined, fromNodeId: variantNodeId, fromOptionId, toNodeId: hostExit.toNodeId, condition: hostExit.condition, sortOrder: hostExit.sortOrder })
+        }
+        edges.push({ fromNodeId: hostNode.id, fromOptionId: hostOption.id, toNodeId: variantNodeId, condition: null, sortOrder: -1 })
+      } else if (childEntry) edges.push({ fromNodeId: hostNode.id, fromOptionId: hostOption.id, toNodeId: nodeId(childEntry), condition: null, sortOrder: -1 })
       for (const flow of childFlows) {
         if (!flowSummaries.some((candidate) => candidate.id === flow.id)) {
           flowSummaries.push(flow)

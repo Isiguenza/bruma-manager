@@ -43,9 +43,9 @@ struct CategorySidebarView: View {
                             category: category,
                             isSelected: vm.selectedCategory == category.id
                         ) {
+                            vm.cancelItemComposition()
                             vm.selectedCategory = category.id
                             vm.searchQuery = ""
-                            vm.resetFlow()
                         }
                     }
                 }

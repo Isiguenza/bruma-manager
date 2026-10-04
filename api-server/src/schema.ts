@@ -337,6 +337,7 @@ export const flowNodeOptions = pgTable("flow_node_options", {
   refCategoryId: uuid("ref_category_id").references(() => categories.id, { onDelete: "set null" }),
   refVariantName: varchar("ref_variant_name", { length: 255 }),
   allowVariantChoice: boolean("allow_variant_choice").notNull().default(false),
+  variantPriceDeltas: jsonb("variant_price_deltas"),
   priceMode: flowPriceModeEnum("price_mode").notNull().default("delta"),
   priceDelta: decimal("price_delta", { precision: 10, scale: 2 }).notNull().default("0"),
   emitsChildItem: boolean("emits_child_item").notNull().default(false),

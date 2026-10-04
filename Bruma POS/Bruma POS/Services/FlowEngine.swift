@@ -106,6 +106,7 @@ enum FlowEngine {
                 children.append(BuiltChildItem(
                     productId: productId,
                     productName: referencedProductName(option),
+                    refVariantName: option.refVariantName,
                     unitPrice: 0,
                     subtotal: 0,
                     parentItemId: "parent",
@@ -113,6 +114,24 @@ enum FlowEngine {
                     course: parent.course,
                     isBeverage: option.isBeverage
                 ))
+            }
+            // The server-spliced variant node belongs to the previously emitted child.
+            // Its choice changes the child snapshot, while its delta remains on the parent.
+            if let ownerOptionId = node.childOwnerOptionId,
+               let variantName = option.refVariantName,
+               let ownerIndex = childIndexesByHostOptionId[ownerOptionId] {
+                let existing = children[ownerIndex]
+                children[ownerIndex] = BuiltChildItem(
+                    productId: existing.productId,
+                    productName: referencedProductName(option),
+                    refVariantName: variantName,
+                    unitPrice: existing.unitPrice,
+                    subtotal: existing.subtotal,
+                    parentItemId: existing.parentItemId,
+                    seat: existing.seat,
+                    course: existing.course,
+                    isBeverage: existing.isBeverage
+                )
             }
             builtSelections.append(BuiltSelection(
                 flowId: node.flowId,

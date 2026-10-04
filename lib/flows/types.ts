@@ -48,6 +48,8 @@ export interface FlowNodeOption {
   /** Resolved menu price of refProductId/variant, retained only for reporting. */
   refListPrice?: number | null
   variantChoices: FlowVariantChoice[] | null
+  /** Server-only composition input retained on the wire for synthetic variant nodes. */
+  variantPriceDeltas?: Record<string, unknown> | null
   emitsChildItem: boolean
   isBeverage: boolean
   /** Optional resolver evidence used by the pure graph validator. */
@@ -121,6 +123,8 @@ export interface BuiltParentItem {
 export interface BuiltChildItem {
   productId: string
   productName: string
+  /** Selected variant for product children; the POS maps this to CartItem.variantName. */
+  refVariantName?: string | null
   unitPrice: 0
   subtotal: 0
   parentItemId: "parent"

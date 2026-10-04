@@ -327,6 +327,7 @@ class POSViewModel: ObservableObject {
     /// Volver a la selección de mesa parqueando el cobro en progreso (si aplica),
     /// para no perderlo al salir a comandar otra mesa.
     func handleBackToTables() {
+        cancelItemComposition()
         isPracticeMode = false
         parkCurrentPaymentIfNeeded()
         showingPayment = false
@@ -1848,6 +1849,7 @@ class POSViewModel: ObservableObject {
     
     func handleSelectTable(_ tappedTable: Table) {
         lastActivity = Date()
+        cancelItemComposition()
 
         // If a merged member (non-primary) was tapped, operate on the group's
         // primary table instead so the whole group funnels into one order.
@@ -2544,6 +2546,20 @@ class POSViewModel: ObservableObject {
         productNotes = ""
     }
 
+    /// Descarta únicamente la composición de un item que aún no llegó al
+    /// carrito. A diferencia de `handleCancelNotes()`, no conserva el padre
+    /// del flujo porque cambiar de categoría o mesa abandona ese contexto.
+    func cancelItemComposition() {
+        resetFlow()
+        dismissVariantDialog()
+        selectedProductForVariant = nil
+        showNotesDialog = false
+        pendingCartItem = nil
+        tempNotes = ""
+        selectedQuickNoteIds = []
+        showFreeTextNotes = false
+    }
+
     private func buildFlowCartItems() -> [CartItem]? {
         guard let graph = flowGraph, let product = selectedProduct, let context = currentFlowContext else { return nil }
         let isPlatform = customerName.hasPrefix("Uber") || customerName.hasPrefix("Rappi") || customerName.hasPrefix("Didi")
@@ -2557,7 +2573,7 @@ class POSViewModel: ObservableObject {
         parent.flowSelections = parentSelections
         parent.customModifiers = customModifiersForFlowSelections(parentSelections, in: graph)
         let children = built.children.enumerated().map { childIndex, child in
-            var cartChild = CartItem(productId: child.productId, productName: child.productName, unitPrice: 0, quantity: 1, notes: "", seat: child.seat ?? parent.seat, course: child.course ?? parent.course, sentToKitchen: false, isBeverage: child.isBeverage, deliveredToTable: false, variantName: nil, isGuest: false, parentLocalId: parent.id)
+            var cartChild = CartItem(productId: child.productId, productName: child.productName, unitPrice: 0, quantity: 1, notes: "", seat: child.seat ?? parent.seat, course: child.course ?? parent.course, sentToKitchen: false, isBeverage: child.isBeverage, deliveredToTable: false, variantName: child.refVariantName, isGuest: false, parentLocalId: parent.id)
             let childSelections = built.selections.filter { $0.ownerChildItemIndex == childIndex }
             cartChild.flowSelections = childSelections.isEmpty ? nil : childSelections
             cartChild.customModifiers = customModifiersForFlowSelections(childSelections, in: graph)

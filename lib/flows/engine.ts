@@ -172,6 +172,7 @@ export function buildItems(
       children.push({
         productId: option.refProductId,
         productName: referencedProductName(option),
+        ...(option.refVariantName == null ? {} : { refVariantName: option.refVariantName }),
         unitPrice: 0,
         subtotal: 0,
         parentItemId: "parent",
@@ -179,6 +180,15 @@ export function buildItems(
         course: parent.course,
         isBeverage: option.isBeverage,
       })
+    }
+    // The server-spliced variant node belongs to the previously emitted child.
+    // Its choice changes the child snapshot, while its delta remains on the parent.
+    if (node.childOwnerOptionId != null && option.refVariantName != null) {
+      const ownerIndex = childIndexByOwnerOptionId.get(node.childOwnerOptionId)
+      if (ownerIndex !== undefined) {
+        children[ownerIndex].productName = referencedProductName(option)
+        children[ownerIndex].refVariantName = option.refVariantName
+      }
     }
     selections.push({
       flowId: node.flowId,

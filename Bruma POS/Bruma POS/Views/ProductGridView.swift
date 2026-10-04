@@ -22,27 +22,104 @@ struct ProductGridView: View {
         return nil
     }
 
-    private let stepTransition = AnyTransition.asymmetric(
-        insertion: .move(edge: .trailing).combined(with: .opacity),
-        removal: .move(edge: .leading).combined(with: .opacity)
-    )
+    /// Los pasos son pantallas de composición dentro del mismo panel. Un fade
+    /// corto conserva el contexto; mover toda la rejilla horizontalmente hacía
+    /// parecer que se navegaba fuera del pedido.
+    private let stepTransition = AnyTransition.opacity
 
     var body: some View {
-        ZStack {
+        VStack(spacing: 0) {
             if let step = visibleStep {
-                stepContent(for: step)
-                    .id(step)
-                    .transition(stepTransition)
+                stepHeader(for: step)
+                    .transaction { $0.animation = nil }
+                Divider().background(Color.white.opacity(0.1))
+
+                ZStack {
+                    stepContent(for: step)
+                        .id(step)
+                        .transition(stepTransition)
+                }
             } else {
                 legacyContent
             }
         }
         .onAppear { visibleStep = activeStep }
         .onChange(of: activeStep) { _, newStep in
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
+            withAnimation(.easeInOut(duration: 0.16)) {
                 visibleStep = newStep
             }
         }
+    }
+
+    @ViewBuilder
+    private func stepHeader(for step: ItemStep) -> some View {
+        switch step {
+        case .variants:
+            if let product = vm.selectedProductForVariant {
+                HStack {
+                    stepBackButton(action: vm.dismissVariantDialog)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(product.name).font(.title2.weight(.bold)).foregroundColor(.white)
+                        Text("Selecciona una opción").font(.subheadline).foregroundColor(.gray)
+                    }
+                    Spacer()
+                }
+                .padding(16)
+            }
+        case .flowNode:
+            if let node = vm.activeFlowNode {
+                VStack(alignment: .leading, spacing: 8) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(vm.flowBreadcrumbs, id: \.index) { crumb in
+                                Button(crumb.title) { vm.returnToFlowVisit(crumb.index) }
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.blue)
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    HStack {
+                        stepBackButton(action: vm.handleBackInFlow)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(node.title).font(.title2.weight(.bold)).foregroundColor(.white)
+                            if let subtitle = node.subtitle {
+                                Text(subtitle).font(.subheadline).foregroundColor(.gray)
+                            }
+                        }
+                        Spacer()
+                        Text(vm.formatCurrency(vm.flowLiveTotal())).font(.headline.weight(.bold)).foregroundColor(.green)
+                    }
+                }
+                .padding(16)
+            }
+        case .notes:
+            HStack {
+                stepBackButton(action: vm.handleCancelNotes)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(notesProductName).font(.title2.weight(.bold)).foregroundColor(.white)
+                    Text("Comentarios especiales").font(.subheadline).foregroundColor(.gray)
+                }
+                Spacer()
+            }
+            .padding(16)
+        }
+    }
+
+    private func stepBackButton(action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.left")
+                Text("Atrás")
+            }
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.flatCapsuleNeutral)
     }
 
     @ViewBuilder
@@ -79,41 +156,6 @@ struct ProductGridView: View {
 
     private func flowNodeScreen(_ node: FlowNode) -> some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(vm.flowBreadcrumbs, id: \.index) { crumb in
-                            Button(crumb.title) { vm.returnToFlowVisit(crumb.index) }
-                                .font(.caption.weight(.semibold))
-                                .foregroundColor(.blue)
-                                .buttonStyle(.plain)
-                        }
-                    }
-                }
-                HStack {
-                    Button {
-                        Haptics.tap()
-                        vm.handleBackInFlow()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "chevron.left")
-                            Text("Atrás")
-                        }
-                        .font(.callout.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.flatCapsuleNeutral)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(node.title).font(.title2.weight(.bold)).foregroundColor(.white)
-                        if let subtitle = node.subtitle { Text(subtitle).font(.subheadline).foregroundColor(.gray) }
-                    }
-                    Spacer()
-                    Text(vm.formatCurrency(vm.flowLiveTotal())).font(.headline.weight(.bold)).foregroundColor(.green)
-                }
-            }
-            .padding(16)
-            Divider().background(Color.white.opacity(0.1))
             ScrollView(showsIndicators: false) {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
                     if node.includeNoneOption {
@@ -144,29 +186,6 @@ struct ProductGridView: View {
 
     private func variantScreen(for product: Product) -> some View {
         VStack(spacing: 0) {
-            HStack {
-                Button {
-                    Haptics.tap()
-                    vm.dismissVariantDialog()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "chevron.left")
-                        Text("Atrás")
-                    }
-                    .font(.callout.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.flatCapsuleNeutral)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(product.name).font(.title2.weight(.bold)).foregroundColor(.white)
-                    Text("Selecciona una opción").font(.subheadline).foregroundColor(.gray)
-                }
-                Spacer()
-            }
-            .padding(16)
-            Divider().background(Color.white.opacity(0.1))
             ScrollView(showsIndicators: false) {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
                     ForEach(product.parsedVariants) { variant in
@@ -193,30 +212,6 @@ struct ProductGridView: View {
 
     private var notesScreen: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button {
-                    Haptics.tap()
-                    vm.handleCancelNotes()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "chevron.left")
-                        Text("Atrás")
-                    }
-                    .font(.callout.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.flatCapsuleNeutral)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(notesProductName).font(.title2.weight(.bold)).foregroundColor(.white)
-                    Text("Comentarios especiales").font(.subheadline).foregroundColor(.gray)
-                }
-                Spacer()
-            }
-            .padding(16)
-            Divider().background(Color.white.opacity(0.1))
-
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
                     let flowItems = vm.flowSummaryItems()
@@ -278,11 +273,18 @@ struct ProductGridView: View {
 
             HStack(spacing: 12) {
                 Button("Cancelar") { vm.handleCancelNotes() }
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 48)
                     .buttonStyle(.flatCapsuleNeutral)
                 Button(notesHasContent ? "Confirmar" : "Agregar") { vm.handleConfirmNotes() }
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 48)
                     .buttonStyle(.flatCapsule(.blue))
             }
-            .padding(16)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
         }
     }
 

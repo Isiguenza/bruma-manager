@@ -3,7 +3,7 @@ import type { FlowEdgeCondition, FlowGraph, FlowNode, FlowNodeOption, Problem } 
 export type OptionSource = "manual" | "product" | "category"
 export type PriceMode = "free" | "product_price" | "delta"
 export interface PriceOverride { id?: string; categoryId: string | null; subcategoryId: string | null; productId: string | null; priceDelta: string }
-export interface EditorOption { id: string; source: OptionSource; label: string | null; refProductId: string | null; refCategoryId: string | null; refVariantName: string | null; allowVariantChoice: boolean; priceMode: PriceMode; priceDelta: string; emitsChildItem: boolean; sortOrder: number; active: boolean; priceOverrides: PriceOverride[] }
+export interface EditorOption { id: string; source: OptionSource; label: string | null; refProductId: string | null; refCategoryId: string | null; refVariantName: string | null; allowVariantChoice: boolean; variantPriceDeltas: Record<string, string>; priceMode: PriceMode; priceDelta: string; emitsChildItem: boolean; sortOrder: number; active: boolean; priceOverrides: PriceOverride[] }
 export interface EditorNode { id: string; title: string; subtitle: string | null; selectMode: "single" | "multi"; minSelections: number; maxSelections: number | null; includeNoneOption: boolean; noneLabel: string | null; isEntry: boolean; posX: number; posY: number; sortOrder: number; active: boolean; options: EditorOption[] }
 export interface EditorEdge { id: string; fromNodeId: string; fromOptionId: string | null; toNodeId: string | null; condition: FlowEdgeCondition | null; sortOrder: number }
 export interface FlowDefinition { id: string; name: string; description: string | null; scopeKind: "global" | "category" | "subcategory" | "product"; priority: number; active: boolean }
