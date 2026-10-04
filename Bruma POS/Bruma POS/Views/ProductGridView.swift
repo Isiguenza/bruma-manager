@@ -274,14 +274,19 @@ struct ProductGridView: View {
             HStack(spacing: 12) {
                 Button("Cancelar") { vm.handleCancelNotes() }
                     .font(.body.weight(.semibold))
+                    .padding(.vertical, 20)
+                    .buttonStyle(.borderedProminent)
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: 48)
-                    .buttonStyle(.flatCapsuleNeutral)
+                   
+
                 Button(notesHasContent ? "Confirmar" : "Agregar") { vm.handleConfirmNotes() }
                     .font(.body.weight(.semibold))
+                    .padding(.vertical, 20)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.gray)
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: 48)
-                    .buttonStyle(.flatCapsule(.blue))
+                    
+                  
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)

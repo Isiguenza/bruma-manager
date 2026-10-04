@@ -123,7 +123,7 @@ enum FlowEngine {
                 let existing = children[ownerIndex]
                 children[ownerIndex] = BuiltChildItem(
                     productId: existing.productId,
-                    productName: referencedProductName(option),
+                    productName: withVariantName(existing.productName, variantName),
                     refVariantName: variantName,
                     unitPrice: existing.unitPrice,
                     subtotal: existing.subtotal,
@@ -230,14 +230,18 @@ enum FlowEngine {
         return result
     }
 
-    private static func referencedProductName(_ option: FlowNodeOption) -> String {
-        guard let rawVariantName = option.refVariantName else { return option.label }
+    private static func withVariantName(_ productName: String, _ rawVariantName: String?) -> String {
+        guard let rawVariantName else { return productName }
         let variantName = rawVariantName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !variantName.isEmpty else { return option.label }
+        guard !variantName.isEmpty else { return productName }
         let suffix = " - \(variantName)"
-        return option.label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasSuffix(suffix.lowercased())
-            ? option.label
-            : option.label + suffix
+        return productName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasSuffix(suffix.lowercased())
+            ? productName
+            : productName + suffix
+    }
+
+    private static func referencedProductName(_ option: FlowNodeOption) -> String {
+        withVariantName(option.label, option.refVariantName)
     }
 
     private static func preparedProductName(

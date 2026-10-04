@@ -108,13 +108,17 @@ export function computeTotal(graph: FlowGraph, path: FlowPath, basePrice: number
   return basePrice + selectedOptions(graph, path).reduce((total, { option }) => total + option.effectivePrice, 0)
 }
 
-function referencedProductName(option: FlowNodeOption): string {
-  const variantName = option.refVariantName?.trim()
-  if (!variantName) return option.label
+function withVariantName(productName: string, rawVariantName: string | null | undefined): string {
+  const variantName = rawVariantName?.trim()
+  if (!variantName) return productName
   const suffix = ` - ${variantName}`
-  return option.label.trimEnd().toLowerCase().endsWith(suffix.toLowerCase())
-    ? option.label
-    : `${option.label}${suffix}`
+  return productName.trimEnd().toLowerCase().endsWith(suffix.toLowerCase())
+    ? productName
+    : `${productName}${suffix}`
+}
+
+function referencedProductName(option: FlowNodeOption): string {
+  return withVariantName(option.label, option.refVariantName)
 }
 
 function preparedProductName(productName: string, graph: FlowGraph, path: FlowPath): string {
@@ -186,7 +190,7 @@ export function buildItems(
     if (node.childOwnerOptionId != null && option.refVariantName != null) {
       const ownerIndex = childIndexByOwnerOptionId.get(node.childOwnerOptionId)
       if (ownerIndex !== undefined) {
-        children[ownerIndex].productName = referencedProductName(option)
+        children[ownerIndex].productName = withVariantName(children[ownerIndex].productName, option.refVariantName)
         children[ownerIndex].refVariantName = option.refVariantName
       }
     }

@@ -146,6 +146,17 @@ variante. `variant_price_deltas` es JSON nullable; para una opción de producto
 usa `{ "Mineral": 5 }`, y para una categoría el editor guarda
 `{ "<productId>::Mineral": 5 }` (el resolver acepta también la clave corta),
 de modo que Limonada/Naranjada pueden llevar +$5 sin cobrar cada bebida Mineral.
+**Etiquetas del nodo de variante vs. nombre del hijo — no los unifiques:** las
+opciones del nodo sintético "Variante" se etiquetan con el nombre de la VARIANTE
+("Natural", "Mineral"); el producto ya va en el `subtitle` del nodo. El nombre
+del item hijo NO se deriva de esa etiqueta: `buildItems` (TS y Swift) refina el
+nombre que el hijo YA tiene, puesto por la opción anfitriona
+(`withVariantName(children[i].productName, variante)`), con la misma regla de
+no duplicar la variante. Ya se rompió una vez al revés: con `label` = nombre del
+producto las dos tarjetas decían "Limonada" y "Limonada"; si lo "arreglas"
+cambiando solo la etiqueta, el hijo pasa a llamarse "Mineral". Los vectores
+`engine-vectors.json` fijan las dos mitades a la vez.
+
 La migración `drizzle/manual_flow_node_option_variant_price_deltas.sql` queda
 sin aplicar: se ejecuta el SQL manualmente en Neon; **nunca** `npm run db:migrate`.
 
