@@ -161,8 +161,12 @@ class POSViewModel: ObservableObject {
     // al fondo de este archivo) mientras se arma una comanda nueva — así
     // sobrevive si sales de la pantalla (Mesas) y vuelves antes de mandarla
     // a cocina, que hoy la perdía por completo.
+    private var isRestoringPackageLinks = false
     @Published var cart: [CartItem] = [] {
-        didSet { persistDraftIfNeeded() }
+        didSet {
+            if !isRestoringPackageLinks { restorePackageLinksAfterReload() }
+            persistDraftIfNeeded()
+        }
     }
     /// Ids de mesa (server id) con un borrador guardado — para el badge
     /// "Borrador" en `TableCardView`. Mismo patrón que `tablesWithReadyItems`.
@@ -515,7 +519,7 @@ class POSViewModel: ObservableObject {
             ? Array(1...guestCount).map { "A\($0)" } + ["C"]
             : ["C"]
         
-        let sortedCart = cart.enumerated().map { (index: $0, item: $1) }
+        let baseSortedCart = cart.enumerated().map { (index: $0, item: $1) }
             .sorted { a, b in
                 let courseA = a.item.course
                 let courseB = b.item.course
@@ -527,6 +531,26 @@ class POSViewModel: ObservableObject {
                 }
                 return false
             }
+
+        // A DB order inserts all parents before all children, so a plain
+        // course/seat sort separates a package after reopening the table.
+        // Keep every child immediately below its parent in the rendered cart.
+        let childrenByParent = Dictionary(grouping: baseSortedCart.compactMap { element in
+            element.item.parentLocalId.map { ($0, element) }
+        }, by: { $0.0 })
+        var sortedCart: [(index: Int, item: CartItem)] = []
+        var renderedChildIndices = Set<Int>()
+        for element in baseSortedCart where element.item.parentLocalId == nil {
+            sortedCart.append(element)
+            for (_, child) in childrenByParent[element.item.id] ?? [] {
+                sortedCart.append(child)
+                renderedChildIndices.insert(child.index)
+            }
+        }
+        // Preserve any orphaned historical child instead of hiding it.
+        sortedCart.append(contentsOf: baseSortedCart.filter {
+            $0.item.parentLocalId != nil && !renderedChildIndices.contains($0.index)
+        })
         
         // Build promotion groups (grouped by promoId + course + seat)
         let promoItems = sortedCart.filter { $0.item.promotionId != nil }
@@ -2512,7 +2536,7 @@ class POSViewModel: ObservableObject {
         var parent = CartItem(productId: built.parent.productId, productName: built.parent.productName, unitPrice: built.parent.unitPrice, quantity: 1, notes: productNotes, seat: built.parent.seat ?? activeSeat, course: built.parent.course ?? activeCourse, sentToKitchen: false, isBeverage: product.category?.isBeverage ?? false, deliveredToTable: false, variantName: selectedFlowVariant?.name, isGuest: false)
         parent.packageLabel = built.parent.packageLabel
         parent.flowSelections = built.selections
-        parent.customModifiers = customModifiersForFlowSelections(built.selections)
+        parent.customModifiers = customModifiersForFlowSelections(built.selections, in: graph)
         let children = built.children.map { child in
             CartItem(productId: child.productId, productName: child.productName, unitPrice: 0, quantity: 1, notes: "", seat: child.seat ?? parent.seat, course: child.course ?? parent.course, sentToKitchen: false, isBeverage: child.isBeverage, deliveredToTable: false, variantName: nil, isGuest: false, parentLocalId: parent.id)
         }
@@ -2522,11 +2546,19 @@ class POSViewModel: ObservableObject {
     /// Graph selections live in their own normalized table on the API. Mirror
     /// the visible, non-child choices into the existing modifier snapshot too,
     /// so the cart, Pase and account ticket can all render `Preparado +$5`.
-    private func customModifiersForFlowSelections(_ selections: [BuiltSelection]) -> String? {
+    private func customModifiersForFlowSelections(_ selections: [BuiltSelection], in graph: FlowGraph) -> String? {
+        let childItemFlowIds = Set(graph.nodes.compactMap { node in
+            node.options.contains(where: { $0.emitsChildItem }) ? node.flowId : nil
+        })
+        let entryFlowId = graph.nodes.first(where: { $0.id == graph.entryNodeId })?.flowId
+        let packageGateNodeIds = Set(graph.nodes.compactMap { node -> String? in
+            let isEntry = node.isEntry ?? (node.flowId == entryFlowId && node.id == graph.entryNodeId)
+            return isEntry && childItemFlowIds.contains(node.flowId) ? node.id : nil
+        })
         var steps: [String: [String: Any]] = [:]
         for selection in selections {
             guard selection.childItemIndex == nil,
-                  !selection.optionLabel.localizedCaseInsensitiveContains("hacer paquete") else { continue }
+                  !packageGateNodeIds.contains(selection.nodeId) else { continue }
             let key = "flow-\(selection.nodeId)"
             var step = steps[key] ?? ["stepName": selection.nodeTitle, "options": [[String: Any]]()]
             var options = step["options"] as? [[String: Any]] ?? []
@@ -2623,6 +2655,32 @@ class POSViewModel: ObservableObject {
         }
         applyPromotions()
         emitCustomerDisplayState()
+    }
+
+    /// The API persists package relationships with DB UUIDs, while the cart
+    /// uses local UUIDs. Reconnect them whenever an order is loaded so $0
+    /// components stay visibly attached to their package parent.
+    private func restorePackageLinksAfterReload() {
+        let localParentIds = Dictionary(uniqueKeysWithValues: cart.compactMap { item in
+            item.itemId.map { ($0, item.id) }
+        })
+        var restored = cart
+        var changed = false
+        for index in restored.indices where restored[index].parentLocalId == nil {
+            guard let parentOrderItemId = restored[index].parentOrderItemId,
+                  let parentLocalId = localParentIds[parentOrderItemId] else { continue }
+            restored[index].parentLocalId = parentLocalId
+            changed = true
+        }
+        guard changed else { return }
+        isRestoringPackageLinks = true
+        cart = restored
+        isRestoringPackageLinks = false
+    }
+
+    func packageParentName(for item: CartItem) -> String? {
+        guard let parentLocalId = item.parentLocalId else { return nil }
+        return cart.first(where: { $0.id == parentLocalId })?.productName
     }
 
     /// Appends a package parent and all of its children as one unmergeable cart group.

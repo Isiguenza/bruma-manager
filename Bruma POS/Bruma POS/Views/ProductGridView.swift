@@ -7,6 +7,8 @@ struct ProductGridView: View {
         Group {
             if let node = vm.activeFlowNode {
                 flowNodeScreen(node)
+            } else if vm.showVariantDialog, let product = vm.selectedProductForVariant {
+                variantScreen(for: product)
             } else {
                 legacyContent
             }
@@ -69,12 +71,12 @@ struct ProductGridView: View {
             ScrollView(showsIndicators: false) {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
                     if node.includeNoneOption {
-                        FlowOptionCard(label: node.noneLabel ?? "Sin \(node.title.lowercased())", price: nil, selected: vm.activeFlowSelectedOptionIds.isEmpty) {
+                        FlowOptionCard(label: node.noneLabel ?? "Sin \(node.title.lowercased())", priceLabel: nil, selected: vm.activeFlowSelectedOptionIds.isEmpty) {
                             Haptics.tap(); vm.handleStepSelection(nil)
                         }
                     }
                     ForEach(node.options, id: \.id) { option in
-                        FlowOptionCard(label: option.label, price: option.effectivePrice == 0 ? nil : option.effectivePrice, selected: vm.activeFlowSelectedOptionIds.contains(option.id)) {
+                        FlowOptionCard(label: option.label, priceLabel: option.effectivePrice == 0 ? nil : String(format: "+$%.2f", option.effectivePrice), selected: vm.activeFlowSelectedOptionIds.contains(option.id)) {
                             Haptics.tap()
                             vm.handleStepSelection(option)
                         }
@@ -90,6 +92,53 @@ struct ProductGridView: View {
                 .buttonStyle(.flatCapsule(.blue))
                 .padding(16)
                 .disabled(vm.activeFlowSelectedOptionIds.count < node.minSelections || (node.maxSelections != nil && vm.activeFlowSelectedOptionIds.count > node.maxSelections!))
+            }
+        }
+    }
+
+    private func variantScreen(for product: Product) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button {
+                    Haptics.tap()
+                    vm.dismissVariantDialog()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "chevron.left")
+                        Text("Atrás")
+                    }
+                    .font(.callout.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.flatCapsuleNeutral)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(product.name).font(.title2.weight(.bold)).foregroundColor(.white)
+                    Text("Selecciona una opción").font(.subheadline).foregroundColor(.gray)
+                }
+                Spacer()
+            }
+            .padding(16)
+            Divider().background(Color.white.opacity(0.1))
+            ScrollView(showsIndicators: false) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
+                    ForEach(product.parsedVariants) { variant in
+                        let usesPlatformPrice = vm.isPlatformDelivery && variant.platformPrice != nil
+                        let price = usesPlatformPrice ? variant.numericPlatformPrice : variant.numericPrice
+
+                        FlowOptionCard(
+                            label: variant.name,
+                            priceLabel: vm.formatCurrency(price),
+                            showsPlatformBadge: usesPlatformPrice,
+                            selected: false
+                        ) {
+                            Haptics.tap()
+                            vm.handleAddVariant(variant.name, price: variant.price, platformPrice: variant.platformPrice)
+                        }
+                    }
+                }
+                .padding(20)
             }
         }
     }
@@ -150,7 +199,8 @@ struct ProductGridView: View {
 
 private struct FlowOptionCard: View {
     let label: String
-    let price: Double?
+    let priceLabel: String?
+    var showsPlatformBadge = false
     let selected: Bool
     let action: () -> Void
 
@@ -159,7 +209,16 @@ private struct FlowOptionCard: View {
             ZStack(alignment: .topTrailing) {
                 VStack(spacing: 8) {
                     Text(label).font(.subheadline.weight(.medium)).foregroundColor(.white).multilineTextAlignment(.center)
-                    if let price { Text("+\(String(format: "$%.2f", price))").font(.caption).foregroundColor(.blue) }
+                    if let priceLabel {
+                        HStack(spacing: 4) {
+                            Text(priceLabel).font(.caption).foregroundColor(.blue)
+                            if showsPlatformBadge {
+                                Image(systemName: "motorcycle")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity).frame(height: 110)
                 .modifier(FlatCardTinted(color: selected ? .blue : .gray))

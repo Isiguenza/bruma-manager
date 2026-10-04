@@ -16,14 +16,19 @@ struct CartItemRow: View {
     let index: Int
     @ObservedObject var vm: POSViewModel
     var isInsidePromotionGroup: Bool = false
+
+    private var isPackageChild: Bool { item.parentLocalId != nil }
+    private var packageParentName: String? { vm.packageParentName(for: item) }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: isPackageChild ? 4 : 8) {
             // Row 1: Product name + badges + price + trash
             HStack(alignment: .top, spacing: 8) {
-                Text("\(item.quantity)×")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.gray)
+                if !isPackageChild {
+                    Text("\(item.quantity)×")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.gray)
+                }
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.productName)
@@ -40,8 +45,8 @@ struct CartItemRow: View {
                             .background(Capsule().fill(Color.orange.opacity(0.16)))
                     }
 
-                    if item.parentLocalId != nil {
-                        Label("Componente del paquete", systemImage: "arrow.turn.down.right")
+                    if isPackageChild {
+                        Label(packageParentName.map { "Paquete: \($0)" } ?? "Componente del paquete", systemImage: "arrow.turn.down.right")
                             .font(.caption2.weight(.medium))
                             .foregroundColor(.orange.opacity(0.85))
                     }
@@ -60,7 +65,7 @@ struct CartItemRow: View {
                 Spacer()
                 
                 // Price per unit
-                if !isInsidePromotionGroup {
+                if !isInsidePromotionGroup && !isPackageChild {
                     if item.isGuest {
                         Text(vm.formatCurrency(0) + " c/u")
                             .font(.caption2)
@@ -136,7 +141,7 @@ struct CartItemRow: View {
                 : item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
             
             // Status + price for sent items
-            if item.sentToKitchen {
+            if item.sentToKitchen && !isPackageChild {
                 HStack(spacing: 8) {
                     if item.deliveredToTable {
                         Label("Entregado", systemImage: "checkmark.circle.fill")
@@ -168,7 +173,7 @@ struct CartItemRow: View {
             }
             
             // Quantity controls + price for unsent items
-            if !item.sentToKitchen {
+            if !item.sentToKitchen && !isPackageChild {
                 HStack(spacing: 8) {
                     Button {
                         vm.updateCartQuantity(at: index, delta: -1)
@@ -224,13 +229,14 @@ struct CartItemRow: View {
                 }
             }
         }
-        .padding(12)
-        .padding(.leading, item.parentLocalId == nil ? 0 : 20)
+        .padding(isPackageChild ? 8 : 12)
+        // A package component must read as nested, not as another top-level dish.
+        .padding(.leading, isPackageChild ? 32 : 0)
         .background(backgroundColor)
         .cornerRadius(10)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(borderColor, lineWidth: 1))
         .overlay(alignment: .leading) {
-            if item.parentLocalId != nil {
+            if isPackageChild {
                 Capsule()
                     .fill(Color.orange.opacity(0.8))
                     .frame(width: 3)
@@ -239,7 +245,10 @@ struct CartItemRow: View {
             }
         }
         .contextMenu {
-            if item.sentToKitchen {
+            if isPackageChild {
+                Text("Componente del paquete")
+                    .foregroundColor(.gray)
+            } else if item.sentToKitchen {
                 Text("Item ya enviado a cocina")
                     .foregroundColor(.gray)
             } else if isInsidePromotionGroup {
@@ -363,7 +372,7 @@ struct CartItemRow: View {
     }
     
     private var backgroundColor: Color {
-        if item.parentLocalId != nil {
+        if isPackageChild {
             return Color.orange.opacity(0.06)
         }
         if item.packageLabel != nil {
@@ -376,7 +385,7 @@ struct CartItemRow: View {
     }
     
     private var borderColor: Color {
-        if item.parentLocalId != nil {
+        if isPackageChild {
             return Color.orange.opacity(0.18)
         }
         if item.packageLabel != nil {

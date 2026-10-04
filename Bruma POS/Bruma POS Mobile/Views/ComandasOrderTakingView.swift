@@ -4,8 +4,8 @@ import SwiftUI
 /// `MainPOSView`/`ProductGridView` de Bruma POS (adaptada a una sola
 /// columna para iPhone en vez del panel lado-a-lado de iPad): el mismo
 /// contenedor cambia entre "explorar productos" y "flujo de modificadores"
-/// según el nodo activo del grafo. Variante y notas se muestran en una hoja
-/// inferior compartida (`ComandasProductAddDialog`, igual que
+/// según el nodo activo del grafo o la variante pendiente. Las notas se
+/// muestran en una hoja inferior (`ComandasProductAddDialog`, igual que
 /// `ProductAddDialog` de POS) — el carrito vive en su propia hoja aparte,
 /// accesible desde una barra flotante (en POS el carrito es un panel fijo
 /// siempre visible, algo que no cabe en una pantalla de teléfono).
@@ -40,6 +40,8 @@ struct ComandasOrderTakingView: View {
                             advance: { Haptics.tap(); vm.advanceToNextStep() }
                         )
                     }
+                } else if vm.showVariantDialog, let product = vm.selectedProductForVariant {
+                    MobileVariantNode(product: product, vm: vm)
                 } else {
                     browseContent
                 }
@@ -52,13 +54,9 @@ struct ComandasOrderTakingView: View {
             }
             .background(Color(red: 0.04, green: 0.04, blue: 0.05).ignoresSafeArea())
             .comandasBottomSheet(
-                isPresented: vm.showVariantDialog || vm.showNotesDialog,
+                isPresented: vm.showNotesDialog,
                 onDismiss: {
-                    if vm.showNotesDialog {
-                        vm.handleCancelNotes()
-                    } else {
-                        vm.dismissVariantDialog()
-                    }
+                    vm.handleCancelNotes()
                 }
             ) {
                 ComandasProductAddDialog(vm: vm)
@@ -149,10 +147,14 @@ struct ComandasOrderTakingView: View {
 
             Spacer()
 
-            if vm.activeFlowNode != nil {
+            if vm.activeFlowNode != nil || vm.showVariantDialog {
                 Button {
                     Haptics.tap()
-                    vm.handleBackInFlow()
+                    if vm.activeFlowNode != nil {
+                        vm.handleBackInFlow()
+                    } else {
+                        vm.dismissVariantDialog()
+                    }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
@@ -412,10 +414,10 @@ private struct MobileFlowNode: View {
             ScrollView(showsIndicators: false) {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     if node.includeNoneOption {
-                        MobileFlowOption(label: node.noneLabel ?? "Sin \(node.title.lowercased())", price: nil, selected: selectedOptionIds.isEmpty, action: clear)
+                        MobileFlowOption(label: node.noneLabel ?? "Sin \(node.title.lowercased())", priceLabel: nil, selected: selectedOptionIds.isEmpty, action: clear)
                     }
                     ForEach(node.options, id: \.id) { option in
-                        MobileFlowOption(label: option.label, price: option.effectivePrice == 0 ? nil : option.effectivePrice, selected: selectedOptionIds.contains(option.id)) { select(option) }
+                        MobileFlowOption(label: option.label, priceLabel: option.effectivePrice == 0 ? nil : String(format: "+$%.2f", option.effectivePrice), selected: selectedOptionIds.contains(option.id)) { select(option) }
                     }
                 }
                 .padding(16)
@@ -430,9 +432,46 @@ private struct MobileFlowNode: View {
     }
 }
 
+private struct MobileVariantNode: View {
+    let product: Product
+    @ObservedObject var vm: POSViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(product.name).font(.headline.weight(.bold)).foregroundColor(.white)
+                Text("Selecciona una opción").font(.caption).foregroundColor(.gray)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+
+            ScrollView(showsIndicators: false) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    ForEach(product.parsedVariants) { variant in
+                        let usesPlatformPrice = vm.isPlatformDelivery && variant.platformPrice != nil
+                        let price = usesPlatformPrice ? variant.numericPlatformPrice : variant.numericPrice
+
+                        MobileFlowOption(
+                            label: variant.name,
+                            priceLabel: vm.formatCurrency(price),
+                            showsPlatformBadge: usesPlatformPrice,
+                            selected: false
+                        ) {
+                            Haptics.tap()
+                            vm.handleAddVariant(variant.name, price: variant.price, platformPrice: variant.platformPrice)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+        }
+    }
+}
+
 private struct MobileFlowOption: View {
     let label: String
-    let price: Double?
+    let priceLabel: String?
+    var showsPlatformBadge = false
     let selected: Bool
     let action: () -> Void
     var body: some View {
@@ -440,7 +479,16 @@ private struct MobileFlowOption: View {
             ZStack(alignment: .topTrailing) {
                 VStack(spacing: 6) {
                     Text(label).font(.subheadline.weight(.medium)).foregroundColor(.white).multilineTextAlignment(.center)
-                    if let price { Text(String(format: "+$%.2f", price)).font(.caption).foregroundColor(.blue) }
+                    if let priceLabel {
+                        HStack(spacing: 4) {
+                            Text(priceLabel).font(.caption).foregroundColor(.blue)
+                            if showsPlatformBadge {
+                                Image(systemName: "motorcycle")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity).frame(height: 90)
                 .modifier(FlatCardTinted(color: selected ? .blue : .gray))

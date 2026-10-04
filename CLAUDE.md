@@ -125,6 +125,19 @@ como `.modifier(FlatCard(cornerRadius: 12))`, igual que ya hace POS en
 `Views/` — nunca tocar los archivos del target "Bruma POS" para hacerle
 cambios a Mobile.
 
+**Variantes de precio = un paso de flujo, no una hoja:** elegir variante se
+pinta INLINE en el mismo contenedor donde corren los nodos de flujo v2
+(`ProductGridView.variantScreen` en iPad, `MobileVariantNode` en
+`ComandasOrderTakingView` en iPhone), reusando `FlowOptionCard`/
+`MobileFlowOption` — esas tarjetas reciben la etiqueta de precio ya
+formateada (`priceLabel`), porque un flujo muestra el delta (`+$20`) y una
+variante el precio absoluto. `showVariantDialog` + `selectedProductForVariant`
+siguen siendo el estado (sin cambios en el VM compartido); lo que cambió es
+quién lo dibuja. Las hojas inferiores (`ProductAddDialog` /
+`ComandasProductAddDialog`) quedaron SOLO para notas — si vuelves a meter
+variantes ahí, se rompe la continuidad con el flujo que arranca justo después
+de elegir variante.
+
 **Gotcha de flujos personalizados por categoría:** en
 `POSViewModel.buildFlowCartItem`, los pasos de flujo tipo `frosting`/`topping`
 solo deben llenar `frostingId`/`dryToppingId` (columnas con FK a las tablas
@@ -592,6 +605,18 @@ Tablas: `flow_definitions` / `flow_targets` / `flow_nodes` /
 `order_items.package_label`, `products.flow_tags`.
 `modifier_steps` / `modifier_options` / `product_flows` quedan **legacy
 solo-lectura** (se borran en la fase final).
+
+**Gotcha de impresión — compuerta de paquete:** la decisión "¿Paquete? →
+Sin paquete" no es una instrucción de cocina: antes se imprimía como
+`-> Sin Paquete` debajo del platillo y solo ensucia la comanda. Una selección
+es una compuerta
+cuando ocurre en un nodo de entrada (`flow_nodes.is_entry = true`) de un flujo
+que tiene, en **cualquiera de sus nodos**, al menos una opción
+`emits_child_item = true`, y esa selección no generó hijo (`child_item_id` /
+`childItemIndex` nulo). No se imprime ni se espejea como modificador: el filtro autoritativo está en
+`api-server/src/lib/kitchenPrint.ts`; `print-server/server.js` mantiene el
+resguardo legacy para snapshots, y POS Swift / `app/bar/page.tsx` aplican la
+misma regla sobre el grafo ya resuelto.
 
 **Evaluación: el servidor resuelve, el cliente camina.** El resolver compone el
 grafo completo (selección por targets, splice de varios flujos, expansión de

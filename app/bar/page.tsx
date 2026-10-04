@@ -53,10 +53,23 @@ type FlowHistoryEntry = {
   path: FlowPath;
 };
 
-function customModifiersForFlowSelections(selections: BuiltSelection[]): string | null {
+function customModifiersForFlowSelections(selections: BuiltSelection[], graph: FlowGraph): string | null {
+  const childItemFlowIds = new Set(
+    graph.nodes
+      .filter((node) => node.options.some((option) => option.emitsChildItem))
+      .map((node) => node.flowId),
+  );
+  const entryFlowId = graph.nodes.find((node) => node.id === graph.entryNodeId)?.flowId;
+  const packageGateNodeIds = new Set(
+    graph.nodes
+      .filter((node) => (
+        node.isEntry ?? (node.flowId === entryFlowId && node.id === graph.entryNodeId)
+      ) && childItemFlowIds.has(node.flowId))
+      .map((node) => node.id),
+  );
   const steps: Record<string, { stepName: string; options: Array<{ name: string; price: string }> }> = {};
   for (const selection of selections) {
-    if (selection.childItemIndex !== null || /hacer\s+paquete/i.test(selection.optionLabel)) continue;
+    if (selection.childItemIndex !== null || packageGateNodeIds.has(selection.nodeId)) continue;
     const key = `flow-${selection.nodeId}`;
     const step = steps[key] ?? { stepName: selection.nodeTitle, options: [] };
     step.options.push({ name: selection.optionLabel, price: selection.priceDelta.toFixed(2) });
@@ -1574,7 +1587,7 @@ export default function BarPage() {
         course: built.parent.course ?? undefined,
         quantity: 1,
         notes: productNotes,
-        customModifiers: customModifiersForFlowSelections(built.selections),
+        customModifiers: customModifiersForFlowSelections(built.selections, productFlow),
         isBeverage: categories.find((category) => category.id === selectedProduct.categoryId)?.isBeverage || false,
         packageGroupId,
         packageLabel: built.parent.packageLabel,

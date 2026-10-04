@@ -129,7 +129,9 @@ function buildFlowSteps(customModifiers: string | null | undefined): KitchenFlow
       const options = value?.options;
       if (Array.isArray(options)) {
         for (const opt of options) {
-          if (opt?.name) steps.push({ name: `${opt.name}${moneySuffix(opt.price)}` });
+          if (opt?.name && !/^sin\s+paquete$/i.test(opt.name)) {
+            steps.push({ name: `${opt.name}${moneySuffix(opt.price)}` });
+          }
         }
       }
     }
@@ -151,14 +153,50 @@ async function resolveSelectionSteps(items: PrintableItem[]): Promise<Map<string
       nodeTitle: schema.orderItemSelections.nodeTitle,
       optionLabel: schema.orderItemSelections.optionLabel,
       priceDelta: schema.orderItemSelections.priceDelta,
+      flowId: schema.orderItemSelections.flowId,
+      nodeId: schema.orderItemSelections.nodeId,
       childItemId: schema.orderItemSelections.childItemId,
       sortOrder: schema.orderItemSelections.sortOrder,
     })
     .from(schema.orderItemSelections)
     .where(inArray(schema.orderItemSelections.orderItemId, orderItemIds));
 
+  const flowIds = Array.from(new Set(
+    selections.map((selection) => selection.flowId).filter((id): id is string => !!id)
+  ));
+  const packageGateNodeIds = new Set<string>();
+  if (flowIds.length > 0) {
+    const childItemFlows = await db
+      .select({ flowId: schema.flowNodes.flowId })
+      .from(schema.flowNodes)
+      .innerJoin(
+        schema.flowNodeOptions,
+        eq(schema.flowNodeOptions.nodeId, schema.flowNodes.id)
+      )
+      .where(and(
+        inArray(schema.flowNodes.flowId, flowIds),
+        eq(schema.flowNodeOptions.emitsChildItem, true)
+      ));
+    const childItemFlowIds = Array.from(new Set(childItemFlows.map((flow) => flow.flowId)));
+    if (childItemFlowIds.length > 0) {
+      const packageGateNodes = await db
+        .select({ nodeId: schema.flowNodes.id })
+        .from(schema.flowNodes)
+        .where(and(
+          inArray(schema.flowNodes.flowId, childItemFlowIds),
+          eq(schema.flowNodes.isEntry, true)
+        ));
+      for (const node of packageGateNodes) packageGateNodeIds.add(node.nodeId);
+    }
+  }
+
   const byItemId = new Map<string, (KitchenFlowStep & { sortOrder: number })[]>();
   for (const selection of selections) {
+    if (
+      selection.childItemId === null &&
+      selection.nodeId !== null &&
+      packageGateNodeIds.has(selection.nodeId)
+    ) continue;
     const steps = byItemId.get(selection.orderItemId) ?? [];
     steps.push({
       name: `${selection.optionLabel}${moneySuffix(selection.priceDelta)}`,

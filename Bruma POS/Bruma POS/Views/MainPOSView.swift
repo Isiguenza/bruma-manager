@@ -39,17 +39,13 @@ struct MainPOSView: View {
                             .padding(.trailing, 12)
                     }
                     .padding(.vertical, 12)
-                    // Variantes/notas de producto: hoja inferior anclada a esta
+                    // Notas de producto: hoja inferior anclada a esta
                     // sección (categorías + productos) — no a toda la pantalla,
                     // igual que el panel de pago.
                     .bottomSheet(
-                        isPresented: vm.showVariantDialog || vm.showNotesDialog,
+                        isPresented: vm.showNotesDialog,
                         onDismiss: {
-                            if vm.showNotesDialog {
-                                vm.handleCancelNotes()
-                            } else {
-                                vm.dismissVariantDialog()
-                            }
+                            vm.handleCancelNotes()
                         }
                     ) {
                         // Sin `.id()` a propósito: mantenerlo siempre montado

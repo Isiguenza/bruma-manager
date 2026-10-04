@@ -147,6 +147,9 @@ struct OrderItem: Codable, Identifiable {
     let promotionName: String?
     let originalPrice: String?
     let promotionDiscount: String?
+    /// Present when this is a $0 component of a persisted package.
+    let parentItemId: String?
+    let packageLabel: String?
 
     var numericUnitPrice: Double { Double(unitPrice) ?? 0 }
     var numericSubtotal: Double { Double(subtotal) ?? 0 }
@@ -213,6 +216,8 @@ struct CartItem: Identifiable, Codable {
 
     /// Non-persisted link used to keep package children attached to their parent in the cart.
     var parentLocalId: UUID? = nil
+    /// DB parent id, retained just long enough to rebuild `parentLocalId` after reload.
+    var parentOrderItemId: String? = nil
     /// Snapshot of the flow that turned this item into a package parent.
     var packageLabel: String? = nil
     /// Snapshots posted to `order_item_selections` with the parent item.
@@ -252,7 +257,7 @@ struct CartItem: Identifiable, Codable {
             variantName = String(components[1])
         }
         
-        return CartItem(
+        var cartItem = CartItem(
             productId: item.productId,
             productName: item.productName,
             unitPrice: item.numericUnitPrice,
@@ -280,5 +285,8 @@ struct CartItem: Identifiable, Codable {
             promotionDiscount: item.numericPromotionDiscount,
             isGuest: item.isGuest ?? false
         )
+        cartItem.parentOrderItemId = item.parentItemId
+        cartItem.packageLabel = item.packageLabel
+        return cartItem
     }
 }

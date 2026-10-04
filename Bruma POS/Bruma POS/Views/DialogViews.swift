@@ -202,21 +202,10 @@ struct GuestCountDialog: View {
     }
 }
 
-// MARK: - Product Add Dialog (Variants + Notes combined)
-
-private enum ProductAddMode {
-    case variants
-    case notes
-}
+// MARK: - Product Add Dialog (Notes)
 
 struct ProductAddDialog: View {
     @ObservedObject var vm: POSViewModel
-    @State private var mode: ProductAddMode
-
-    init(vm: POSViewModel) {
-        self.vm = vm
-        self._mode = State(initialValue: vm.showVariantDialog ? .variants : .notes)
-    }
 
     private var productName: String {
         // pendingCartItem is always fresh for the item about to be added (set right before
@@ -228,13 +217,7 @@ struct ProductAddDialog: View {
     }
 
     var body: some View {
-        BottomSheetCard(onDismiss: {
-            if vm.showNotesDialog {
-                vm.handleCancelNotes()
-            } else {
-                vm.dismissVariantDialog()
-            }
-        }) {
+        BottomSheetCard(onDismiss: vm.handleCancelNotes) {
             VStack(spacing: 20) {
                 Text(productName)
                     .font(.title2.bold())
@@ -242,13 +225,7 @@ struct ProductAddDialog: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
 
-                Group {
-                    if mode == .variants {
-                        variantsSection
-                    } else {
-                        notesSection
-                    }
-                }
+                notesSection
                 // Asimétrico: el paso viejo sube y se desvanece mientras el
                 // nuevo entra desde abajo con un pop sutil de escala — nada
                 // de esto se ve si además hay un `.animation(value:)` compitiendo
@@ -259,86 +236,6 @@ struct ProductAddDialog: View {
                     removal: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .bottom))
                 ))
             }
-        }
-        .onChange(of: vm.showNotesDialog) { _, newValue in
-            if newValue {
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
-                    mode = .notes
-                }
-            }
-        }
-        // Sin `.id()` en el sitio donde se monta este diálogo (ver
-        // MainPOSView) — se queda montado siempre, así que `mode` tiene que
-        // resetearse aquí cada vez que se abre un diálogo de variantes
-        // nuevo, en vez de depender del `init` (que con la vista ya montada
-        // solo corre una vez, la primerísima).
-        .onChange(of: vm.showVariantDialog) { _, newValue in
-            if newValue {
-                mode = .variants
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var variantsSection: some View {
-        VStack(spacing: 12) {
-            Text("Selecciona una opción:")
-                .font(.subheadline)
-                .foregroundColor(.gray)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let product = vm.selectedProductForVariant {
-                let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
-                LazyVGrid(columns: columns, spacing: 10) {
-                    ForEach(product.parsedVariants) { variant in
-                        let isPlatform = vm.isPlatformDelivery
-                        let price = isPlatform ? variant.numericPlatformPrice : variant.numericPrice
-
-                        Button {
-                            vm.handleAddVariant(variant.name, price: variant.price, platformPrice: variant.platformPrice)
-                        } label: {
-                            VStack(spacing: 8) {
-                                Text(variant.name)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.white)
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(2)
-                                HStack(spacing: 4) {
-                                    Text(vm.formatCurrency(price))
-                                        .font(.headline.weight(.bold))
-                                        .foregroundColor(.white)
-                                    if isPlatform && variant.platformPrice != nil {
-                                        Image(systemName: "motorcycle")
-                                            .font(.caption2)
-                                            .foregroundColor(.orange)
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 10)
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 96)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.white.opacity(0.05))
-                                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            Button {
-                vm.dismissVariantDialog()
-            } label: {
-                Text("Cancelar")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
-            }
-            .buttonStyle(.plain)
         }
     }
 

@@ -1415,6 +1415,7 @@ app.post('/print-comanda', async (req, res) => {
         ? item.flowSteps.filter((step) => {
             const name = String(step?.name || "");
             if (/hacer\s+paquete/i.test(name)) return false;
+            if (/^sin\s+paquete$/i.test(name)) return false;
             return step?.isChildItemSelection !== true;
           })
         : [];

@@ -1,35 +1,16 @@
 import SwiftUI
 
-/// Misma hoja combinada variante/notas que `ProductAddDialog` de Bruma POS
-/// (`Views/DialogViews.swift`, no compartido — reescrito aquí porque vive en
-/// un archivo de Views que se queda exclusivo de POS). Mismo modelo de
-/// interacción: un solo `BottomSheetCard` que cambia de contenido según
-/// `vm.showVariantDialog`/`vm.showNotesDialog`, nunca se desmonta entre los
-/// dos modos (por eso la animación de transición se ve bien la primera vez
-/// que se abre, no solo las siguientes).
+/// Hoja de notas equivalente a `ProductAddDialog` de Bruma POS. Se mantiene
+/// montada para conservar la animación de entrada del `BottomSheetCard`.
 struct ComandasProductAddDialog: View {
     @ObservedObject var vm: POSViewModel
-    @State private var mode: Mode
-
-    enum Mode { case variants, notes }
-
-    init(vm: POSViewModel) {
-        self.vm = vm
-        self._mode = State(initialValue: vm.showVariantDialog ? .variants : .notes)
-    }
 
     private var productName: String {
         vm.pendingCartItem?.productName ?? vm.selectedProductForVariant?.name ?? ""
     }
 
     var body: some View {
-        BottomSheetCard(onDismiss: {
-            if vm.showNotesDialog {
-                vm.handleCancelNotes()
-            } else {
-                vm.dismissVariantDialog()
-            }
-        }) {
+        BottomSheetCard(onDismiss: vm.handleCancelNotes) {
             VStack(spacing: 20) {
                 Text(productName)
                     .font(.title3.bold())
@@ -37,74 +18,12 @@ struct ComandasProductAddDialog: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
 
-                Group {
-                    if mode == .variants {
-                        variantsSection
-                    } else {
-                        notesSection
-                    }
-                }
+                notesSection
                 .transition(.asymmetric(
                     insertion: .move(edge: .bottom).combined(with: .opacity),
                     removal: .move(edge: .top).combined(with: .opacity)
                 ))
             }
-        }
-        .onChange(of: vm.showNotesDialog) { _, newValue in
-            if newValue {
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) { mode = .notes }
-            }
-        }
-        .onChange(of: vm.showVariantDialog) { _, newValue in
-            if newValue { mode = .variants }
-        }
-    }
-
-    @ViewBuilder
-    private var variantsSection: some View {
-        VStack(spacing: 12) {
-            Text("Selecciona una opción:")
-                .font(.subheadline)
-                .foregroundColor(.gray)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let product = vm.selectedProductForVariant {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                    ForEach(product.parsedVariants) { variant in
-                        let isPlatform = vm.isPlatformDelivery
-                        let price = isPlatform ? variant.numericPlatformPrice : variant.numericPrice
-
-                        Button {
-                            Haptics.tap()
-                            vm.handleAddVariant(variant.name, price: variant.price, platformPrice: variant.platformPrice)
-                        } label: {
-                            VStack(spacing: 8) {
-                                Text(variant.name)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.white)
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(2)
-                                Text(vm.formatCurrency(price))
-                                    .font(.headline.weight(.bold))
-                                    .foregroundColor(.white)
-                            }
-                            .padding(.horizontal, 10)
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 92)
-                            .modifier(FlatCard(cornerRadius: 14))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            Button {
-                Haptics.tap()
-                vm.dismissVariantDialog()
-            } label: {
-                Text("Cancelar").font(.headline).frame(maxWidth: .infinity).frame(height: 48)
-            }
-            .buttonStyle(.flatCapsuleNeutral)
         }
     }
 
