@@ -639,6 +639,28 @@ adaptadora** (`POSViewModel.itemDicts(for:)` y el armado del body de
 implementaciones y rompe los vectores compartidos. Mandar el nombre equivocado
 no da error — `child_item_id` queda en `null` en silencio.
 
+**Gotcha de subflujos de hijos — una sola profundidad, solo host `single`:** al
+resolver una opción `emitsChildItem` de un nodo `single`, el composer splicea
+el flujo aplicable del producto hijo ya en el mismo grafo; `multi` queda
+explícitamente fuera hasta que el motor tenga una pila para varios subflujos.
+Los flujos activos del anfitrión se excluyen al resolver cada hijo: reentrar
+`Paquete` por `Entrada → Pescadito` volvería a pedir un paquete dentro de sí
+mismo y el traversal no tiene una pila para soportarlo. Instancias hermanas
+sí pueden usar el mismo subflujo (por ejemplo, cada bebida elegible obtiene su
+propio `Bebida Preparada`). Los nodos/ opciones instanciados llevan `:sub:<hostOptionId>`,
+`sourceNodeId`/`sourceOptionId` para persistir los UUID reales y
+`childOwnerOptionId` para enviar sus selecciones al hijo correcto. No se
+anidan nietos y una referencia directa al producto anfitrión se corta. El
+motor expone ese dueño como `ownerChildItemIndex`; solo el adaptador traduce al
+`childIndex` del body completo.
+
+La atribución final vive exclusivamente en `POSViewModel.buildFlowCartItems()` e
+`itemDicts(for:)`: las selecciones con `ownerChildItemIndex` se guardan y se
+envían en el `CartItem` hijo, sin `childIndex`; nunca se espejean en los
+`customModifiers` del padre. Al persistir una instancia spliceada, el motor usa
+`sourceNodeId` / `sourceOptionId` en lugar del id con `:sub:`: el backend valida
+esos campos como UUID puros antes de insertar `order_item_selections`.
+
 **Tres copias a mano que hay que mantener en sync (el repo ya vivía así):**
 `lib/flows/compose.ts` ↔ `api-server/src/lib/flowCompose.ts` (duplicadas porque
 `api-server` es un proyecto TS aparte, `rootDir:"."`, que no puede importar de la

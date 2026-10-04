@@ -39,23 +39,6 @@ struct MainPOSView: View {
                             .padding(.trailing, 12)
                     }
                     .padding(.vertical, 12)
-                    // Notas de producto: hoja inferior anclada a esta
-                    // sección (categorías + productos) — no a toda la pantalla,
-                    // igual que el panel de pago.
-                    .bottomSheet(
-                        isPresented: vm.showNotesDialog,
-                        onDismiss: {
-                            vm.handleCancelNotes()
-                        }
-                    ) {
-                        // Sin `.id()` a propósito: mantenerlo siempre montado
-                        // (misma identidad) es lo que permite que el slide-up
-                        // se vea igual de bien la primera vez que se abre
-                        // para un producto que las siguientes — un `.id()`
-                        // que cambia por producto fuerza un remount, que no
-                        // anima (por eso "la primera vez" siempre fadeaba).
-                        ProductAddDialog(vm: vm)
-                    }
                 }
             }
             

@@ -20,6 +20,9 @@ struct FlowSummary: Codable, Equatable {
 
 struct FlowNode: Codable, Equatable {
     let id: String
+    /// Original UUID when the composer materializes this node for a child subflow.
+    /// Optional so clients remain compatible with graphs from older servers.
+    let sourceNodeId: String?
     let flowId: String
     let title: String
     let subtitle: String?
@@ -29,11 +32,17 @@ struct FlowNode: Codable, Equatable {
     let includeNoneOption: Bool
     let noneLabel: String?
     let isEntry: Bool?
+    /// Materialized host option whose emitted child owns this node's selections.
+    /// Optional so a missing key (or an explicit JSON null) keeps the selection on the parent.
+    let childOwnerOptionId: String?
     let options: [FlowNodeOption]
 }
 
 struct FlowNodeOption: Codable, Equatable {
     let id: String
+    /// Original UUID when the composer materializes this option for a child subflow.
+    /// Optional so clients remain compatible with graphs from older servers.
+    let sourceOptionId: String?
     let label: String
     let source: String
     let priceMode: String
@@ -134,6 +143,8 @@ struct BuiltSelection: Codable, Equatable {
     let refVariantName: String?
     let refListPrice: Double?
     let childItemIndex: Int?
+    /// Index in the parent's children array that owns a child-subflow selection.
+    let ownerChildItemIndex: Int?
     let sortOrder: Int
 }
 

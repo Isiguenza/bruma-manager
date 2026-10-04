@@ -142,6 +142,10 @@ class POSViewModel: ObservableObject {
     @Published var selectedProduct: Product?
     @Published var productNotes = ""
     private var flowGraphCache: [String: FlowGraph] = [:]
+    /// Cache negative answers too: category prefetching should mean a variant
+    /// choice does not repeat a network request merely to learn there is no
+    /// graph for that product.
+    private var productsWithoutFlowGraph: Set<String> = []
     private var selectedFlowVariant: FlowVariant?
     private var pendingFlowItems: [CartItem] = []
 
@@ -898,6 +902,8 @@ class POSViewModel: ObservableObject {
 
         socketService.onReconnect = { [weak self] in
             Task { @MainActor in
+                self?.flowGraphCache.removeAll()
+                self?.productsWithoutFlowGraph.removeAll()
                 await self?.reconcilePendingOnlineOrders()
                 await self?.refreshReadyItemsAndDelivery()
             }
@@ -933,7 +939,11 @@ class POSViewModel: ObservableObject {
         }
 
         socketService.onFlowsUpdated = { [weak self] in
-            Task { @MainActor in self?.flowGraphCache.removeAll() }
+            Task { @MainActor in
+                self?.flowGraphCache.removeAll()
+                // Negative entries must go too, or a newly created flow never appears until relaunch.
+                self?.productsWithoutFlowGraph.removeAll()
+            }
         }
     }
     
@@ -2310,6 +2320,11 @@ class POSViewModel: ObservableObject {
         if product.hasVariants && product.variants != nil {
             selectedProductForVariant = product
             showVariantDialog = true
+            // While the server is reading the variants, resolve the graph in
+            // the background. `handleAddVariant` will normally hit this cache;
+            // if it does not, it deliberately leaves this step visible until
+            // the request completes.
+            Task { _ = await self.graphForProduct(product) }
             return
         }
         
@@ -2390,9 +2405,8 @@ class POSViewModel: ObservableObject {
             )
             pendingCartItem = newItem
             tempNotes = ""
-            // Mismo tick: apaga variantes y prende notas juntos, así el
-            // contenedor del sheet nunca pasa por "cerrado" — solo cambia
-            // el contenido (el `mode` de `ProductAddDialog` hace el resto).
+            // Mismo tick: el contenedor inline cambia directamente de
+            // variantes a notas, sin una fase vacía intermedia.
             showVariantDialog = false
             showNotesDialog = true
         }
@@ -2443,13 +2457,17 @@ class POSViewModel: ObservableObject {
 
     private func graphForProduct(_ product: Product) async -> FlowGraph? {
         if let cached = flowGraphCache[product.id] { return cached }
-        guard let graph = try? await APIService.shared.fetchProductFlowGraph(productId: product.id), !graph.nodes.isEmpty else { return nil }
+        if productsWithoutFlowGraph.contains(product.id) { return nil }
+        guard let graph = try? await APIService.shared.fetchProductFlowGraph(productId: product.id), !graph.nodes.isEmpty else {
+            productsWithoutFlowGraph.insert(product.id)
+            return nil
+        }
         flowGraphCache[product.id] = graph
         return graph
     }
 
     private func prefetchFlowGraphs(for products: [Product]) async {
-        for product in products where flowGraphCache[product.id] == nil {
+        for product in products where flowGraphCache[product.id] == nil && !productsWithoutFlowGraph.contains(product.id) {
             _ = await graphForProduct(product)
         }
     }
@@ -2535,10 +2553,15 @@ class POSViewModel: ObservableObject {
         guard let built = try? FlowEngine.buildItems(in: graph, path: flowPath, product: flowProduct, variant: variant, context: context) else { return nil }
         var parent = CartItem(productId: built.parent.productId, productName: built.parent.productName, unitPrice: built.parent.unitPrice, quantity: 1, notes: productNotes, seat: built.parent.seat ?? activeSeat, course: built.parent.course ?? activeCourse, sentToKitchen: false, isBeverage: product.category?.isBeverage ?? false, deliveredToTable: false, variantName: selectedFlowVariant?.name, isGuest: false)
         parent.packageLabel = built.parent.packageLabel
-        parent.flowSelections = built.selections
-        parent.customModifiers = customModifiersForFlowSelections(built.selections, in: graph)
-        let children = built.children.map { child in
-            CartItem(productId: child.productId, productName: child.productName, unitPrice: 0, quantity: 1, notes: "", seat: child.seat ?? parent.seat, course: child.course ?? parent.course, sentToKitchen: false, isBeverage: child.isBeverage, deliveredToTable: false, variantName: nil, isGuest: false, parentLocalId: parent.id)
+        let parentSelections = built.selections.filter { $0.ownerChildItemIndex == nil }
+        parent.flowSelections = parentSelections
+        parent.customModifiers = customModifiersForFlowSelections(parentSelections, in: graph)
+        let children = built.children.enumerated().map { childIndex, child in
+            var cartChild = CartItem(productId: child.productId, productName: child.productName, unitPrice: 0, quantity: 1, notes: "", seat: child.seat ?? parent.seat, course: child.course ?? parent.course, sentToKitchen: false, isBeverage: child.isBeverage, deliveredToTable: false, variantName: nil, isGuest: false, parentLocalId: parent.id)
+            let childSelections = built.selections.filter { $0.ownerChildItemIndex == childIndex }
+            cartChild.flowSelections = childSelections.isEmpty ? nil : childSelections
+            cartChild.customModifiers = customModifiersForFlowSelections(childSelections, in: graph)
+            return cartChild
         }
         return [parent] + children
     }
@@ -2553,7 +2576,7 @@ class POSViewModel: ObservableObject {
         let entryFlowId = graph.nodes.first(where: { $0.id == graph.entryNodeId })?.flowId
         let packageGateNodeIds = Set(graph.nodes.compactMap { node -> String? in
             let isEntry = node.isEntry ?? (node.flowId == entryFlowId && node.id == graph.entryNodeId)
-            return isEntry && childItemFlowIds.contains(node.flowId) ? node.id : nil
+            return isEntry && childItemFlowIds.contains(node.flowId) ? (node.sourceNodeId ?? node.id) : nil
         })
         var steps: [String: [String: Any]] = [:]
         for selection in selections {
@@ -3436,14 +3459,22 @@ class POSViewModel: ObservableObject {
 
     private func itemDicts(for items: [CartItem]) -> [[String: Any]] {
         let parentIndices = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
-        return items.map { item in
-            var dict = itemToDict(item)
+        var childIndicesByParentId: [UUID: [Int]] = [:]
+        for (index, item) in items.enumerated() {
+            if let parentId = item.parentLocalId {
+                childIndicesByParentId[parentId, default: []].append(index)
+            }
+        }
+        var result = items.map(itemToDict)
+
+        for (itemIndex, item) in items.enumerated() {
+            var dict = result[itemIndex]
             if let parentId = item.parentLocalId, let parentIndex = parentIndices[parentId] {
                 dict["parentIndex"] = parentIndex
             }
             if let selections = item.flowSelections {
-                let parentIndex = parentIndices[item.id]
-                dict["selections"] = selections.map { selection in
+                let childIndices = childIndicesByParentId[item.id] ?? []
+                for selection in selections {
                     var payload: [String: Any] = [
                         "flowId": selection.flowId,
                         "nodeId": selection.nodeId,
@@ -3456,16 +3487,33 @@ class POSViewModel: ObservableObject {
                     if let productId = selection.refProductId { payload["refProductId"] = productId }
                     if let variant = selection.refVariantName { payload["refVariantName"] = variant }
                     if let price = selection.refListPrice { payload["refListPrice"] = price }
-                    if let offset = selection.childItemIndex, let parentIndex {
+                    if selection.ownerChildItemIndex == nil,
+                       let offset = selection.childItemIndex,
+                       childIndices.indices.contains(offset) {
                         // The engine indexes only its children; this adapter owns
-                        // the full request array where the parent precedes them.
-                        payload["childIndex"] = parentIndex + offset + 1
+                        // the full request array and knows each child's absolute index.
+                        payload["childIndex"] = childIndices[offset]
                     }
-                    return payload
+
+                    if let childOffset = selection.ownerChildItemIndex,
+                       childIndices.indices.contains(childOffset) {
+                        // A materialized child subflow belongs to the child itself.
+                        // Its persisted selection must not carry childIndex, because
+                        // it is no longer a selection record on the parent.
+                        let targetIndex = childIndices[childOffset]
+                        var targetSelections = result[targetIndex]["selections"] as? [[String: Any]] ?? []
+                        targetSelections.append(payload)
+                        result[targetIndex]["selections"] = targetSelections
+                    } else {
+                        var itemSelections = dict["selections"] as? [[String: Any]] ?? []
+                        itemSelections.append(payload)
+                        dict["selections"] = itemSelections
+                    }
                 }
             }
-            return dict
+            result[itemIndex] = dict
         }
+        return result
     }
     
     /// Parses an item's `customModifiers` JSON into `{name, price}` entries for display on

@@ -5,7 +5,7 @@ import { composeFlowGraph } from "../lib/flowCompose";
 
 const router = Router();
 
-async function resolveGraph(productId: string) {
+export async function resolveGraph(productId: string) {
   const [product] = await db.select().from(schema.products).where(eq(schema.products.id, productId)).limit(1);
   if (!product) return null;
   const [definitions, targets, allProducts, categories] = await Promise.all([db.select().from(schema.flowDefinitions), db.select().from(schema.flowTargets), db.select().from(schema.products), db.select().from(schema.categories)]);
@@ -18,7 +18,7 @@ async function resolveGraph(productId: string) {
   return composeFlowGraph({ product, definitions, targets, nodes, options, overrides, edges, products: allProducts, categories });
 }
 
-function flattenLegacyGraph(graph: any) {
+export function flattenLegacyGraph(graph: any) {
   const steps: any[] = [];
   const visited = new Set<string>();
   let nodeId: string | null = graph.entryNodeId;
@@ -34,7 +34,12 @@ function flattenLegacyGraph(graph: any) {
         options: node.options.map((option: any, index: number) => ({ id: option.id, stepId: node.id, name: option.label, description: null, price: String(option.effectivePrice), sortOrder: index, active: true })),
       });
     }
-    nodeId = graph.edges.filter((edge: any) => edge.fromNodeId === node.id).sort((a: any, b: any) => a.sortOrder - b.sortOrder)[0]?.toNodeId ?? null;
+    // Legacy consumers cannot represent subflows. Ignore their entry edges and
+    // never turn an instance node into a legacy step.
+    nodeId = graph.edges
+      .filter((edge: any) => edge.fromNodeId === node.id)
+      .filter((edge: any) => edge.toNodeId === null || graph.nodes.find((candidate: any) => candidate.id === edge.toNodeId)?.childOwnerOptionId == null)
+      .sort((a: any, b: any) => a.sortOrder - b.sortOrder)[0]?.toNodeId ?? null;
   }
   return { productId: graph.productId, useDefaultFlow: false, steps, source: graph.source };
 }

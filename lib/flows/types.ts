@@ -18,6 +18,8 @@ export interface FlowSummary {
 
 export interface FlowNode {
   id: string
+  /** Original DB UUID when this is a per-child subflow instance. */
+  sourceNodeId?: string
   flowId: string
   title: string
   subtitle: string | null
@@ -27,11 +29,15 @@ export interface FlowNode {
   includeNoneOption: boolean
   noneLabel: string | null
   isEntry?: boolean
+  /** Host child option that owns selections made in this node; null for regular nodes. */
+  childOwnerOptionId?: string | null
   options: FlowNodeOption[]
 }
 
 export interface FlowNodeOption {
   id: string
+  /** Original DB UUID when this is a per-child subflow option instance. */
+  sourceOptionId?: string
   label: string
   source: "manual" | "product" | "category"
   priceMode: "free" | "product_price" | "delta"
@@ -134,6 +140,8 @@ export interface BuiltSelection {
   refVariantName: string | null
   refListPrice: number | null
   childItemIndex: number | null
+  /** Index within children that owns this subflow selection; null for parent selections. */
+  ownerChildItemIndex: number | null
   sortOrder: number
 }
 

@@ -109,13 +109,17 @@ export function computeTotal(graph: FlowGraph, path: FlowPath, basePrice: number
 }
 
 function referencedProductName(option: FlowNodeOption): string {
-  const variantSuffix = option.refVariantName === null ? "" : ` - ${option.refVariantName}`
-  return `${option.label}${variantSuffix}`
+  const variantName = option.refVariantName?.trim()
+  if (!variantName) return option.label
+  const suffix = ` - ${variantName}`
+  return option.label.trimEnd().toLowerCase().endsWith(suffix.toLowerCase())
+    ? option.label
+    : `${option.label}${suffix}`
 }
 
 function preparedProductName(productName: string, graph: FlowGraph, path: FlowPath): string {
-  const isPrepared = selectedOptions(graph, path).some(({ option }) =>
-    /^(preparado|preparada)$/i.test(option.label.trim()),
+  const isPrepared = selectedOptions(graph, path).some(({ node, option }) =>
+    node.childOwnerOptionId == null && /^(preparado|preparada)$/i.test(option.label.trim()),
   )
   return isPrepared && !/\(prep\)/i.test(productName) ? `${productName} (Prep)` : productName
 }
@@ -155,6 +159,7 @@ export function buildItems(
   }
   const children: BuiltChildItem[] = []
   const selections: BuiltSelection[] = []
+  const childIndexByOwnerOptionId = new Map<string, number>()
 
   for (const { node, option } of selectedOptions(graph, path)) {
     let childItemIndex: number | null = null
@@ -163,6 +168,7 @@ export function buildItems(
         throw new FlowTraversalError(`La opción hija \"${option.id}\" no tiene refProductId.`)
       }
       childItemIndex = children.length
+      childIndexByOwnerOptionId.set(option.id, childItemIndex)
       children.push({
         productId: option.refProductId,
         productName: referencedProductName(option),
@@ -176,8 +182,9 @@ export function buildItems(
     }
     selections.push({
       flowId: node.flowId,
-      nodeId: node.id,
-      optionId: option.id,
+      // Instance ids carry routing identity only; persistence requires raw UUIDs.
+      nodeId: node.sourceNodeId ?? node.id,
+      optionId: option.sourceOptionId ?? option.id,
       nodeTitle: node.title,
       optionLabel: option.label,
       priceDelta: option.effectivePrice,
@@ -186,6 +193,7 @@ export function buildItems(
       // The resolved menu price is intentionally not represented as originalPrice.
       refListPrice: option.refListPrice ?? null,
       childItemIndex,
+      ownerChildItemIndex: node.childOwnerOptionId == null ? null : childIndexByOwnerOptionId.get(node.childOwnerOptionId) ?? null,
       sortOrder: selections.length,
     })
   }

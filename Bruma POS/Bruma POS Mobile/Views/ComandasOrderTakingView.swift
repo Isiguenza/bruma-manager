@@ -2,19 +2,36 @@ import SwiftUI
 
 /// Pantalla de toma de pedido — misma estructura de interacción que
 /// `MainPOSView`/`ProductGridView` de Bruma POS (adaptada a una sola
-/// columna para iPhone en vez del panel lado-a-lado de iPad): el mismo
-/// contenedor cambia entre "explorar productos" y "flujo de modificadores"
-/// según el nodo activo del grafo o la variante pendiente. Las notas se
-/// muestran en una hoja inferior (`ComandasProductAddDialog`, igual que
-/// `ProductAddDialog` de POS) — el carrito vive en su propia hoja aparte,
-/// accesible desde una barra flotante (en POS el carrito es un panel fijo
-/// siempre visible, algo que no cabe en una pantalla de teléfono).
+/// columna para iPhone en vez del panel lado-a-lado de iPad). Variantes,
+/// nodos de flujo y notas viven en un único contenedor animado; el carrito
+/// conserva su hoja propia porque es una acción independiente.
 struct ComandasOrderTakingView: View {
     @ObservedObject var vm: POSViewModel
     @State private var showCart = false
     @State private var showLeaveConfirm = false
     @State private var wasSubmitting = false
     @State private var showSendSuccess = false
+    @State private var visibleStep: MobileItemStep?
+
+    private enum MobileItemStep: Hashable {
+        case variants(String)
+        case flowNode(String)
+        case notes
+    }
+
+    private var activeStep: MobileItemStep? {
+        if vm.showNotesDialog { return .notes }
+        if let node = vm.activeFlowNode { return .flowNode(node.id) }
+        if vm.showVariantDialog, let product = vm.selectedProductForVariant {
+            return .variants(product.id)
+        }
+        return nil
+    }
+
+    private let stepTransition = AnyTransition.asymmetric(
+        insertion: .move(edge: .trailing).combined(with: .opacity),
+        removal: .move(edge: .leading).combined(with: .opacity)
+    )
 
     var body: some View {
         ZStack {
@@ -25,25 +42,20 @@ struct ComandasOrderTakingView: View {
                 header
                 Divider().background(Color.white.opacity(0.1))
 
-                if let node = vm.activeFlowNode {
-                    VStack(spacing: 0) {
-                        flowBreadcrumbs
-                        MobileFlowNode(
-                            node: node,
-                            selectedOptionIds: vm.activeFlowSelectedOptionIds,
-                            total: vm.formatCurrency(vm.flowLiveTotal()),
-                            select: { option in
-                                Haptics.tap()
-                                vm.handleStepSelection(option)
-                            },
-                            clear: { Haptics.tap(); vm.handleStepSelection(nil) },
-                            advance: { Haptics.tap(); vm.advanceToNextStep() }
-                        )
+                ZStack {
+                    if let step = visibleStep {
+                        itemStepContent(for: step)
+                            .id(step)
+                            .transition(stepTransition)
+                    } else {
+                        browseContent
                     }
-                } else if vm.showVariantDialog, let product = vm.selectedProductForVariant {
-                    MobileVariantNode(product: product, vm: vm)
-                } else {
-                    browseContent
+                }
+                .onAppear { visibleStep = activeStep }
+                .onChange(of: activeStep) { _, newStep in
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
+                        visibleStep = newStep
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -53,19 +65,11 @@ struct ComandasOrderTakingView: View {
                 }
             }
             .background(Color(red: 0.04, green: 0.04, blue: 0.05).ignoresSafeArea())
-            .comandasBottomSheet(
-                isPresented: vm.showNotesDialog,
-                onDismiss: {
-                    vm.handleCancelNotes()
-                }
-            ) {
-                ComandasProductAddDialog(vm: vm)
-            }
             .comandasBottomSheet(isPresented: showCart, onDismiss: { showCart = false }) {
                 // BottomSheetCard es lo que da el grabber/fondo/sombra/drag-to-
                 // dismiss — .comandasBottomSheet() por sí solo solo maneja el scrim y la
                 // animación de entrada, el contenido tiene que envolverse en la
-                // tarjeta explícitamente (mismo patrón que ProductAddDialog).
+                // tarjeta explícitamente.
                 BottomSheetCard(maxHeight: UIScreen.main.bounds.height * 0.82, onDismiss: { showCart = false }) {
                     ComandasCartView(vm: vm, isPresented: $showCart)
                 }
@@ -114,6 +118,35 @@ struct ComandasOrderTakingView: View {
         }
     }
 
+    @ViewBuilder
+    private func itemStepContent(for step: MobileItemStep) -> some View {
+        switch step {
+        case .variants:
+            if let product = vm.selectedProductForVariant {
+                MobileVariantNode(product: product, vm: vm)
+            }
+        case .flowNode:
+            if let node = vm.activeFlowNode {
+                VStack(spacing: 0) {
+                    flowBreadcrumbs
+                    MobileFlowNode(
+                        node: node,
+                        selectedOptionIds: vm.activeFlowSelectedOptionIds,
+                        total: vm.formatCurrency(vm.flowLiveTotal()),
+                        select: { option in
+                            Haptics.tap()
+                            vm.handleStepSelection(option)
+                        },
+                        clear: { Haptics.tap(); vm.handleStepSelection(nil) },
+                        advance: { Haptics.tap(); vm.advanceToNextStep() }
+                    )
+                }
+            }
+        case .notes:
+            MobileNotesNode(vm: vm)
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 12) {
             Button {
@@ -147,10 +180,12 @@ struct ComandasOrderTakingView: View {
 
             Spacer()
 
-            if vm.activeFlowNode != nil || vm.showVariantDialog {
+            if vm.activeFlowNode != nil || vm.showVariantDialog || vm.showNotesDialog {
                 Button {
                     Haptics.tap()
-                    if vm.activeFlowNode != nil {
+                    if vm.showNotesDialog {
+                        vm.handleCancelNotes()
+                    } else if vm.activeFlowNode != nil {
                         vm.handleBackInFlow()
                     } else {
                         vm.dismissVariantDialog()
@@ -465,6 +500,147 @@ private struct MobileVariantNode: View {
                 .padding(16)
             }
         }
+    }
+}
+
+/// Notes are the final item step, rendered in the same full-height container
+/// as variants and flow nodes rather than in a separate sheet.
+private struct MobileNotesNode: View {
+    @ObservedObject var vm: POSViewModel
+
+    private var productName: String {
+        vm.pendingCartItem?.productName ?? vm.selectedProductForVariant?.name ?? vm.selectedProduct?.name ?? ""
+    }
+
+    private var applicableQuickNotes: [QuickNote] {
+        let productId = vm.pendingCartItem?.productId ?? vm.selectedProduct?.id
+        return vm.quickNotes.filter { $0.applies(toProductId: productId, variantName: vm.pendingCartItem?.variantName) }
+    }
+
+    private var hasContent: Bool {
+        !vm.selectedQuickNoteIds.isEmpty || !vm.tempNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(productName).font(.headline.weight(.bold)).foregroundColor(.white)
+                Text("Comentarios especiales").font(.caption).foregroundColor(.gray)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    let flowItems = vm.flowSummaryItems()
+                    if !flowItems.isEmpty {
+                        MobileInlineFlowNotesSummary(
+                            items: flowItems,
+                            formatCurrency: vm.formatCurrency,
+                            editSelection: {
+                                Haptics.tap()
+                                vm.handleCancelNotes()
+                            }
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Comentarios especiales").font(.subheadline.bold()).foregroundColor(.white)
+                        Text("Instrucciones, preferencias o alergias").font(.caption).foregroundColor(.gray)
+                    }
+
+                    if !applicableQuickNotes.isEmpty {
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                            ForEach(applicableQuickNotes) { note in
+                                MobileFlowOption(label: note.label, priceLabel: nil, selected: vm.selectedQuickNoteIds.contains(note.id)) {
+                                    Haptics.tap()
+                                    if vm.selectedQuickNoteIds.contains(note.id) {
+                                        vm.selectedQuickNoteIds.remove(note.id)
+                                    } else {
+                                        vm.selectedQuickNoteIds.insert(note.id)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            vm.showFreeTextNotes.toggle()
+                        }
+                    } label: {
+                        Label(vm.showFreeTextNotes ? "Ocultar comentario" : "Comentario adicional", systemImage: vm.showFreeTextNotes ? "minus.circle" : "plus.circle")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.blue)
+                    }
+                    .buttonStyle(.plain)
+
+                    if vm.showFreeTextNotes {
+                        TextEditor(text: $vm.tempNotes)
+                            .scrollContentBackground(.hidden)
+                            .foregroundColor(.white)
+                            .padding(12)
+                            .frame(height: 100)
+                            .modifier(FlatCard(cornerRadius: 12))
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                .padding(16)
+            }
+
+            HStack(spacing: 12) {
+                Button("Cancelar") { vm.handleCancelNotes() }
+                    .buttonStyle(.flatCapsuleNeutral)
+                Button(hasContent ? "Confirmar" : "Agregar") { vm.handleConfirmNotes() }
+                    .buttonStyle(.flatCapsule(.blue))
+            }
+            .padding(16)
+        }
+    }
+}
+
+private struct MobileInlineFlowNotesSummary: View {
+    let items: [CartItem]
+    let formatCurrency: (Double) -> String
+    let editSelection: () -> Void
+
+    private var total: Double { items.reduce(0) { $0 + $1.total } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Resumen del paquete").font(.subheadline.bold()).foregroundColor(.white)
+            ForEach(items) { item in
+                HStack(spacing: 8) {
+                    if item.parentLocalId != nil {
+                        Image(systemName: "arrow.turn.down.right").font(.caption).foregroundColor(.gray)
+                    }
+                    Text(item.productName)
+                        .font(item.parentLocalId == nil ? .subheadline.weight(.semibold) : .caption)
+                        .foregroundColor(.white)
+                    Spacer(minLength: 12)
+                    Text(formatCurrency(item.unitPrice))
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(item.parentLocalId == nil ? .green : .gray)
+                }
+                .padding(.leading, item.parentLocalId == nil ? 0 : 14)
+            }
+            Divider().background(Color.white.opacity(0.12))
+            HStack {
+                Text("Total").font(.subheadline.weight(.bold)).foregroundColor(.white)
+                Spacer()
+                Text(formatCurrency(total)).font(.subheadline.weight(.bold)).foregroundColor(.green)
+            }
+            Button(action: editSelection) {
+                Label("Editar selección", systemImage: "chevron.left")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+            }
+            .buttonStyle(.flatCapsuleNeutral)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .modifier(FlatCard(cornerRadius: 12))
     }
 }
 

@@ -2,16 +2,62 @@ import SwiftUI
 
 struct ProductGridView: View {
     @ObservedObject var vm: POSViewModel
+    @State private var visibleStep: ItemStep?
+
+    /// A single identity for every part of adding an item. Keeping the old
+    /// identity mounted until the new one is ready also avoids a blank product
+    /// area while a graph is being resolved after selecting a variant.
+    private enum ItemStep: Hashable {
+        case variants(String)
+        case flowNode(String)
+        case notes
+    }
+
+    private var activeStep: ItemStep? {
+        if vm.showNotesDialog { return .notes }
+        if let node = vm.activeFlowNode { return .flowNode(node.id) }
+        if vm.showVariantDialog, let product = vm.selectedProductForVariant {
+            return .variants(product.id)
+        }
+        return nil
+    }
+
+    private let stepTransition = AnyTransition.asymmetric(
+        insertion: .move(edge: .trailing).combined(with: .opacity),
+        removal: .move(edge: .leading).combined(with: .opacity)
+    )
 
     var body: some View {
-        Group {
-            if let node = vm.activeFlowNode {
-                flowNodeScreen(node)
-            } else if vm.showVariantDialog, let product = vm.selectedProductForVariant {
-                variantScreen(for: product)
+        ZStack {
+            if let step = visibleStep {
+                stepContent(for: step)
+                    .id(step)
+                    .transition(stepTransition)
             } else {
                 legacyContent
             }
+        }
+        .onAppear { visibleStep = activeStep }
+        .onChange(of: activeStep) { _, newStep in
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
+                visibleStep = newStep
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func stepContent(for step: ItemStep) -> some View {
+        switch step {
+        case .variants:
+            if let product = vm.selectedProductForVariant {
+                variantScreen(for: product)
+            }
+        case .flowNode:
+            if let node = vm.activeFlowNode {
+                flowNodeScreen(node)
+            }
+        case .notes:
+            notesScreen
         }
     }
 
@@ -143,6 +189,116 @@ struct ProductGridView: View {
         }
     }
 
+    // MARK: - Notes
+
+    private var notesScreen: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button {
+                    Haptics.tap()
+                    vm.handleCancelNotes()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "chevron.left")
+                        Text("Atrás")
+                    }
+                    .font(.callout.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.flatCapsuleNeutral)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(notesProductName).font(.title2.weight(.bold)).foregroundColor(.white)
+                    Text("Comentarios especiales").font(.subheadline).foregroundColor(.gray)
+                }
+                Spacer()
+            }
+            .padding(16)
+            Divider().background(Color.white.opacity(0.1))
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    let flowItems = vm.flowSummaryItems()
+                    if !flowItems.isEmpty {
+                        POSInlineFlowNotesSummary(
+                            items: flowItems,
+                            formatCurrency: vm.formatCurrency,
+                            editSelection: {
+                                Haptics.tap()
+                                vm.handleCancelNotes()
+                            }
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Comentarios especiales").font(.subheadline.bold()).foregroundColor(.white)
+                        Text("Instrucciones, preferencias o alergias").font(.caption).foregroundColor(.gray)
+                    }
+
+                    if !applicableQuickNotes.isEmpty {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
+                            ForEach(applicableQuickNotes) { note in
+                                FlowOptionCard(label: note.label, priceLabel: nil, selected: vm.selectedQuickNoteIds.contains(note.id)) {
+                                    Haptics.tap()
+                                    if vm.selectedQuickNoteIds.contains(note.id) {
+                                        vm.selectedQuickNoteIds.remove(note.id)
+                                    } else {
+                                        vm.selectedQuickNoteIds.insert(note.id)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            vm.showFreeTextNotes.toggle()
+                        }
+                    } label: {
+                        Label(vm.showFreeTextNotes ? "Ocultar comentario" : "Comentario adicional", systemImage: vm.showFreeTextNotes ? "minus.circle" : "plus.circle")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.blue)
+                    }
+                    .buttonStyle(.plain)
+
+                    if vm.showFreeTextNotes {
+                        TextEditor(text: $vm.tempNotes)
+                            .scrollContentBackground(.hidden)
+                            .foregroundColor(.white)
+                            .padding(12)
+                            .frame(height: 120)
+                            .font(.body)
+                            .modifier(FlatCard(cornerRadius: 12))
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                .padding(20)
+            }
+
+            HStack(spacing: 12) {
+                Button("Cancelar") { vm.handleCancelNotes() }
+                    .buttonStyle(.flatCapsuleNeutral)
+                Button(notesHasContent ? "Confirmar" : "Agregar") { vm.handleConfirmNotes() }
+                    .buttonStyle(.flatCapsule(.blue))
+            }
+            .padding(16)
+        }
+    }
+
+    private var notesProductName: String {
+        vm.pendingCartItem?.productName ?? vm.selectedProductForVariant?.name ?? vm.selectedProduct?.name ?? ""
+    }
+
+    private var applicableQuickNotes: [QuickNote] {
+        let productId = vm.pendingCartItem?.productId ?? vm.selectedProduct?.id
+        return vm.quickNotes.filter { $0.applies(toProductId: productId, variantName: vm.pendingCartItem?.variantName) }
+    }
+
+    private var notesHasContent: Bool {
+        !vm.selectedQuickNoteIds.isEmpty || !vm.tempNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     // MARK: - Products List
     
     private var productsList: some View {
@@ -195,6 +351,52 @@ struct ProductGridView: View {
         }
     }
     
+}
+
+/// The existing sheet summary, moved into the inline item-step container.
+private struct POSInlineFlowNotesSummary: View {
+    let items: [CartItem]
+    let formatCurrency: (Double) -> String
+    let editSelection: () -> Void
+
+    private var total: Double { items.reduce(0) { $0 + $1.total } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Resumen del paquete").font(.subheadline.bold()).foregroundColor(.white)
+            ForEach(items) { item in
+                HStack(spacing: 8) {
+                    if item.parentLocalId != nil {
+                        Image(systemName: "arrow.turn.down.right").font(.caption).foregroundColor(.gray)
+                    }
+                    Text(item.productName)
+                        .font(item.parentLocalId == nil ? .subheadline.weight(.semibold) : .caption)
+                        .foregroundColor(.white)
+                    Spacer(minLength: 12)
+                    Text(formatCurrency(item.unitPrice))
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(item.parentLocalId == nil ? .green : .gray)
+                }
+                .padding(.leading, item.parentLocalId == nil ? 0 : 14)
+            }
+            Divider().background(Color.white.opacity(0.12))
+            HStack {
+                Text("Total").font(.subheadline.weight(.bold)).foregroundColor(.white)
+                Spacer()
+                Text(formatCurrency(total)).font(.subheadline.weight(.bold)).foregroundColor(.green)
+            }
+            Button(action: editSelection) {
+                Label("Editar selección", systemImage: "chevron.left")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+            }
+            .buttonStyle(.flatCapsuleNeutral)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .modifier(FlatCard(cornerRadius: 12))
+    }
 }
 
 private struct FlowOptionCard: View {

@@ -92,6 +92,7 @@ enum FlowEngine {
 
         var children: [BuiltChildItem] = []
         var builtSelections: [BuiltSelection] = []
+        var childIndexesByHostOptionId: [String: Int] = [:]
         for selection in selectionsInPath {
             let node = selection.node
             let option = selection.option
@@ -101,6 +102,7 @@ enum FlowEngine {
                     throw FlowTraversalError.childOptionWithoutProductReference(option.id)
                 }
                 childItemIndex = children.count
+                childIndexesByHostOptionId[option.id] = childItemIndex
                 children.append(BuiltChildItem(
                     productId: productId,
                     productName: referencedProductName(option),
@@ -114,8 +116,8 @@ enum FlowEngine {
             }
             builtSelections.append(BuiltSelection(
                 flowId: node.flowId,
-                nodeId: node.id,
-                optionId: option.id,
+                nodeId: node.sourceNodeId ?? node.id,
+                optionId: option.sourceOptionId ?? option.id,
                 nodeTitle: node.title,
                 optionLabel: option.label,
                 priceDelta: option.effectivePrice,
@@ -123,6 +125,7 @@ enum FlowEngine {
                 refVariantName: option.refVariantName,
                 refListPrice: option.refListPrice,
                 childItemIndex: childItemIndex,
+                ownerChildItemIndex: node.childOwnerOptionId.flatMap { childIndexesByHostOptionId[$0] },
                 sortOrder: builtSelections.count
             ))
         }
@@ -209,7 +212,13 @@ enum FlowEngine {
     }
 
     private static func referencedProductName(_ option: FlowNodeOption) -> String {
-        option.label + (option.refVariantName.map { " - \($0)" } ?? "")
+        guard let rawVariantName = option.refVariantName else { return option.label }
+        let variantName = rawVariantName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !variantName.isEmpty else { return option.label }
+        let suffix = " - \(variantName)"
+        return option.label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasSuffix(suffix.lowercased())
+            ? option.label
+            : option.label + suffix
     }
 
     private static func preparedProductName(
@@ -217,7 +226,8 @@ enum FlowEngine {
         selections: [(node: FlowNode, option: FlowNodeOption)]
     ) -> String {
         let isPrepared = selections.contains {
-            ["preparado", "preparada"].contains($0.option.label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            $0.node.childOwnerOptionId == nil
+                && ["preparado", "preparada"].contains($0.option.label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
         }
         return isPrepared && !productName.localizedCaseInsensitiveContains("(prep)")
             ? "\(productName) (Prep)"

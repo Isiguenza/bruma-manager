@@ -69,7 +69,7 @@ function customModifiersForFlowSelections(selections: BuiltSelection[], graph: F
   );
   const steps: Record<string, { stepName: string; options: Array<{ name: string; price: string }> }> = {};
   for (const selection of selections) {
-    if (selection.childItemIndex !== null || packageGateNodeIds.has(selection.nodeId)) continue;
+    if (selection.childItemIndex !== null || selection.ownerChildItemIndex !== null || packageGateNodeIds.has(selection.nodeId)) continue;
     const key = `flow-${selection.nodeId}`;
     const step = steps[key] ?? { stepName: selection.nodeTitle, options: [] };
     step.options.push({ name: selection.optionLabel, price: selection.priceDelta.toFixed(2) });
@@ -1642,15 +1642,22 @@ export default function BarPage() {
       if (!item.isPackageChild && item.packageGroupId) parentIndexes.set(item.packageGroupId, index);
     });
 
-    return items.map((item) => {
+    return items.map((item, itemIndex) => {
       const legacyBody = !includeServiceFields && !item.packageGroupId;
       const childIndexes = items
         .map((candidate, index) => ({ candidate, index }))
         .filter(({ candidate }) => candidate.isPackageChild && candidate.packageGroupId === item.packageGroupId)
         .map(({ index }) => index);
-      const selections = item.flowSelections?.map(({ childItemIndex, ...selection }) => ({
+      const childItemIndex = item.isPackageChild
+        ? childIndexes.indexOf(itemIndex)
+        : null;
+      const flowSelections = item.isPackageChild
+        ? items.find((candidate) => !candidate.isPackageChild && candidate.packageGroupId === item.packageGroupId)
+          ?.flowSelections?.filter((selection) => selection.ownerChildItemIndex === childItemIndex)
+        : item.flowSelections?.filter((selection) => selection.ownerChildItemIndex == null);
+      const selections = flowSelections?.map(({ childItemIndex: selectionChildItemIndex, ownerChildItemIndex, ...selection }) => ({
         ...selection,
-        childIndex: childItemIndex === null ? null : childIndexes[childItemIndex] ?? null,
+        childIndex: selectionChildItemIndex === null ? null : childIndexes[selectionChildItemIndex] ?? null,
       }));
 
       return {
