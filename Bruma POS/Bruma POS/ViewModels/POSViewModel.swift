@@ -2700,9 +2700,13 @@ class POSViewModel: ObservableObject {
     /// uses local UUIDs. Reconnect them whenever an order is loaded so $0
     /// components stay visibly attached to their package parent.
     private func restorePackageLinksAfterReload() {
-        let localParentIds = Dictionary(uniqueKeysWithValues: cart.compactMap { item in
-            item.itemId.map { ($0, item.id) }
-        })
+        // `uniqueKeysWithValues:` revienta la app si dos items comparten itemId.
+        // Eso ya pasó en servicio (crash reports del 3 y 4 de octubre): se queda
+        // el primero y la app sigue viva aunque los datos vengan sucios.
+        let localParentIds = Dictionary(
+            cart.compactMap { item in item.itemId.map { ($0, item.id) } },
+            uniquingKeysWith: { first, _ in first }
+        )
         var restored = cart
         var changed = false
         for index in restored.indices where restored[index].parentLocalId == nil {
@@ -2991,7 +2995,9 @@ class POSViewModel: ObservableObject {
         // The reset above must still run so an already-open cart returns to
         // its regular prices before there is nothing left to apply.
         guard !activePromotions.isEmpty else { return }
-        let productCategoryMap = Dictionary(uniqueKeysWithValues: products.map { ($0.id, $0.categoryId) })
+        // Catálogo que viene de red: un id repetido no puede tumbar la app en
+        // pleno servicio (mismo trap que ya costó crashes en restorePackageLinks).
+        let productCategoryMap = Dictionary(products.map { ($0.id, $0.categoryId) }, uniquingKeysWith: { first, _ in first })
         // Only items the user hasn't opted out of participate in the engine;
         // excluded items stay at full price and are merged back untouched.
         let eligibleIndices = cart.indices.filter { !excludedPromoItemIds.contains(cart[$0].id) }
@@ -3314,20 +3320,24 @@ class POSViewModel: ObservableObject {
                         course: course
                     )
                     
-                    // Mark only the items just sent (respeta el filtro de tiempo)
+                    // Mark only the items just sent (respeta el filtro de tiempo).
+                    // Cada id del servidor se reparte UNA sola vez: emparejar solo
+                    // por productId hacía que dos líneas del mismo producto (p. ej.
+                    // Americano Frío y Americano Caliente) se quedaran con el MISMO
+                    // itemId — y de ahí en adelante anular, marcar entregado o
+                    // cambiar cantidad apuntaba al item equivocado. El nombre ya
+                    // trae la variante, así que se prefiere como desempate.
+                    let serverItems = updated.items ?? []
+                    var claimedItemIds = Set(cart.compactMap { $0.itemId })
                     for i in cart.indices {
-                        if !cart[i].sentToKitchen && (course == nil || cart[i].course == course) {
-                            cart[i].sentToKitchen = true
-                            cart[i].orderId = orderId
-                            // Try to match itemId from response
-                            if let updatedItems = updated.items {
-                                for dbItem in updatedItems {
-                                    if dbItem.productId == cart[i].productId && cart[i].itemId == nil {
-                                        cart[i].itemId = dbItem.id
-                                        break
-                                    }
-                                }
-                            }
+                        guard !cart[i].sentToKitchen, course == nil || cart[i].course == course else { continue }
+                        cart[i].sentToKitchen = true
+                        cart[i].orderId = orderId
+                        guard cart[i].itemId == nil else { continue }
+                        let unclaimed = serverItems.filter { !claimedItemIds.contains($0.id) && $0.productId == cart[i].productId }
+                        if let match = unclaimed.first(where: { $0.productName == cart[i].productName }) ?? unclaimed.first {
+                            cart[i].itemId = match.id
+                            claimedItemIds.insert(match.id)
                         }
                     }
                     
@@ -3474,7 +3484,7 @@ class POSViewModel: ObservableObject {
     }
 
     private func itemDicts(for items: [CartItem]) -> [[String: Any]] {
-        let parentIndices = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
+        let parentIndices = Dictionary(items.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
         var childIndicesByParentId: [UUID: [Int]] = [:]
         for (index, item) in items.enumerated() {
             if let parentId = item.parentLocalId {

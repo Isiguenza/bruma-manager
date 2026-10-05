@@ -480,6 +480,20 @@ el cliente al escribir — no necesita plantilla), con rate-limit de 6h por núm
 suscribir el webhook al campo `messages` en Meta** (Meta → app → WhatsApp →
 Configuración → Webhook fields).
 
+**Gotcha — el id del servidor se reparte UNA sola vez por línea del carrito:**
+en `handleSendToKitchen` (rama de orden EXISTENTE), el emparejado de
+`cart[i].itemId` contra los items que devuelve el API filtra por `productId`
+**y descarta los ids ya reclamados** (`claimedItemIds`), prefiriendo el que
+coincide también en `productName` (ahí viaja la variante). Emparejar solo por
+`productId` dejaba a dos líneas del MISMO producto —Americano Frío y Americano
+Caliente, p. ej.— con el mismo `itemId`: anular, marcar entregado o cambiar
+cantidad apuntaban al item equivocado, y aguas abajo
+`restorePackageLinksAfterReload` armaba un `Dictionary(uniqueKeysWithValues:)`
+con claves duplicadas y **tumbaba la app a media comanda** (crash reports del 3
+y 4 de octubre, `EXC_BREAKPOINT` en `_NativeDictionary.merge(trappingOnDuplicates:)`).
+Regla general: en este ViewModel nunca uses `Dictionary(uniqueKeysWithValues:)`
+sobre datos que vienen de red o del carrito — usa `uniquingKeysWith:`.
+
 ## Backend: rooms de socket
 
 `api-server/src/sockets/events.ts` centraliza los `emit`. Rooms activos:

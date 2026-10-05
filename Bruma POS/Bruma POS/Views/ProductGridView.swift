@@ -271,25 +271,30 @@ struct ProductGridView: View {
                 .padding(20)
             }
 
+            // El ancho lo da la ETIQUETA, no el botón: con `.frame` después de
+            // `.buttonStyle` el fondo relleno sigue abrazando el texto y solo se
+            // estira el contenedor invisible.
             HStack(spacing: 12) {
-                Button("Cancelar") { vm.handleCancelNotes() }
-                    .font(.body.weight(.semibold))
-                    .padding(.vertical, 20)
-                    .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity)
-                   
+                Button { vm.handleCancelNotes() } label: {
+                    Text("Cancelar")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 30)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.gray)
 
-                Button(notesHasContent ? "Confirmar" : "Agregar") { vm.handleConfirmNotes() }
-                    .font(.body.weight(.semibold))
-                    .padding(.vertical, 20)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.gray)
-                    .frame(maxWidth: .infinity)
-                    
-                  
+                Button { vm.handleConfirmNotes() } label: {
+                    Text(notesHasContent ? "Confirmar" : "Agregar")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 30)
+                }
+                .buttonStyle(.borderedProminent)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
+            .frame(maxWidth: .infinity)
         }
     }
 
