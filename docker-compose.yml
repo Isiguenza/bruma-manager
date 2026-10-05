@@ -9,10 +9,6 @@ services:
       - PORT=4000
       - NODE_ENV=production
       - CORS_ORIGIN=http://192.168.0.152:3000,http://localhost:3000
-    # Alcanzar al gateway de Hermes, que corre en el HOST (puerto 8090), para
-    # reenviarle los mensajes de WhatsApp del dueño (ver routes/whatsapp.ts).
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   nextjs:
