@@ -44,6 +44,11 @@ app.use(cors({
 import onlineOrdersRouter, { stripeWebhookHandler, cleanupAbandonedOnlineOrders, remindPendingOnlineOrders } from "./routes/online-orders";
 app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookHandler);
 
+// WhatsApp webhook: también RAW antes de express.json. El reenvío del payload a
+// Hermes va firmado con HMAC sobre los bytes originales, así que no se pueden perder.
+import { whatsappWebhookHandler } from "./routes/whatsapp";
+app.post("/api/whatsapp/webhook", express.raw({ type: "application/json" }), whatsappWebhookHandler);
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 

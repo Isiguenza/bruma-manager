@@ -494,6 +494,62 @@ y 4 de octubre, `EXC_BREAKPOINT` en `_NativeDictionary.merge(trappingOnDuplicate
 Regla general: en este ViewModel nunca uses `Dictionary(uniqueKeysWithValues:)`
 sobre datos que vienen de red o del carrito — usa `uniquingKeysWith:`.
 
+## Hermes (asistente en el server) sobre el MISMO número de WhatsApp
+
+Hermes Agent corre en el server (`bruma_tailscale`, `~/.hermes`) como servicio
+de usuario `hermes-gateway.service` (`systemctl --user`, NO system-wide). El
+adapter `whatsapp_cloud` le deja al dueño pedirle tareas por WhatsApp usando el
+MISMO número y token de Meta que ya manda las notificaciones de pedidos.
+
+**Se auto-habilita por presencia de credenciales, no por un flag.**
+`gateway/config_env.py` mapea `WHATSAPP_CLOUD_PHONE_NUMBER_ID` +
+`WHATSAPP_CLOUD_ACCESS_TOKEN`: con las dos en `~/.hermes/.env` el adapter
+arranca solo. No existe `WHATSAPP_CLOUD_ENABLED` (eso es del bridge Baileys).
+Verificar con `hermes status` → línea `Platforms:`.
+
+**El webhook de Meta NO se le cede a Hermes — el api-server reparte.** Meta
+permite un solo Callback URL por app para el campo `messages`, y ya es
+`/api/whatsapp/webhook`. Cedérselo a Hermes mataría la auto-respuesta a
+clientes y pondría al bot a contestarle a quien pide comida. En vez de eso,
+`whatsappWebhookHandler` (`api-server/src/routes/whatsapp.ts`) bifurca por
+remitente: número en `HERMES_WA_OWNERS` → reenvía el payload crudo a Hermes y
+NO auto-responde; cualquier otro → auto-respuesta de siempre. Es inerte hasta
+que estén las 3 variables (`HERMES_WA_OWNERS`, `HERMES_WA_WEBHOOK_URL`,
+`HERMES_WA_SHARED_SECRET`): sin ellas se comporta igual que antes. El reenvío
+es fire-and-forget, así que Hermes caído no afecta a los clientes.
+
+**No hace falta el App Secret real de Meta.** Hermes solo valida
+`X-Hub-Signature-256` como HMAC-SHA256 del body crudo contra su propio
+`WHATSAPP_CLOUD_APP_SECRET` (`whatsapp_cloud.py`, `_verify_signature`) — no
+habla con Meta para verificarlo. Así que ahí va un secreto compartido generado
+localmente y el api-server re-firma el salto con `HERMES_WA_SHARED_SECRET` (el
+mismo valor). Dejarlo vacío NO es opción: sin él Hermes rechaza todo inbound
+con 503.
+
+**Por eso el POST se monta con `express.raw` antes de `express.json`**
+(`api-server/src/index.ts`, junto al de Stripe): la firma es sobre los bytes
+originales, re-serializar el JSON la invalida. El GET del handshake sigue en el
+router normal.
+
+**Red:** Hermes escucha en `0.0.0.0:8090` (host), el api-server vive en Docker,
+así que el compose le pone `extra_hosts: host.docker.internal:host-gateway` y
+`HERMES_WA_WEBHOOK_URL` apunta a `http://host.docker.internal:8090/whatsapp/webhook`.
+No se necesita túnel público: Meta sigue hablándole solo al api-server.
+
+**`whatsapp_cloud` es SOLO DM — los grupos se descartan en el código.**
+`gateway/platforms/whatsapp_cloud.py` tira cualquier payload con campo `chat`
+(*"group support is not yet implemented; dropping"*), y el test
+`TestGroupMessageGuard` lo fija como comportamiento esperado. No es config que
+se pueda prender: para grupos hace falta el bridge Baileys (`hermes whatsapp`),
+que empareja por QR y necesita un número APARTE — un número registrado en la
+Cloud API queda dado de baja de la app normal de WhatsApp, así que el del
+negocio no se puede emparejar. Los dos adapters pueden correr en paralelo.
+
+**Probar el salto sin esperar un mensaje real:** `/tmp/probe_hermes_wa.py` en el
+server firma un payload falso de Meta y lo postea a Hermes (firma válida → 200,
+basura → 401). Un remitente fuera del allowlist se descarta en silencio, sin
+invocar al agente ni mandar nada.
+
 ## Backend: rooms de socket
 
 `api-server/src/sockets/events.ts` centraliza los `emit`. Rooms activos:
@@ -553,6 +609,17 @@ transacción `type:'sale'` ligada y deja audit log. No aplica a órdenes con pag
 dividido (`order_payments`), web/online ni plataforma. Emite `order:updated` +
 `order:paid`. (`POST /api/orders/:id/tip` es el hermano viejo, solo propina —
 sigue existiendo.)
+
+Por eso `/cash-register/history` ya no muestra solo las columnas guardadas:
+el modal de detalle monta `components/corte-detail.tsx`, que pide
+`GET /api/cash-register/:id/corte` del corte YA CERRADO y pinta las mismas
+secciones del ticket térmico (ventas y propinas por método con neto real,
+comisiones de terminal y de Stripe, depósitos/sangrías con su detalle, resumen
+y diferencia) más un botón "Reimprimir corte" que postea a `/print-corte` con
+el mismo body que `CorteViewModel.printCorte()` del POS. No hay snapshot del
+ticket en la DB — si se necesita otro dato en ese modal, se agrega al endpoint
+de corte (ambas copias) y sale para todos los cortes pasados, no solo los
+nuevos.
 
 UI: en el dashboard, botón "Editar pago" en el modal de historial de
 `/cash-register`. En el POS, al tocar una orden en la tab de Caja se abre
