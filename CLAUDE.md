@@ -442,6 +442,23 @@ correr una migración manual: o se lee `DATABASE_URL` de `.env` a mano con
 soluciona el phantom-dependency de raíz agregando `dotenv` como dependencia
 real del proyecto — no asumir que `npx tsx scripts/x.ts` simplemente funciona.
 
+## Compras y gastos (Hermes vía WhatsApp)
+
+Hermes lee el grupo de WhatsApp y registra cada compra con
+`POST /api/expenses` en **api-server** (`routes/expenses.ts`), auth por llave
+compartida `EXPENSES_API_KEY` (`Authorization: Bearer <llave>` o `X-API-Key`);
+sin la env var el endpoint responde 503 (cerrado, nunca abierto por omisión).
+`GET /api/expenses` con la misma llave existe para que Hermes conteste "¿cuánto
+llevamos?". Idempotente por `expenses.source_message_id` (UNIQUE): un reintento
+del mismo mensaje responde 200 + `duplicate:true`. El borrado desde el dashboard
+es soft delete (`deleted_at`) justamente para que la fila conserve su
+`source_message_id` y un reintento no la resucite. Vista en `/expenses`
+(Next.js, rutas propias en `app/api/expenses`, sin auth como el resto de
+`app/api/*`). La categoría se adivina por palabras clave con
+`lib/expenses/categories.ts`, que tiene **espejo a mano** en
+`api-server/src/lib/expenseCategories.ts`. Tabla creada con
+`drizzle/manual_expenses.sql` (ya aplicada en Neon).
+
 ## Stripe: test vs live
 
 `customer_stripe_accounts.stripe_customer_id` no es válido entre modo test y

@@ -32,8 +32,8 @@ import {
 } from "@phosphor-icons/react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Separator } from "@/components/ui/separator";
 import type { CashRegister } from "@/lib/types";
+import { CorteDetail } from "@/components/corte-detail";
 
 export default function CashRegisterHistoryPage() {
   const [registers, setRegisters] = useState<CashRegister[]>([]);
@@ -241,75 +241,20 @@ export default function CashRegisterHistoryPage() {
       </Card>
 
       <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              Detalle de Corte —{" "}
+              Corte —{" "}
               {selected &&
                 format(new Date(selected.openedAt), "dd MMM yyyy", {
                   locale: es,
                 })}
             </DialogTitle>
           </DialogHeader>
-          {selected && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <span className="text-muted-foreground">Apertura</span>
-                <span>{format(new Date(selected.openedAt), "HH:mm")}</span>
-                <span className="text-muted-foreground">Cierre</span>
-                <span>
-                  {selected.closedAt
-                    ? format(new Date(selected.closedAt), "HH:mm")
-                    : "—"}
-                </span>
-                <span className="text-muted-foreground">Órdenes</span>
-                <span>{selected.totalOrders || 0}</span>
-              </div>
-              <Separator />
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span>Efectivo inicial</span>
-                  <span>{formatCurrency(selected.initialCash)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Ventas</span>
-                  <span>{formatCurrency(selected.totalSales)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Esperado</span>
-                  <span>{formatCurrency(selected.expectedCash)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Contado</span>
-                  <span>{formatCurrency(selected.finalCash)}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between font-bold">
-                  <span>Diferencia</span>
-                  <span
-                    className={
-                      parseFloat(selected.difference || "0") >= 0
-                        ? "text-green-600"
-                        : "text-destructive"
-                    }
-                  >
-                    {formatCurrency(selected.difference)}
-                  </span>
-                </div>
-              </div>
-              {selected.notes && (
-                <>
-                  <Separator />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Notas</p>
-                    <p className="text-sm">{selected.notes}</p>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+          {selected && <CorteDetail registerId={selected.id} />}
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

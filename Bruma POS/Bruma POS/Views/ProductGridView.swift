@@ -279,7 +279,7 @@ struct ProductGridView: View {
                     Text("Cancelar")
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 30)
+                        .padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.gray)
@@ -288,7 +288,7 @@ struct ProductGridView: View {
                     Text(notesHasContent ? "Confirmar" : "Agregar")
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 30)
+                        .padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
             }

@@ -1253,6 +1253,28 @@ export const userProfilesRelations = relations(userProfiles, ({ many }) => ({
   cashRegisters: many(cashRegisters),
 }));
 
+// COMPRAS Y GASTOS del restaurante. Llegan sobre todo de Hermes (lee el grupo
+// de WhatsApp y hace POST /api/expenses en api-server con EXPENSES_API_KEY);
+// también se capturan a mano desde /expenses en el dashboard.
+// source_message_id es UNIQUE: Hermes puede reintentar el mismo mensaje sin
+// duplicar el gasto (el endpoint responde 200 + duplicate:true).
+export const expenses = pgTable("expenses", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  concept: text("concept").notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 3 }).notNull().default("MXN"),
+  category: varchar("category", { length: 30 }).notNull().default("otros"),
+  source: varchar("source", { length: 20 }).notNull().default("whatsapp"), // 'whatsapp' | 'manual'
+  sourceMessageId: varchar("source_message_id", { length: 255 }).unique(),
+  chatId: varchar("chat_id", { length: 255 }),
+  senderName: varchar("sender_name", { length: 255 }),
+  notes: text("notes"),
+  expenseDate: timestamp("expense_date").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Aliases for backward compatibility with api-server route code
 export const employees = userProfiles;
 export const inventory = inventoryProducts;

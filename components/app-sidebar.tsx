@@ -26,6 +26,7 @@ import {
   List,
   Notepad,
   ChatText,
+  Receipt,
 } from "@phosphor-icons/react";
 import { BrumaLogo } from "@/components/bruma-logo";
 import {
@@ -124,6 +125,11 @@ const financeNavItems = [
     title: "Historial Cortes",
     url: "/cash-register/history",
     icon: ClockCounterClockwise,
+  },
+  {
+    title: "Compras y Gastos",
+    url: "/expenses",
+    icon: Receipt,
   },
 ];
 
