@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addDays,
+  differenceInCalendarDays,
   eachDayOfInterval,
   eachHourOfInterval,
+  eachWeekOfInterval,
   endOfDay,
   format,
   isSameDay,
@@ -12,17 +15,21 @@ import {
   startOfDay,
   startOfHour,
   startOfMonth,
+  startOfWeek,
   subDays,
   subMonths,
 } from "date-fns";
 import { es } from "date-fns/locale";
+import type { DateRange } from "react-day-picker";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { Icon } from "@phosphor-icons/react";
 import {
   BeerBottle,
   Broom,
+  CalendarBlank,
   Car,
   DotsThreeCircle,
+  DownloadSimple,
   Fish,
   Lightning,
   MagnifyingGlass,
@@ -57,8 +64,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { EXPENSE_CATEGORIES, guessExpenseCategory, type ExpenseCategory } from "@/lib/expenses/categories";
+import {
+  EXPENSE_CATEGORIES,
+  EXPENSE_CATEGORY_LABELS,
+  guessExpenseCategory,
+  type ExpenseCategory,
+} from "@/lib/expenses/categories";
 
 interface Expense {
   id: string;
@@ -75,19 +89,23 @@ interface Expense {
   createdAt: string;
 }
 
-const CATEGORY_META: Record<ExpenseCategory, { label: string; icon: Icon }> = {
-  insumos: { label: "Insumos", icon: Fish },
-  bebidas: { label: "Bebidas", icon: BeerBottle },
-  empaque: { label: "Empaque", icon: Package },
-  limpieza: { label: "Limpieza", icon: Broom },
-  servicios: { label: "Servicios", icon: Lightning },
-  transporte: { label: "Transporte", icon: Car },
-  mantenimiento: { label: "Mantenimiento", icon: Wrench },
-  personal: { label: "Personal", icon: UsersThree },
-  otros: { label: "Otros", icon: DotsThreeCircle },
+const CATEGORY_ICONS: Record<ExpenseCategory, Icon> = {
+  insumos: Fish,
+  bebidas: BeerBottle,
+  empaque: Package,
+  limpieza: Broom,
+  servicios: Lightning,
+  transporte: Car,
+  mantenimiento: Wrench,
+  personal: UsersThree,
+  otros: DotsThreeCircle,
 };
 
-type RangeKey = "today" | "7d" | "30d" | "month" | "lastMonth";
+const CATEGORY_META = Object.fromEntries(
+  EXPENSE_CATEGORIES.map((c) => [c, { label: EXPENSE_CATEGORY_LABELS[c], icon: CATEGORY_ICONS[c] }])
+) as Record<ExpenseCategory, { label: string; icon: Icon }>;
+
+type RangeKey = "today" | "7d" | "30d" | "month" | "lastMonth" | "custom";
 
 const RANGES: { key: RangeKey; label: string }[] = [
   { key: "today", label: "Hoy" },
@@ -99,9 +117,16 @@ const RANGES: { key: RangeKey; label: string }[] = [
 
 // Los rangos "en curso" terminan en AHORA (no a fin de día/mes): así el
 // periodo anterior que calcula la API tiene la misma duración y el
-// comparativo no castiga a un mes que va a la mitad.
-function rangeBounds(key: RangeKey, now = new Date()) {
+// comparativo no castiga a un mes que va a la mitad. El personalizado es por
+// días completos: [inicio del primer día, inicio del día siguiente al último).
+// `to` siempre es exclusivo (la API filtra `< to`); `end` es el último día
+// que se dibuja en la gráfica.
+function rangeBounds(key: RangeKey, custom: { from: Date; to: Date } | null, now = new Date()) {
   switch (key) {
+    case "custom": {
+      const c = custom ?? { from: subDays(now, 6), to: now };
+      return { from: startOfDay(c.from), to: startOfDay(addDays(c.to, 1)), end: endOfDay(c.to) };
+    }
     case "today":
       return { from: startOfDay(now), to: now, end: endOfDay(now) };
     case "7d":
@@ -128,6 +153,12 @@ function money(amount: number, currency = "MXN") {
   return new Intl.NumberFormat("es-MX", { style: "currency", currency }).format(amount);
 }
 
+function periodLabel(from: Date, end: Date) {
+  if (isSameDay(from, end)) return format(from, "d 'de' MMMM yyyy", { locale: es });
+  const sameYear = from.getFullYear() === end.getFullYear();
+  return `${format(from, sameYear ? "d MMM" : "d MMM yyyy", { locale: es })} – ${format(end, "d MMM yyyy", { locale: es })}`;
+}
+
 function dayLabel(date: Date) {
   if (isToday(date)) return "Hoy";
   if (isYesterday(date)) return "Ayer";
@@ -144,6 +175,11 @@ const emptyForm = {
 
 export default function ExpensesPage() {
   const [range, setRange] = useState<RangeKey>("7d");
+  // Rango personalizado aplicado (días completos, ambos inclusive) y el que se
+  // está eligiendo en el calendario antes de aplicarlo.
+  const [customRange, setCustomRange] = useState<{ from: Date; to: Date } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [draftRange, setDraftRange] = useState<DateRange | undefined>();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [previousTotal, setPreviousTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -160,7 +196,7 @@ export default function ExpensesPage() {
 
   const fetchExpenses = useCallback(
     async (opts: { silent?: boolean } = {}) => {
-      const { from, to } = rangeBounds(range);
+      const { from, to } = rangeBounds(range, customRange);
       try {
         const res = await fetch(`/api/expenses?from=${from.toISOString()}&to=${to.toISOString()}`, { cache: "no-store" });
         if (!res.ok) throw new Error();
@@ -186,7 +222,7 @@ export default function ExpensesPage() {
         setLoading(false);
       }
     },
-    [range]
+    [range, customRange]
   );
 
   useEffect(() => {
@@ -220,25 +256,38 @@ export default function ExpensesPage() {
     ? Math.round((expenses.filter((e) => e.source === "whatsapp").length / expenses.length) * 100)
     : 0;
 
+  const bounds = rangeBounds(range, customRange);
+  const spanDays = differenceInCalendarDays(bounds.end, bounds.from) + 1;
+  // Un día → por hora; hasta ~3 meses → por día; más largo → por semana.
+  const granularity: "hour" | "day" | "week" = spanDays <= 1 ? "hour" : spanDays <= 92 ? "day" : "week";
+
   const series = useMemo(() => {
-    const { from, end } = rangeBounds(range);
-    const hourly = range === "today";
-    const buckets = hourly
-      ? eachHourOfInterval({ start: from, end })
-      : eachDayOfInterval({ start: from, end: startOfDay(end) });
+    const { from, end } = rangeBounds(range, customRange);
+    const bucketOf = (d: Date) =>
+      granularity === "hour" ? startOfHour(d) : granularity === "day" ? startOfDay(d) : startOfWeek(d, { weekStartsOn: 1 });
+    const buckets =
+      granularity === "hour"
+        ? eachHourOfInterval({ start: from, end })
+        : granularity === "day"
+          ? eachDayOfInterval({ start: from, end: startOfDay(end) })
+          : eachWeekOfInterval({ start: from, end }, { weekStartsOn: 1 });
     const byKey = new Map<number, number>();
     for (const e of mxnExpenses) {
-      const d = new Date(e.expenseDate);
-      const k = (hourly ? startOfHour(d) : startOfDay(d)).getTime();
+      const k = bucketOf(new Date(e.expenseDate)).getTime();
       byKey.set(k, (byKey.get(k) ?? 0) + Number(e.amount));
     }
     return buckets.map((b) => ({
       ts: b.getTime(),
-      label: hourly ? format(b, "HH:mm") : format(b, "d MMM", { locale: es }),
-      longLabel: hourly ? format(b, "HH:mm 'h'") : format(b, "EEEE d 'de' MMMM", { locale: es }),
+      label: granularity === "hour" ? format(b, "HH:mm") : format(b, "d MMM", { locale: es }),
+      longLabel:
+        granularity === "hour"
+          ? format(b, "HH:mm 'h'")
+          : granularity === "day"
+            ? format(b, "EEEE d 'de' MMMM", { locale: es })
+            : `Semana del ${format(b, "d 'de' MMMM", { locale: es })}`,
       total: Math.round((byKey.get(b.getTime()) ?? 0) * 100) / 100,
     }));
-  }, [mxnExpenses, range]);
+  }, [mxnExpenses, range, customRange, granularity]);
 
   const byCategory = useMemo(() => {
     const map = new Map<ExpenseCategory, { total: number; count: number }>();
@@ -276,6 +325,27 @@ export default function ExpensesPage() {
     }
     return groups;
   }, [filtered]);
+
+  // ---- Rango personalizado
+  function openPicker(open: boolean) {
+    setPickerOpen(open);
+    if (open) setDraftRange(customRange ?? { from: bounds.from, to: bounds.end });
+  }
+
+  function applyCustomRange() {
+    if (!draftRange?.from) return;
+    setCustomRange({ from: draftRange.from, to: draftRange.to ?? draftRange.from });
+    setRange("custom");
+    setPickerOpen(false);
+  }
+
+  // ---- Excel del rango que se está viendo (el navegador descarga solo por el
+  // Content-Disposition de la respuesta).
+  function downloadExcel() {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const qs = new URLSearchParams({ from: bounds.from.toISOString(), to: bounds.to.toISOString(), tz });
+    window.location.href = `/api/expenses/export?${qs}`;
+  }
 
   // ---- Captura / edición
   function openNew() {
@@ -368,7 +438,43 @@ export default function ExpensesPage() {
                 {r.label}
               </button>
             ))}
+            <Popover open={pickerOpen} onOpenChange={openPicker}>
+              <PopoverTrigger asChild>
+                <button
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    range === "custom" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <CalendarBlank className="size-4" />
+                  {range === "custom" && customRange ? periodLabel(bounds.from, bounds.end) : "Personalizado"}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-auto p-0">
+                <Calendar
+                  mode="range"
+                  locale={es}
+                  numberOfMonths={2}
+                  selected={draftRange}
+                  onSelect={setDraftRange}
+                  defaultMonth={subMonths(draftRange?.to ?? draftRange?.from ?? new Date(), 1)}
+                  disabled={{ after: new Date() }}
+                />
+                <div className="flex items-center justify-between gap-3 border-t p-3">
+                  <p className="text-xs text-muted-foreground">
+                    {draftRange?.from ? periodLabel(draftRange.from, draftRange.to ?? draftRange.from) : "Elige el primer y último día"}
+                  </p>
+                  <Button size="sm" onClick={applyCustomRange} disabled={!draftRange?.from}>
+                    Aplicar
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
+          <Button variant="outline" onClick={downloadExcel} disabled={loading} className="gap-2">
+            <DownloadSimple className="size-4" weight="bold" />
+            Excel
+          </Button>
           <Button onClick={openNew} className="gap-2">
             <Plus className="size-4" weight="bold" />
             Registrar gasto
@@ -381,7 +487,9 @@ export default function ExpensesPage() {
         <CardContent className="grid gap-0 p-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
           <div className="flex flex-col justify-between gap-6 border-b p-6 lg:border-r lg:border-b-0">
             <div>
-              <p className="text-sm text-muted-foreground">Gastado en el periodo</p>
+              <p className="text-sm text-muted-foreground">
+                Gastado del <span className="font-medium text-foreground">{periodLabel(bounds.from, bounds.end)}</span>
+              </p>
               {loading ? (
                 <Skeleton className="mt-2 h-12 w-48" />
               ) : (
@@ -415,7 +523,7 @@ export default function ExpensesPage() {
             </div>
           </div>
           <div className="p-4 pt-6 lg:p-6">
-            <p className="mb-3 px-2 text-sm font-medium">{range === "today" ? "Gasto por hora" : "Gasto por día"}</p>
+            <p className="mb-3 px-2 text-sm font-medium">{granularity === "hour" ? "Gasto por hora" : granularity === "day" ? "Gasto por día" : "Gasto por semana"}</p>
             <div className="h-64">
               {loading ? (
                 <Skeleton className="size-full" />

@@ -10,9 +10,19 @@ const router = Router();
 // compras/gastos aquí. Auth por llave compartida EXPENSES_API_KEY, enviada como
 // `Authorization: Bearer <llave>` (o `X-API-Key: <llave>`). Sin la env var el
 // endpoint queda cerrado (503) — nunca abierto por omisión.
+// Contexto seguro para logs: NUNCA incluye el token ni el header Authorization.
+// cf-ray permite cruzar la línea con Security Events de Cloudflare. Ojo: lo que
+// Cloudflare bloquea (p.ej. Error 1010) jamás llega aquí — si Hermes ve un 403
+// de Cloudflare y aquí no hay línea, el bloqueo fue en el edge.
+function logContext(req: Request) {
+  const ip = req.get("cf-connecting-ip") || req.get("x-forwarded-for")?.split(",")[0]?.trim() || req.ip;
+  return `${req.method} ${req.path} ip=${ip} ray=${req.get("cf-ray") ?? "-"} ua="${(req.get("user-agent") ?? "").slice(0, 80)}"`;
+}
+
 function requireExpensesKey(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.EXPENSES_API_KEY;
   if (!expected) {
+    console.error(`[expenses] 503 EXPENSES_API_KEY no configurada · ${logContext(req)}`);
     return res.status(503).json({ error: "EXPENSES_API_KEY no está configurada en el servidor" });
   }
 
@@ -21,10 +31,16 @@ function requireExpensesKey(req: Request, res: Response, next: NextFunction) {
     ? header.slice(7).trim()
     : (req.get("x-api-key") || "").trim();
 
+  if (!provided) {
+    console.warn(`[expenses] 401 token ausente · ${logContext(req)}`);
+    return res.status(401).json({ error: "No autorizado: falta el token" });
+  }
+
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    return res.status(401).json({ error: "No autorizado" });
+    console.warn(`[expenses] 401 token inválido (longitud ${a.length}) · ${logContext(req)}`);
+    return res.status(401).json({ error: "No autorizado: token inválido" });
   }
   next();
 }
@@ -80,14 +96,20 @@ router.post("/expenses", requireExpensesKey, async (req, res) => {
       if (Number.isNaN(d.getTime())) errors.push("date debe ser una fecha ISO válida");
       else expenseDate = d;
     }
-    if (errors.length) return res.status(400).json({ error: "Datos inválidos", details: errors });
+    if (errors.length) {
+      console.warn(`[expenses] 400 payload inválido: ${errors.join("; ")} · ${logContext(req)}`);
+      return res.status(400).json({ error: "Datos inválidos", details: errors });
+    }
 
     // Idempotencia: el mismo mensaje de WhatsApp no se registra dos veces.
     if (sourceMessageId) {
       const existing = await db.query.expenses.findFirst({
         where: eq(schema.expenses.sourceMessageId, sourceMessageId),
       });
-      if (existing) return res.status(200).json({ ok: true, duplicate: true, expense: serialize(existing) });
+      if (existing) {
+        console.log(`[expenses] 200 duplicado source_message_id=${sourceMessageId} · ${logContext(req)}`);
+        return res.status(200).json({ ok: true, duplicate: true, expense: serialize(existing) });
+      }
     }
 
     try {
@@ -107,7 +129,7 @@ router.post("/expenses", requireExpensesKey, async (req, res) => {
         })
         .returning();
 
-      console.log(`💸 Gasto registrado: ${concept} $${amount} ${currency} (${expense.category})`);
+      console.log(`[expenses] 201 registrado id=${expense.id} $${amount} ${currency} (${expense.category}) · ${logContext(req)}`);
       return res.status(201).json({ ok: true, duplicate: false, expense: serialize(expense) });
     } catch (error: any) {
       // Carrera entre dos reintentos del mismo mensaje: el UNIQUE gana.

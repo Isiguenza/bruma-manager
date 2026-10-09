@@ -459,6 +459,12 @@ es soft delete (`deleted_at`) justamente para que la fila conserve su
 `api-server/src/lib/expenseCategories.ts`. Tabla creada con
 `drizzle/manual_expenses.sql` (ya aplicada en Neon).
 
+Excel: `GET /api/expenses/export?from&to&tz` (`exceljs`, server-side) exporta
+el mismo rango `[from, to)` que está viendo la vista. Recibe `tz` del navegador
+porque el contenedor corre en UTC y Excel no tiene zonas horarias: las fechas se
+escriben como hora de pared local (`wallClock`), si no un gasto de las 9 pm
+saldría con la fecha del día siguiente.
+
 ## Stripe: test vs live
 
 `customer_stripe_accounts.stripe_customer_id` no es válido entre modo test y

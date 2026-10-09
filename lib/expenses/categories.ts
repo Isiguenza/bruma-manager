@@ -17,6 +17,18 @@ export const EXPENSE_CATEGORIES = [
 
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
 
+export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, string> = {
+  insumos: "Insumos",
+  bebidas: "Bebidas",
+  empaque: "Empaque",
+  limpieza: "Limpieza",
+  servicios: "Servicios",
+  transporte: "Transporte",
+  mantenimiento: "Mantenimiento",
+  personal: "Personal",
+  otros: "Otros",
+};
+
 // El orden importa: la primera categoría que matchea gana ("agua mineral" es
 // bebida antes de que "agua" la mande a servicios; "gasolina" es transporte
 // antes de que "gas" la mande a servicios).
