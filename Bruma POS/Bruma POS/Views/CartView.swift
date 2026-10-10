@@ -567,7 +567,7 @@ struct CartView: View {
                     }
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: hasUnsentItems ? "frying.pan.fill" : needsReadyStep ? "bell.badge.fill" : needsDeliveringStep ? "bicycle" : (isPaidTakeout ? "checkmark.circle.fill" : "creditcard.fill"))
+                        Image(systemName: hasUnsentItems ? "arrow.up.forward" : needsReadyStep ? "bell.badge.fill" : needsDeliveringStep ? "bicycle" : (isPaidTakeout ? "checkmark.circle.fill" : "creditcard.fill"))
                             .font(.callout)
                             .contentTransition(.symbolEffect(.replace))
 

@@ -40,6 +40,8 @@ private struct PackageConnector: Shape {
 struct CartItemRow: View {
     /// Azul sólido: el naranja ya significa "pendiente de enviar" en este carrito.
     private static let packageColor = Color.blue
+    /// Gris sólido (sin transparencia): la rama une, el color lo pone la tarjeta.
+    private static let connectorColor = Color(white: 0.42)
     private static let packageHeaderHeight: CGFloat = 30
     /// Ancho del canal donde corre la rama, a la izquierda de cada hijo.
     private static let packageIndent: CGFloat = 30
@@ -283,7 +285,7 @@ struct CartItemRow: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 12)
                 .frame(height: Self.packageHeaderHeight)
-                .background(Self.packageColor)
+                .background(Self.packageColor.opacity(0.28))
             }
         }
         .cornerRadius(10)
@@ -294,7 +296,7 @@ struct CartItemRow: View {
         .overlay {
             if isPackageChild && packageLink.attached {
                 PackageConnector(isLast: packageLink.isLast, reach: Self.rowSpacing, endX: Self.packageIndent - 3)
-                    .stroke(Self.packageColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .stroke(Self.connectorColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                     .allowsHitTesting(false)
             }
         }
@@ -438,8 +440,11 @@ struct CartItemRow: View {
     }
     
     private var borderColor: Color {
-        if isPackageChild || item.packageLabel != nil {
-            return Self.packageColor
+        if isPackageChild {
+            return Self.packageColor.opacity(0.3)
+        }
+        if item.packageLabel != nil {
+            return Self.packageColor.opacity(0.5)
         }
         if isInsidePromotionGroup {
             return Color.clear
