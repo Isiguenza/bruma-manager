@@ -7,7 +7,9 @@ struct MainPOSView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             
-            HStack(spacing: 12) {
+            // spacing 0: CartView ya trae 12 de padding propio; con otros 12 aquí el
+            // hueco carrito→categorías quedaba al doble que categorías→productos.
+            HStack(spacing: 0) {
                 // Left side: Cart sidebar (2 internal cards)
                 CartView(vm: vm)
                     .frame(width: 320)
@@ -73,7 +75,7 @@ struct MainPOSView: View {
                         .shadow(radius: 8)
                     }
                     .buttonStyle(.plain)
-                    .padding(.leading, 344)
+                    .padding(.leading, 332)
                     .padding(.trailing, 24)
                     .padding(.bottom, 16)
                 }

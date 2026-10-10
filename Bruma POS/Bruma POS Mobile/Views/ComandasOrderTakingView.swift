@@ -206,10 +206,6 @@ struct ComandasOrderTakingView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-
-            if vm.activeFlowNode != nil {
-                flowBreadcrumbs
-            }
         }
         .transaction { $0.animation = nil }
     }
@@ -252,27 +248,6 @@ struct ComandasOrderTakingView: View {
         if !vm.customerName.isEmpty { return vm.customerName }
         return "Para Llevar"
     }
-
-    private var flowBreadcrumbs: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(vm.flowBreadcrumbs, id: \.index) { crumb in
-                    Button(crumb.title) {
-                        Haptics.tap()
-                        vm.returnToFlowVisit(crumb.index)
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.blue)
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.03))
-    }
-
     // MARK: - Browse
 
     private var browseContent: some View {

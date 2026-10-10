@@ -69,16 +69,6 @@ struct ProductGridView: View {
         case .flowNode:
             if let node = vm.activeFlowNode {
                 VStack(alignment: .leading, spacing: 8) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(vm.flowBreadcrumbs, id: \.index) { crumb in
-                                Button(crumb.title) { vm.returnToFlowVisit(crumb.index) }
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(.blue)
-                                    .buttonStyle(.plain)
-                            }
-                        }
-                    }
                     HStack {
                         stepBackButton(action: vm.handleBackInFlow)
                         VStack(alignment: .leading, spacing: 3) {

@@ -11,7 +11,36 @@ private struct StepperButton: ViewModifier {
     }
 }
 
+/// Rama que baja del platillo padre y dobla hacia cada hijo del paquete.
+/// Sube `reach` puntos por encima del renglón para cruzar el espacio entre
+/// tarjetas, y si no es el último hijo sigue de largo hacia el siguiente.
+private struct PackageConnector: Shape {
+    let isLast: Bool
+    let reach: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let x: CGFloat = 15
+        let radius: CGFloat = 8
+        let midY = rect.midY
+        var path = Path()
+        path.move(to: CGPoint(x: x, y: -reach))
+        path.addLine(to: CGPoint(x: x, y: midY - radius))
+        path.addQuadCurve(to: CGPoint(x: x + radius, y: midY), control: CGPoint(x: x, y: midY))
+        path.addLine(to: CGPoint(x: x + radius + 5, y: midY))
+        if !isLast {
+            path.move(to: CGPoint(x: x, y: midY - radius))
+            path.addLine(to: CGPoint(x: x, y: rect.maxY))
+        }
+        return path
+    }
+}
+
 struct CartItemRow: View {
+    /// Naranja apagado: se reconoce como paquete sin competir con el botón de enviar.
+    private static let packageTint = Color(red: 0.93, green: 0.66, blue: 0.38)
+    /// Igual al `spacing` del LazyVStack del carrito (CartView).
+    private static let rowSpacing: CGFloat = 8
+
     let item: CartItem
     let index: Int
     @ObservedObject var vm: POSViewModel
@@ -19,6 +48,16 @@ struct CartItemRow: View {
 
     private var isPackageChild: Bool { item.parentLocalId != nil }
     private var packageParentName: String? { vm.packageParentName(for: item) }
+
+    /// Dónde cae este hijo dentro de su paquete. La línea conectora solo tiene
+    /// sentido si arriba está su padre o un hermano; si el carrito los separó,
+    /// se cae al texto "Paquete: …".
+    private var packageLink: (attached: Bool, isLast: Bool) {
+        guard let parentId = item.parentLocalId, let position = vm.cart.firstIndex(where: { $0.id == item.id }) else { return (false, true) }
+        let previous = position > 0 ? vm.cart[position - 1] : nil
+        let next = position + 1 < vm.cart.count ? vm.cart[position + 1] : nil
+        return (previous?.id == parentId || previous?.parentLocalId == parentId, next?.parentLocalId != parentId)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: isPackageChild ? 4 : 8) {
@@ -37,18 +76,15 @@ struct CartItemRow: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let packageLabel = item.packageLabel {
-                        Label(packageLabel, systemImage: "shippingbox.fill")
-                            .font(.caption2.weight(.bold))
-                            .foregroundColor(.orange)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.orange.opacity(0.16)))
+                        Label(packageLabel, systemImage: "shippingbox")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundColor(Self.packageTint)
                     }
 
-                    if isPackageChild {
+                    if isPackageChild && !packageLink.attached {
                         Label(packageParentName.map { "Paquete: \($0)" } ?? "Componente del paquete", systemImage: "arrow.turn.down.right")
                             .font(.caption2.weight(.medium))
-                            .foregroundColor(.orange.opacity(0.85))
+                            .foregroundColor(.gray)
                     }
                     
                     // Promotion badge
@@ -235,13 +271,11 @@ struct CartItemRow: View {
         .background(backgroundColor)
         .cornerRadius(10)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(borderColor, lineWidth: 1))
-        .overlay(alignment: .leading) {
-            if isPackageChild {
-                Capsule()
-                    .fill(Color.orange.opacity(0.8))
-                    .frame(width: 3)
-                    .padding(.vertical, 10)
-                    .padding(.leading, 6)
+        .overlay {
+            if isPackageChild && packageLink.attached {
+                PackageConnector(isLast: packageLink.isLast, reach: Self.rowSpacing)
+                    .stroke(Self.packageTint.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                    .allowsHitTesting(false)
             }
         }
         .contextMenu {
@@ -372,11 +406,10 @@ struct CartItemRow: View {
     }
     
     private var backgroundColor: Color {
+        // El paquete se lee por la línea que une al padre con sus hijos, no por
+        // pintar todo de naranja: el hijo queda como un renglón más ligero.
         if isPackageChild {
-            return Color.orange.opacity(0.06)
-        }
-        if item.packageLabel != nil {
-            return Color.orange.opacity(0.08)
+            return Color.white.opacity(0.02)
         }
         if isInsidePromotionGroup {
             return Color.white.opacity(0.02)
@@ -386,10 +419,7 @@ struct CartItemRow: View {
     
     private var borderColor: Color {
         if isPackageChild {
-            return Color.orange.opacity(0.18)
-        }
-        if item.packageLabel != nil {
-            return Color.orange.opacity(0.32)
+            return Color.white.opacity(0.05)
         }
         if isInsidePromotionGroup {
             return Color.clear

@@ -2426,20 +2426,6 @@ class POSViewModel: ObservableObject {
 
     var activeFlowSelectedOptionIds: [String] { flowPath.last?.selectedOptionIds ?? [] }
 
-    var flowBreadcrumbs: [(index: Int, title: String)] {
-        guard let graph = flowGraph else { return [] }
-        return flowPath.enumerated().compactMap { index, visit in
-            guard let node = graph.nodes.first(where: { $0.id == visit.nodeId }) else { return nil }
-            let labels = node.options.filter { visit.selectedOptionIds.contains($0.id) }.map(\.label)
-            return (index, ([node.title] + labels).joined(separator: " › "))
-        }
-    }
-
-    func returnToFlowVisit(_ index: Int) {
-        guard flowPath.indices.contains(index) else { return }
-        flowPath = Array(flowPath.prefix(index + 1))
-    }
-
     func flowLiveTotal() -> Double {
         guard let product = selectedProduct else { return 0 }
         let base = selectedFlowVariant?.price ?? (customerName.hasPrefix("Uber") || customerName.hasPrefix("Rappi") || customerName.hasPrefix("Didi") ? product.numericPlatformPrice : product.numericPrice)
