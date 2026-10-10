@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import Stripe from "stripe";
 import { db, schema } from "../db";
 import { eq, and, or, desc, sql } from "drizzle-orm";
-import { emitOrderNew, emitOnlineOrder, emitOrderUpdated } from "../sockets/events";
+import { emitOrderNew, emitOnlineOrder, emitOrderUpdated, emitOnlineOrderResolved, isOnlineOrderClaimed } from "../sockets/events";
 import { haversineMeters, resolveDeliveryFee, type DeliveryTier } from "../lib/distance";
 import { notifyOrderReceived, notifyOrderConfirmed, notifyOrderCancelled } from "../lib/whatsapp";
 import { printKitchenComanda } from "../lib/kitchenPrint";
@@ -109,6 +109,8 @@ export async function remindPendingOnlineOrders() {
     if (stuck.length === 0) return;
     console.log(`[remind] ${stuck.length} pedido(s) en línea sin atender — re-emitiendo socket`);
     for (const order of stuck) {
+      // Alguien ya lo está revisando en un POS: recordarlo solo haría sonar a los demás.
+      if (isOnlineOrderClaimed(order.id)) continue;
       emitOnlineOrder(order);
     }
   } catch (error) {
@@ -591,6 +593,7 @@ router.post("/orders/:id/accept-online", async (req, res) => {
     // Al ACEPTAR es cuando cae a cocina (KDS/dispatch) y se marca preparando.
     emitOrderNew(complete);
     emitOrderUpdated(complete);
+    emitOnlineOrderResolved(id);
     notifyOrderConfirmed(updated).catch(() => {});
     res.json({ success: true, order: updated });
 
@@ -677,6 +680,7 @@ router.post("/orders/:id/reject-online", async (req, res) => {
       .where(eq(schema.orders.id, id))
       .returning();
     emitOrderUpdated({ ...updated, rejected: true });
+    emitOnlineOrderResolved(id);
     notifyOrderCancelled(updated).catch(() => {});
     res.json({ success: true, message, paymentStatus: newPaymentStatus });
   } catch (error) {

@@ -2,6 +2,42 @@ import { Server as SocketServer } from "socket.io";
 
 let io: SocketServer | null = null;
 
+// ── Pedido en línea "apartado" ───────────────────────────────────────────
+// Cuando un POS entra a revisar un pedido (aceptar/rechazar), los demás dejan
+// de sonar y de mostrar la pantalla verde. El apartado es de quien lo pidió
+// primero y se suelta solo si ese dispositivo lo libera, se desconecta o se
+// tarda demasiado: un pedido nunca se queda callado en todos lados.
+// En memoria a propósito: es estado de minutos y este server es un solo proceso.
+type OnlineOrderClaim = { orderId: string; deviceId: string; by: string | null; socketId: string; timer: NodeJS.Timeout };
+const onlineOrderClaims = new Map<string, OnlineOrderClaim>();
+/** Mayor que los 2 min que el POS deja la pantalla de revisión antes de volver a sonar. */
+const ONLINE_ORDER_CLAIM_TTL_MS = 150_000;
+
+const claimPayload = (claim: OnlineOrderClaim) => ({ orderId: claim.orderId, deviceId: claim.deviceId, by: claim.by });
+
+function releaseOnlineOrderClaim(orderId: string, reason: string) {
+  const claim = onlineOrderClaims.get(orderId);
+  if (!claim) return;
+  clearTimeout(claim.timer);
+  onlineOrderClaims.delete(orderId);
+  io?.to("room:pos").emit("online_order:released", { orderId });
+  console.log(`🔓 Pedido en línea ${orderId} liberado (${reason})`);
+}
+
+export function isOnlineOrderClaimed(orderId: string): boolean {
+  return onlineOrderClaims.has(orderId);
+}
+
+/** El pedido ya se aceptó o rechazó: todos los POS cierran su aviso. */
+export function emitOnlineOrderResolved(orderId: string) {
+  const claim = onlineOrderClaims.get(orderId);
+  if (claim) {
+    clearTimeout(claim.timer);
+    onlineOrderClaims.delete(orderId);
+  }
+  io?.to("room:pos").emit("online_order:resolved", { orderId });
+}
+
 export function initSocket(socketServer: SocketServer) {
   io = socketServer;
   
@@ -12,6 +48,39 @@ export function initSocket(socketServer: SocketServer) {
     socket.on("join", (room: string) => {
       socket.join(room);
       console.log(`📍 ${socket.id} joined room: ${room}`);
+      // Un POS que se conecta (o reconecta) tarde tiene que saber qué pedidos ya
+      // están apartados, o sonaría por uno que otro dispositivo está atendiendo.
+      if (room === "room:pos") {
+        for (const claim of onlineOrderClaims.values()) socket.emit("online_order:claimed", claimPayload(claim));
+      }
+    });
+
+    socket.on("online_order:claim", (payload: any) => {
+      const orderId = typeof payload?.orderId === "string" ? payload.orderId : "";
+      const deviceId = typeof payload?.deviceId === "string" ? payload.deviceId : "";
+      if (!orderId || !deviceId) return;
+      const existing = onlineOrderClaims.get(orderId);
+      // Dos tocaron casi al mismo tiempo: gana el primero y al segundo se le avisa.
+      if (existing && existing.deviceId !== deviceId) {
+        socket.emit("online_order:claimed", claimPayload(existing));
+        return;
+      }
+      if (existing) clearTimeout(existing.timer);
+      const claim: OnlineOrderClaim = {
+        orderId,
+        deviceId,
+        by: typeof payload?.by === "string" && payload.by.trim() ? payload.by.trim() : null,
+        socketId: socket.id,
+        timer: setTimeout(() => releaseOnlineOrderClaim(orderId, "expiró"), ONLINE_ORDER_CLAIM_TTL_MS),
+      };
+      onlineOrderClaims.set(orderId, claim);
+      socket.to("room:pos").emit("online_order:claimed", claimPayload(claim));
+      console.log(`🔒 Pedido en línea ${orderId} apartado por ${claim.by ?? deviceId}`);
+    });
+
+    socket.on("online_order:release", (payload: any) => {
+      const claim = onlineOrderClaims.get(typeof payload?.orderId === "string" ? payload.orderId : "");
+      if (claim && claim.deviceId === payload?.deviceId) releaseOnlineOrderClaim(claim.orderId, "lo soltó");
     });
     
     // Relay customer display updates from POS to display iPad
@@ -22,6 +91,10 @@ export function initSocket(socketServer: SocketServer) {
     
     socket.on("disconnect", () => {
       console.log(`🔌 Client disconnected: ${socket.id}`);
+      // Si el POS que lo tenía se cae (sin batería, sin wifi), los demás vuelven a sonar.
+      for (const claim of [...onlineOrderClaims.values()]) {
+        if (claim.socketId === socket.id) releaseOnlineOrderClaim(claim.orderId, "se desconectó");
+      }
     });
   });
 }

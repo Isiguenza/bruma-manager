@@ -7,6 +7,11 @@ import AVFoundation
 class POSViewModel: ObservableObject {
     // MARK: - Pedidos en línea (pantalla verde)
     @Published var incomingOnlineOrder: Order?
+    /// Pedidos en línea que OTRO dispositivo está revisando: aquí no suenan ni se muestran.
+    private var onlineOrdersClaimedElsewhere: Set<String> = []
+    /// El pedido que ESTE dispositivo tiene abierto en aceptar/rechazar.
+    private var reviewingOnlineOrderId: String?
+    private var onlineOrderPresentedAt: Date?
     private var onlineOrderAudioPlayer: AVAudioPlayer?
     /// Poll de respaldo: reconstruye la pantalla verde aunque se pierda el
     /// evento de socket (reconexión, app en background, iPad dormido).
@@ -904,8 +909,25 @@ class POSViewModel: ObservableObject {
             }
         }
 
+        socketService.onOnlineOrderClaimedElsewhere = { [weak self] orderId, by in
+            Task { @MainActor in self?.handleOnlineOrderClaimedElsewhere(orderId, by: by) }
+        }
+        socketService.onOnlineOrderReleased = { [weak self] orderId in
+            Task { @MainActor in self?.handleOnlineOrderReleased(orderId) }
+        }
+        socketService.onOnlineOrderResolved = { [weak self] orderId in
+            Task { @MainActor in self?.handleOnlineOrderResolved(orderId) }
+        }
+
         socketService.onReconnect = { [weak self] in
             Task { @MainActor in
+                // Mientras estuvo caído pudo perderse un "liberado". El servidor
+                // reenvía los apartados vigentes al reentrar a room:pos, y el
+                // nuestro se soltó al desconectarnos: se vuelve a pedir.
+                self?.onlineOrdersClaimedElsewhere.removeAll()
+                if let orderId = self?.reviewingOnlineOrderId {
+                    SocketService.shared.emitOnlineOrderClaim(orderId: orderId, by: self?.employeeName)
+                }
                 self?.flowGraphCache.removeAll()
                 self?.productsWithoutFlowGraph.removeAll()
                 await self?.reconcilePendingOnlineOrders()
@@ -3188,9 +3210,13 @@ class POSViewModel: ObservableObject {
     /// el sonido; si es otro, lo cambia. Agenda además el aviso local por si el
     /// iPad está con la app en segundo plano.
     func presentOnlineOrder(_ order: Order) {
+        // Otro dispositivo ya lo está revisando: aquí ni suena ni aparece. Cubre
+        // también los recordatorios del servidor y el poll de respaldo.
+        guard !onlineOrdersClaimedElsewhere.contains(order.id) else { return }
         let alreadyShowing = incomingOnlineOrder?.id == order.id
         incomingOnlineOrder = order
         if !alreadyShowing {
+            onlineOrderPresentedAt = Date()
             startOnlineOrderSound()
         }
         LocalNotificationManager.shared.schedulePendingOnlineOrder(
@@ -3224,7 +3250,18 @@ class POSViewModel: ObservableObject {
         guard employeeId != nil else { return } // sin sesión iniciada, nada que hacer
         guard let pending = try? await APIService.shared.fetchPendingOnlineOrders() else { return }
 
-        if let first = pending.first {
+        let pendingIds = Set(pending.map(\.id))
+        // Un apartado de un pedido que ya no está pendiente es basura.
+        onlineOrdersClaimedElsewhere.formIntersection(pendingIds)
+        // Se estaba mostrando uno que ya atendieron en otro lado y el aviso por
+        // socket se perdió: antes seguía sonando hasta que alguien lo tocaba. Los
+        // 10s evitan cerrar uno que acaba de caer y aún no sale en esta consulta.
+        if let shown = incomingOnlineOrder, !pendingIds.contains(shown.id),
+           Date().timeIntervalSince(onlineOrderPresentedAt ?? .distantPast) > 10 {
+            dismissOnlineOrder()
+        }
+
+        if let first = pending.first(where: { !onlineOrdersClaimedElsewhere.contains($0.id) }) {
             if incomingOnlineOrder == nil {
                 print("🟢 [reconcile] pedido en línea sin atender #\(first.orderNumber) — mostrando pantalla verde")
                 presentOnlineOrder(first)
@@ -3258,8 +3295,56 @@ class POSViewModel: ObservableObject {
         onlineOrderAudioPlayer = nil
     }
 
+    // MARK: Pedido en línea apartado entre dispositivos
+
+    /// Este dispositivo entra a la pantalla de aceptar/rechazar: deja de sonar
+    /// aquí y avisa a los demás POS para que se callen y quiten la pantalla verde.
+    func beginReviewingOnlineOrder(_ order: Order) {
+        reviewingOnlineOrderId = order.id
+        stopOnlineOrderSound()
+        SocketService.shared.emitOnlineOrderClaim(orderId: order.id, by: employeeName)
+    }
+
+    /// Se salió de la revisión sin decidir (venció el tiempo): vuelve a sonar
+    /// aquí y el servidor libera el pedido para que suene en todos.
+    func endReviewingOnlineOrder(_ order: Order) {
+        guard reviewingOnlineOrderId == order.id else { return }
+        reviewingOnlineOrderId = nil
+        SocketService.shared.emitOnlineOrderRelease(orderId: order.id)
+        startOnlineOrderSound()
+    }
+
+    private func handleOnlineOrderClaimedElsewhere(_ orderId: String, by: String?) {
+        onlineOrdersClaimedElsewhere.insert(orderId)
+        guard incomingOnlineOrder?.id == orderId else { return }
+        // Incluye el empate: si aquí también se estaba revisando, ganó el otro.
+        reviewingOnlineOrderId = nil
+        stopOnlineOrderSound()
+        incomingOnlineOrder = nil
+        LocalNotificationManager.shared.clearPendingOnlineOrder()
+        let who = by.flatMap { $0.isEmpty ? nil : $0 } ?? "Otro dispositivo"
+        showToast("\(who) ya está revisando el pedido en línea")
+    }
+
+    private func handleOnlineOrderReleased(_ orderId: String) {
+        onlineOrdersClaimedElsewhere.remove(orderId)
+        // Si sigue pendiente, la consulta lo trae de vuelta con sonido.
+        Task { await reconcilePendingOnlineOrders() }
+    }
+
+    private func handleOnlineOrderResolved(_ orderId: String) {
+        onlineOrdersClaimedElsewhere.remove(orderId)
+        if incomingOnlineOrder?.id == orderId { dismissOnlineOrder() }
+    }
+
     /// Cierra la pantalla verde y detiene el sonido.
     func dismissOnlineOrder() {
+        if let orderId = reviewingOnlineOrderId {
+            // Por si se cerró sin que el pedido quedara resuelto (falló el aceptar):
+            // soltarlo deja que los demás vuelvan a sonar. Si ya se resolvió, no hace nada.
+            reviewingOnlineOrderId = nil
+            SocketService.shared.emitOnlineOrderRelease(orderId: orderId)
+        }
         stopOnlineOrderSound()
         incomingOnlineOrder = nil
         LocalNotificationManager.shared.clearPendingOnlineOrder()

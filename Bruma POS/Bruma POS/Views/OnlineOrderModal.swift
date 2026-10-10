@@ -106,14 +106,14 @@ struct OnlineOrderModal: View {
     // ni rechaza, vuelve a la pantalla verde y suena de nuevo.
     private func startReviewing() {
         reviewing = true
-        vm.stopOnlineOrderSound()
+        vm.beginReviewingOnlineOrder(order)
         reviewTimeout?.cancel()
         reviewTimeout = Task {
             try? await Task.sleep(nanoseconds: 120_000_000_000) // 2 minutos
             if Task.isCancelled { return }
             await MainActor.run {
                 reviewing = false
-                vm.startOnlineOrderSound()
+                vm.endReviewingOnlineOrder(order)
             }
         }
     }

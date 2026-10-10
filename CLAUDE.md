@@ -652,6 +652,19 @@ hay 4 capas, todas independientes:
    **Confirmar / Rechazar** apilados (`confirmOnlineOrderFromCart` /
    `rejectOnlineOrderFromCart`).
 
+**Un pedido en línea se "aparta" entre dispositivos (sockets, en memoria).**
+Cuando un POS entra a aceptar/rechazar emite `online_order:claim`; el servidor
+(`sockets/events.ts`, `onlineOrderClaims`) avisa `online_order:claimed` a los
+demás, que dejan de sonar y quitan la pantalla verde. Se libera
+(`online_order:released` → todos vuelven a sonar) si quien lo tenía lo suelta
+(vencen sus 2 min de revisión), **se desconecta** o pasan 150s. Al aceptar o
+rechazar sale `online_order:resolved` y todos cierran. Gana el primero que lo
+pide; a quien se conecta tarde se le reenvían los apartados al entrar a
+`room:pos`. El recordatorio de 60s se salta los pedidos apartados. La identidad
+es `SocketService.deviceId` (no el id del socket, que cambia al reconectar).
+Si agregas otra forma de resolver un pedido en línea, llama
+`emitOnlineOrderResolved`; el poll de 25s es solo la red de seguridad.
+
 ## Flujos v2: grafo con ramas, paquetes padre/hijo
 
 Reemplazó el motor lineal (`steps[]` + `currentStepIndex++`) por un **grafo

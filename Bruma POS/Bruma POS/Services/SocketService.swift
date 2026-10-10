@@ -26,6 +26,15 @@ class SocketService: ObservableObject {
     var onReservationNew: (() -> Void)?
     var onPromotionsUpdated: (() -> Void)?
     var onFlowsUpdated: (() -> Void)?
+    /// Otro dispositivo entró a revisar el pedido (id, quién). Nunca se dispara por uno mismo.
+    var onOnlineOrderClaimedElsewhere: ((String, String?) -> Void)?
+    /// El pedido quedó libre otra vez: quien lo tenía lo soltó, se cayó o se tardó.
+    var onOnlineOrderReleased: ((String) -> Void)?
+    /// El pedido ya se aceptó o rechazó en algún dispositivo.
+    var onOnlineOrderResolved: ((String) -> Void)?
+    /// Identidad de ESTA instalación en ejecución, para distinguir "lo aparté yo"
+    /// de "lo apartó otro" (el id del socket cambia en cada reconexión).
+    static let deviceId = UUID().uuidString
     /// Se dispara en cada RE-conexión (no en la primera) — momento ideal para
     /// re-sincronizar lo que se haya podido perder mientras el socket estuvo caído.
     var onReconnect: (() -> Void)?
@@ -107,6 +116,22 @@ class SocketService: ObservableObject {
             self?.onOnlineOrder?(dict)
         }
         
+        socket?.on("online_order:claimed") { [weak self] data, _ in
+            guard let dict = data.first as? [String: Any], let orderId = dict["orderId"] as? String,
+                  dict["deviceId"] as? String != Self.deviceId else { return }
+            self?.onOnlineOrderClaimedElsewhere?(orderId, dict["by"] as? String)
+        }
+
+        socket?.on("online_order:released") { [weak self] data, _ in
+            guard let orderId = (data.first as? [String: Any])?["orderId"] as? String else { return }
+            self?.onOnlineOrderReleased?(orderId)
+        }
+
+        socket?.on("online_order:resolved") { [weak self] data, _ in
+            guard let orderId = (data.first as? [String: Any])?["orderId"] as? String else { return }
+            self?.onOnlineOrderResolved?(orderId)
+        }
+
         socket?.on("order:rush") { [weak self] data, ack in
             guard let dict = data.first as? [String: Any],
                   let orderId = dict["id"] as? String else {
@@ -209,6 +234,14 @@ class SocketService: ObservableObject {
         print("📺 Joined room: customer_display")
     }
     
+    func emitOnlineOrderClaim(orderId: String, by: String?) {
+        socket?.emit("online_order:claim", ["orderId": orderId, "deviceId": Self.deviceId, "by": by ?? ""])
+    }
+
+    func emitOnlineOrderRelease(orderId: String) {
+        socket?.emit("online_order:release", ["orderId": orderId, "deviceId": Self.deviceId])
+    }
+
     func emitCustomerDisplayUpdate(_ payload: [String: Any]) {
         socket?.emit("customer_display:update", payload)
     }
