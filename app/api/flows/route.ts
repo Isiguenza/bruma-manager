@@ -30,10 +30,11 @@ export async function POST(request: NextRequest) {
       scopeKind,
       priority: typeof body.priority === "number" ? body.priority : 0,
       active: typeof body.active === "boolean" ? body.active : true,
+      parentFlowId: typeof body.parentFlowId === "string" ? body.parentFlowId : null,
     }).returning({ id: flowDefinitions.id })
     await db.insert(flowNodes).values({
       flowId: definition.id,
-      title: "Inicio",
+      title: typeof body.firstStepTitle === "string" && body.firstStepTitle.trim() ? body.firstStepTitle.trim() : "Inicio",
       isEntry: true,
       sortOrder: 0,
     })

@@ -38,6 +38,12 @@ const asNumber = (value: unknown, fallback = 0) => {
 const asBoolean = (value: unknown, fallback: boolean) =>
   typeof value === "boolean" ? value : fallback
 
+/** Empty lists are stored as NULL so "nothing hidden" has a single representation. */
+const stringList = (value: unknown) => {
+  const list = Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string" && item.length > 0))] : []
+  return list.length > 0 ? list : null
+}
+
 const asArray = (value: unknown): JsonObject[] =>
   Array.isArray(value) ? value.filter((item): item is JsonObject => item !== null && typeof item === "object") : []
 
@@ -65,6 +71,7 @@ function presentTarget(target: any) {
     categoryId: target.categoryId,
     subcategoryId: target.subcategoryId,
     productId: target.productId,
+    variantName: target.variantName,
     targetKind: label.kind,
     targetName: label.name,
   }
@@ -103,6 +110,7 @@ export async function getFlow(id: string) {
       scopeKind: flow.scopeKind,
       priority: flow.priority,
       active: flow.active,
+      parentFlowId: flow.parentFlowId,
       createdAt: flow.createdAt,
       updatedAt: flow.updatedAt,
     },
@@ -115,6 +123,8 @@ export async function getFlow(id: string) {
       })),
     })),
     edges: flow.edges,
+    // Subflujos propios: viven dentro de este flujo y solo se alcanzan por referencia.
+    subflows: await db.select({ id: flowDefinitions.id, name: flowDefinitions.name, active: flowDefinitions.active }).from(flowDefinitions).where(eq(flowDefinitions.parentFlowId, id)).orderBy(asc(flowDefinitions.name)),
   }
 }
 
@@ -141,6 +151,7 @@ export async function listFlows() {
     scopeKind: flow.scopeKind,
     priority: flow.priority,
     active: flow.active,
+    parentFlowId: flow.parentFlowId,
     nodeCount: flow.nodes.length,
     targets: flow.targets.map(presentTarget),
   }))
@@ -157,6 +168,9 @@ export function validateTargets(targets: JsonObject[]) {
       .filter((reference) => typeof reference === "string" && reference.length > 0)
     if (references.length !== 1) {
       problems.push(`targets[${index}] debe tener exactamente uno de categoryId, subcategoryId o productId.`)
+    }
+    if (typeof target.variantName === "string" && (target.mode !== "exclude" || typeof target.productId !== "string")) {
+      problems.push(`targets[${index}].variantName solo aplica a un exclude de producto.`)
     }
     if (!targetModes.includes(target.mode as (typeof targetModes)[number])) {
       problems.push(`targets[${index}].mode debe ser include o exclude.`)
@@ -335,6 +349,10 @@ export async function replaceGraph(flowId: string, value: unknown): Promise<{ pr
         refVariantName: asNullableString(option.refVariantName),
         allowVariantChoice: asBoolean(option.allowVariantChoice, false),
         variantPriceDeltas: option.variantPriceDeltas && typeof option.variantPriceDeltas === "object" && !Array.isArray(option.variantPriceDeltas) ? option.variantPriceDeltas : null,
+        hiddenRefs: stringList(option.hiddenRefs),
+        childFlowMode: option.childFlowMode === "none" || option.childFlowMode === "custom" ? option.childFlowMode : "inherit",
+        childFlowId: option.childFlowMode === "custom" ? asNullableString(option.childFlowId) : null,
+        subflowHiddenRefs: stringList(option.subflowHiddenRefs),
         priceMode: option.priceMode === "free" || option.priceMode === "product_price" ? option.priceMode as "free" | "product_price" : "delta" as const,
         priceDelta: String(asNumber(option.priceDelta)),
         emitsChildItem: asBoolean(option.emitsChildItem, false),
@@ -376,6 +394,7 @@ export async function replaceTargets(flowId: string, targets: JsonObject[]) {
     categoryId: asNullableString(target.categoryId),
     subcategoryId: asNullableString(target.subcategoryId),
     productId: asNullableString(target.productId),
+    variantName: asNullableString(target.variantName),
   }))
   await db.batch([
     db.delete(flowTargets).where(eq(flowTargets.flowId, flowId)),

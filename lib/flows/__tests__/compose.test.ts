@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 
 import { composeFlowGraph } from "../compose"
+import { nextNode } from "../engine"
+import type { FlowContext, FlowGraph } from "../types"
 
 interface Vector {
   name: string
@@ -61,6 +63,26 @@ export function runComposeVectors(): number {
   assert.ok(variantNode, "la variante debe splicearse antes del subflujo del producto")
   assert.equal(variantBeforeChildFlow.edges.find((edge) => edge.fromNodeId === "drink" && edge.fromOptionId === "pepsi-option")?.toNodeId, variantNode.id)
   assert.equal(variantBeforeChildFlow.edges.find((edge) => edge.fromNodeId === variantNode.id)?.toNodeId, "prepared:sub:pepsi-option")
+
+  // The compiled gates only mean something once the real engine walks them.
+  const graph = (name: string) => vectors.find((vector) => vector.name === name)!.expected as FlowGraph
+  const ctx = (variantName: string | null, pathOptionIds: string[] = []): FlowContext => ({ productId: "x", categoryId: null, subcategoryId: null, variantName, flowTags: [], pathOptionIds })
+  const walk = (flow: FlowGraph, from: string, selected: string[], variantName: string | null = null) => {
+    const visited: string[] = []
+    for (let id = nextNode(flow, from, selected, ctx(variantName, selected)); id !== null; id = nextNode(flow, id, [], ctx(variantName, selected))) visited.push(id)
+    return visited
+  }
+  const gated = graph("variante-excluida-compila-una-compuerta-que-salta-el-flujo")
+  assert.deepEqual(walk(gated, "salsa-node", [], "Pieza"), [], "la variante excluida salta el flujo")
+  assert.deepEqual(walk(gated, "salsa-node", [], "Orden de 3 "), ["gate"], "el nombre de variante se compara tal cual viene guardado")
+  const multi = graph("host-multi-encadena-el-subflujo-de-cada-opcion-elegida")
+  assert.deepEqual(walk(multi, "drink", ["pepsi-option", "agua-option"]), ["prepared:sub:pepsi-option", "prepared:sub:agua-option", "dessert"])
+  assert.deepEqual(walk(multi, "drink", ["agua-option"]), ["prepared:sub:agua-option", "dessert"])
+  assert.deepEqual(walk(multi, "drink", []), ["dessert"])
+  const nested = graph("subflujo-propio-en-opcion-manual-y-anidado")
+  assert.deepEqual(walk(nested, "base", ["res"]), ["termino-node:sub:res"])
+  assert.equal(nextNode(nested, "termino-node:sub:res", ["medio:sub:res"], ctx(null)), "extra-node:sub:medio:sub:res")
+  assert.deepEqual(walk(nested, "base", ["pollo"]), [])
   return vectors.length
 }
 

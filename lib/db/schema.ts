@@ -298,6 +298,8 @@ export const flowDefinitions = pgTable("flow_definitions", {
   scopeKind: flowScopeKindEnum("scope_kind").notNull(),
   priority: integer("priority").notNull().default(0),
   active: boolean("active").notNull().default(true),
+  // Subflujo propio de otro flujo: nunca aplica por targets, solo por referencia.
+  parentFlowId: uuid("parent_flow_id").references((): AnyPgColumn => flowDefinitions.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -309,6 +311,8 @@ export const flowTargets = pgTable("flow_targets", {
   categoryId: uuid("category_id").references(() => categories.id, { onDelete: "cascade" }),
   subcategoryId: uuid("subcategory_id").references(() => subcategories.id, { onDelete: "cascade" }),
   productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }),
+  // Solo junto a productId y mode "exclude": saca una variante puntual del flujo.
+  variantName: varchar("variant_name", { length: 255 }),
 });
 
 export const flowNodes = pgTable("flow_nodes", {
@@ -339,6 +343,11 @@ export const flowNodeOptions = pgTable("flow_node_options", {
   refVariantName: varchar("ref_variant_name", { length: 255 }),
   allowVariantChoice: boolean("allow_variant_choice").notNull().default(false),
   variantPriceDeltas: jsonb("variant_price_deltas"),
+  // Lista de ocultos: ["<productId>", "<productId>::<variante>"].
+  hiddenRefs: jsonb("hidden_refs"),
+  childFlowMode: varchar("child_flow_mode", { length: 16 }).notNull().default("inherit"),
+  childFlowId: uuid("child_flow_id").references(() => flowDefinitions.id, { onDelete: "set null" }),
+  subflowHiddenRefs: jsonb("subflow_hidden_refs"),
   priceMode: flowPriceModeEnum("price_mode").notNull().default("delta"),
   priceDelta: decimal("price_delta", { precision: 10, scale: 2 }).notNull().default("0"),
   emitsChildItem: boolean("emits_child_item").notNull().default(false),
