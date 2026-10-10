@@ -180,7 +180,11 @@ struct OrderItem: Codable, Identifiable {
 }
 
 struct CartItem: Identifiable, Codable {
-    let id = UUID()
+    // `var`, no `let`: un `let` con valor inicial NO se decodifica, así que cada
+    // platillo recuperado de un borrador nacía con id nuevo mientras sus hijos
+    // conservaban `parentLocalId` apuntando al id viejo. El paquete quedaba roto:
+    // borrar el padre dejaba a los hijos en el carrito.
+    private(set) var id = UUID()
     let productId: String
     let productName: String
     var unitPrice: Double

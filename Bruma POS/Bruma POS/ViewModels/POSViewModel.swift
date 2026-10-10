@@ -2751,11 +2751,16 @@ class POSViewModel: ObservableObject {
             cart.compactMap { item in item.itemId.map { ($0, item.id) } },
             uniquingKeysWith: { first, _ in first }
         )
+        let liveIds = Set(cart.map(\.id))
         var restored = cart
         var changed = false
-        for index in restored.indices where restored[index].parentLocalId == nil {
+        // También repara un enlace que apunta a un padre que ya no existe con ese
+        // id (no solo el que falta): un hijo colgado de un id muerto no se borra
+        // con su padre.
+        for index in restored.indices where restored[index].parentLocalId.map({ !liveIds.contains($0) }) ?? true {
             guard let parentOrderItemId = restored[index].parentOrderItemId,
-                  let parentLocalId = localParentIds[parentOrderItemId] else { continue }
+                  let parentLocalId = localParentIds[parentOrderItemId],
+                  restored[index].parentLocalId != parentLocalId else { continue }
             restored[index].parentLocalId = parentLocalId
             changed = true
         }

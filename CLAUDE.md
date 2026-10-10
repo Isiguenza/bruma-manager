@@ -765,6 +765,16 @@ anterior en `notesDraftsByItem` y apunta `pendingCartItem` al hijo, que es lo
 que las vistas ya usan para filtrar notas rápidas. No hizo falta tocar API ni
 impresión: cada `order_item` ya viajaba con su `notes`.
 
+**`CartItem.id` es `var`, no `let` — de eso depende que un paquete siga unido.**
+Un `let id = UUID()` en un struct `Codable` se codifica pero NO se decodifica
+(el compilador solo avisa con un warning). Al recuperar un borrador local
+(`CartDraftStore`) cada platillo nacía con id nuevo y los hijos conservaban
+`parentLocalId` con el id viejo: borrar el padre dejaba a los hijos en el
+carrito y la primera rama conectora desaparecía. Todo lo que agrupa un paquete
+en el carrito (`removeCartGroup`, `cartRenderElements`, la rama de
+`CartItemRow`) compara `parentLocalId` contra `id`; si vuelve a fallar algo de
+paquetes tras salir y volver a una mesa, revisa primero esa igualdad.
+
 **Tres copias a mano que hay que mantener en sync (el repo ya vivía así):**
 `lib/flows/compose.ts` ↔ `api-server/src/lib/flowCompose.ts` (duplicadas porque
 `api-server` es un proyecto TS aparte, `rootDir:"."`, que no puede importar de la

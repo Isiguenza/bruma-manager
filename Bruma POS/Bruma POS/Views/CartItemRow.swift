@@ -38,8 +38,8 @@ private struct PackageConnector: Shape {
 }
 
 struct CartItemRow: View {
-    /// Índigo sólido: el naranja ya significa "pendiente de enviar" en este carrito.
-    private static let packageColor = Color.indigo
+    /// Azul sólido: el naranja ya significa "pendiente de enviar" en este carrito.
+    private static let packageColor = Color.blue
     private static let packageHeaderHeight: CGFloat = 30
     /// Ancho del canal donde corre la rama, a la izquierda de cada hijo.
     private static let packageIndent: CGFloat = 30
@@ -60,10 +60,12 @@ struct CartItemRow: View {
     /// sentido si arriba está su padre o un hermano; si el carrito los separó,
     /// se cae al texto "Paquete: …".
     private var packageLink: (attached: Bool, isLast: Bool) {
-        guard let parentId = item.parentLocalId, let position = vm.cart.firstIndex(where: { $0.id == item.id }) else { return (false, true) }
-        let previous = position > 0 ? vm.cart[position - 1] : nil
-        let next = position + 1 < vm.cart.count ? vm.cart[position + 1] : nil
-        return (previous?.id == parentId || previous?.parentLocalId == parentId, next?.parentLocalId != parentId)
+        // No se mira la vecindad en `vm.cart`: al reabrir una orden vienen todos los
+        // padres y luego todos los hijos. `cartRenderElements` es quien pinta a
+        // cada hijo justo debajo de su padre, en este mismo orden de hermanos.
+        guard let parentId = item.parentLocalId, vm.cart.contains(where: { $0.id == parentId }) else { return (false, true) }
+        let lastSibling = vm.cart.last(where: { $0.parentLocalId == parentId })
+        return (true, lastSibling?.id == item.id)
     }
     
     var body: some View {
