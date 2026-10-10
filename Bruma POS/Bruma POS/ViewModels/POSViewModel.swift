@@ -2457,6 +2457,14 @@ class POSViewModel: ObservableObject {
         )
     }
 
+    /// El socket es la vía rápida, pero un dispositivo en segundo plano se
+    /// pierde `flows:updated` y se quedaba con precios viejos hasta relanzar.
+    /// No toca `flowGraph`: un flujo a medio armar termina con su grafo.
+    func invalidateFlowGraphCache() {
+        flowGraphCache.removeAll()
+        productsWithoutFlowGraph.removeAll()
+    }
+
     private func graphForProduct(_ product: Product) async -> FlowGraph? {
         if let cached = flowGraphCache[product.id] { return cached }
         if productsWithoutFlowGraph.contains(product.id) { return nil }

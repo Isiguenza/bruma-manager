@@ -51,6 +51,8 @@ struct ComandasRootView: View {
             // pedir el PIN de nuevo, sin esperar los 3 min de inactividad.
             if phase == .background {
                 sessionLock.lockNow()
+            } else if phase == .active {
+                vm.invalidateFlowGraphCache()
             }
         }
         .onAppear {

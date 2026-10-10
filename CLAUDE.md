@@ -750,6 +750,26 @@ de iOS lo manda a `default: EmptyView()` y el paso se renderiza **vacío y sin
 error**. El valor correcto es `"custom"`, el único que se comporta bien en single
 y multi en los dos consumidores.
 
+**Un nodo sin salida termina SU flujo, no la composición.** `composeEdges`
+agrega una arista implícita al siguiente flujo para todo nodo sin aristas (y en
+instancias de subflujo, de regreso a las salidas del anfitrión). Antes cortaba
+todo en silencio: abrir `/inventory/products/[id]/flow` crea un flujo activo con
+un nodo "Inicio" vacío, y ese flujo de producto (que va primero por scope)
+escondió Paquete en Aguachile BRUMA. Para diagnosticar "a X no le sale el
+flujo", pide el grafo real: `GET /api/products/:id/flow?format=graph`.
+
+**Guardar un grafo es upsert por id, nunca delete + insert.**
+`order_item_selections` apunta a `flow_nodes`/`flow_node_options` con
+`ON DELETE SET NULL`: borrar y reinsertar la fila con el mismo id igual dispara
+el SET NULL y deja huérfano el historial (ya pasó: 80 selecciones sin
+`node_id`). `replaceGraph` solo borra lo que de verdad se quitó.
+
+**Precio de una opción = base + excepciones.** Un override solo aplica a la
+categoría/subcategoría/producto que nombra; una categoría nueva en los targets
+cae al `price_delta` base. "Hacer paquete" tenía base $0 con overrides de $50,
+así que Pescado y Especiales salían sin precio extra. El base debe ser el
+precio normal y los overrides las excepciones.
+
 **Soft delete de productos = `deleted_at` Y `active = false`.** El endpoint de
 productos del api-server **no filtra `deleted_at`** y el modelo `Product` de
 Swift ni conoce esa columna, así que un producto con solo `deleted_at` **sigue

@@ -51,6 +51,7 @@ struct ContentView: View {
         // atender (el socket pudo haberse perdido el evento mientras tanto).
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                vm.invalidateFlowGraphCache()
                 Task { await vm.reconcilePendingOnlineOrders() }
             } else if phase == .background {
                 // Se fue al Home del iPad — al volver a abrir la app debe

@@ -265,8 +265,8 @@
           "includeNoneOption": true,
           "noneLabel": null,
           "isEntry": true,
-          "options": [],
-          "childOwnerOptionId": null
+          "childOwnerOptionId": null,
+          "options": []
         },
         {
           "id": "subcategory-entry",
@@ -279,8 +279,8 @@
           "includeNoneOption": true,
           "noneLabel": null,
           "isEntry": true,
-          "options": [],
-          "childOwnerOptionId": null
+          "childOwnerOptionId": null,
+          "options": []
         },
         {
           "id": "category-entry",
@@ -293,8 +293,8 @@
           "includeNoneOption": true,
           "noneLabel": null,
           "isEntry": true,
-          "options": [],
-          "childOwnerOptionId": null
+          "childOwnerOptionId": null,
+          "options": []
         },
         {
           "id": "global-entry",
@@ -307,11 +307,33 @@
           "includeNoneOption": true,
           "noneLabel": null,
           "isEntry": true,
-          "options": [],
-          "childOwnerOptionId": null
+          "childOwnerOptionId": null,
+          "options": []
         }
       ],
-      "edges": []
+      "edges": [
+        {
+          "fromNodeId": "product-entry",
+          "fromOptionId": null,
+          "toNodeId": "subcategory-entry",
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "fromNodeId": "subcategory-entry",
+          "fromOptionId": null,
+          "toNodeId": "category-entry",
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "fromNodeId": "category-entry",
+          "fromOptionId": null,
+          "toNodeId": "global-entry",
+          "condition": null,
+          "sortOrder": 0
+        }
+      ]
     }
   },
   {
@@ -449,8 +471,8 @@
           "includeNoneOption": true,
           "noneLabel": null,
           "isEntry": true,
-          "options": [],
-          "childOwnerOptionId": null
+          "childOwnerOptionId": null,
+          "options": []
         },
         {
           "id": "alpha-entry",
@@ -463,8 +485,8 @@
           "includeNoneOption": true,
           "noneLabel": null,
           "isEntry": true,
-          "options": [],
-          "childOwnerOptionId": null
+          "childOwnerOptionId": null,
+          "options": []
         },
         {
           "id": "beta-entry",
@@ -477,11 +499,26 @@
           "includeNoneOption": true,
           "noneLabel": null,
           "isEntry": true,
-          "options": [],
-          "childOwnerOptionId": null
+          "childOwnerOptionId": null,
+          "options": []
         }
       ],
-      "edges": []
+      "edges": [
+        {
+          "fromNodeId": "low-entry",
+          "fromOptionId": null,
+          "toNodeId": "alpha-entry",
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "fromNodeId": "alpha-entry",
+          "fromOptionId": null,
+          "toNodeId": "beta-entry",
+          "condition": null,
+          "sortOrder": 0
+        }
+      ]
     }
   },
   {
@@ -1684,72 +1721,1451 @@
   {
     "name": "subflujo-hijo-single-se-splicea-y-retoma-salida-del-host",
     "input": {
-      "product": { "id": "plato", "categoryId": "platos", "subcategoryId": null },
-      "definitions": [{ "id": "host-flow", "name": "Paquete", "scopeKind": "product", "priority": 0, "active": true }, { "id": "drink-flow", "name": "Bebida preparada", "scopeKind": "product", "priority": 0, "active": true }],
-      "targets": [{ "flowId": "host-flow", "mode": "include", "productId": "plato" }, { "flowId": "drink-flow", "mode": "include", "productId": "agua" }],
-      "nodes": [{ "id": "drink", "flowId": "host-flow", "title": "Bebida", "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "isEntry": true, "active": true, "sortOrder": 0 }, { "id": "after", "flowId": "host-flow", "title": "Después", "selectMode": "single", "minSelections": 0, "maxSelections": 1, "includeNoneOption": true, "isEntry": false, "active": true, "sortOrder": 1 }, { "id": "prepared", "flowId": "drink-flow", "title": "Preparación", "selectMode": "single", "minSelections": 0, "maxSelections": 1, "includeNoneOption": true, "isEntry": true, "active": true, "sortOrder": 0 }],
-      "options": [{ "id": "agua-option", "nodeId": "drink", "label": "Agua", "source": "product", "priceMode": "free", "priceDelta": 0, "refProductId": "agua", "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": true, "active": true, "sortOrder": 0 }, { "id": "prepared-option", "nodeId": "prepared", "label": "Preparado", "source": "manual", "priceMode": "delta", "priceDelta": 5, "refProductId": null, "refVariantName": null, "allowVariantChoice": false, "emitsChildItem": false, "active": true, "sortOrder": 0 }],
+      "product": {
+        "id": "plato",
+        "categoryId": "platos",
+        "subcategoryId": null
+      },
+      "definitions": [
+        {
+          "id": "host-flow",
+          "name": "Paquete",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        },
+        {
+          "id": "drink-flow",
+          "name": "Bebida preparada",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        }
+      ],
+      "targets": [
+        {
+          "flowId": "host-flow",
+          "mode": "include",
+          "productId": "plato"
+        },
+        {
+          "flowId": "drink-flow",
+          "mode": "include",
+          "productId": "agua"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "drink",
+          "flowId": "host-flow",
+          "title": "Bebida",
+          "selectMode": "single",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "includeNoneOption": false,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        },
+        {
+          "id": "after",
+          "flowId": "host-flow",
+          "title": "Después",
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "isEntry": false,
+          "active": true,
+          "sortOrder": 1
+        },
+        {
+          "id": "prepared",
+          "flowId": "drink-flow",
+          "title": "Preparación",
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "options": [
+        {
+          "id": "agua-option",
+          "nodeId": "drink",
+          "label": "Agua",
+          "source": "product",
+          "priceMode": "free",
+          "priceDelta": 0,
+          "refProductId": "agua",
+          "refVariantName": null,
+          "allowVariantChoice": false,
+          "emitsChildItem": true,
+          "active": true,
+          "sortOrder": 0
+        },
+        {
+          "id": "prepared-option",
+          "nodeId": "prepared",
+          "label": "Preparado",
+          "source": "manual",
+          "priceMode": "delta",
+          "priceDelta": 5,
+          "refProductId": null,
+          "refVariantName": null,
+          "allowVariantChoice": false,
+          "emitsChildItem": false,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
       "overrides": [],
-      "edges": [{ "id": "host-exit", "flowId": "host-flow", "fromNodeId": "drink", "fromOptionId": "agua-option", "toNodeId": "after", "condition": null, "sortOrder": 0 }, { "id": "after-end", "flowId": "host-flow", "fromNodeId": "after", "fromOptionId": null, "toNodeId": null, "condition": null, "sortOrder": 0 }, { "id": "prepared-end", "flowId": "drink-flow", "fromNodeId": "prepared", "fromOptionId": "prepared-option", "toNodeId": null, "condition": null, "sortOrder": 0 }],
-      "products": [{ "id": "agua", "name": "Agua", "categoryId": "drinks", "price": 20, "variants": "[]", "active": true }], "categories": [{ "id": "drinks", "isBeverage": true }]
+      "edges": [
+        {
+          "id": "host-exit",
+          "flowId": "host-flow",
+          "fromNodeId": "drink",
+          "fromOptionId": "agua-option",
+          "toNodeId": "after",
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "id": "after-end",
+          "flowId": "host-flow",
+          "fromNodeId": "after",
+          "fromOptionId": null,
+          "toNodeId": null,
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "id": "prepared-end",
+          "flowId": "drink-flow",
+          "fromNodeId": "prepared",
+          "fromOptionId": "prepared-option",
+          "toNodeId": null,
+          "condition": null,
+          "sortOrder": 0
+        }
+      ],
+      "products": [
+        {
+          "id": "agua",
+          "name": "Agua",
+          "categoryId": "drinks",
+          "price": 20,
+          "variants": "[]",
+          "active": true
+        }
+      ],
+      "categories": [
+        {
+          "id": "drinks",
+          "isBeverage": true
+        }
+      ]
     },
     "expected": {
-      "productId": "plato", "format": "graph", "source": "composed", "flows": [{ "id": "host-flow", "name": "Paquete", "scopeKind": "product", "priority": 0 }, { "id": "drink-flow", "name": "Bebida preparada", "scopeKind": "product", "priority": 0 }], "entryNodeId": "drink",
-      "nodes": [{ "id": "drink", "flowId": "host-flow", "title": "Bebida", "subtitle": null, "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "noneLabel": null, "isEntry": true, "childOwnerOptionId": null, "options": [{ "id": "agua-option", "label": "Agua", "source": "product", "priceMode": "free", "effectivePrice": 0, "refProductId": "agua", "refCategoryId": null, "refVariantName": null, "refListPrice": 20, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true }] }, { "id": "after", "flowId": "host-flow", "title": "Después", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": 1, "includeNoneOption": true, "noneLabel": null, "isEntry": false, "childOwnerOptionId": null, "options": [] }, { "id": "prepared:sub:agua-option", "flowId": "drink-flow", "title": "Preparación", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": 1, "includeNoneOption": true, "noneLabel": null, "isEntry": false, "sourceNodeId": "prepared", "childOwnerOptionId": "agua-option", "options": [{ "id": "prepared-option:sub:agua-option", "sourceOptionId": "prepared-option", "label": "Preparado", "source": "manual", "priceMode": "delta", "effectivePrice": 5, "refProductId": null, "refCategoryId": null, "refVariantName": null, "refListPrice": null, "variantChoices": null, "emitsChildItem": false, "isBeverage": false }] }],
-      "edges": [{ "id": "host-exit", "fromNodeId": "drink", "fromOptionId": "agua-option", "toNodeId": "after", "condition": null, "sortOrder": 0 }, { "id": "after-end", "fromNodeId": "after", "fromOptionId": null, "toNodeId": null, "condition": null, "sortOrder": 0 }, { "id": "prepared-end:sub:agua-option:continue:host-exit", "fromNodeId": "prepared:sub:agua-option", "fromOptionId": "prepared-option:sub:agua-option", "toNodeId": "after", "condition": null, "sortOrder": 0 }, { "fromNodeId": "drink", "fromOptionId": "agua-option", "toNodeId": "prepared:sub:agua-option", "condition": null, "sortOrder": -1 }]
+      "productId": "plato",
+      "format": "graph",
+      "source": "composed",
+      "flows": [
+        {
+          "id": "host-flow",
+          "name": "Paquete",
+          "scopeKind": "product",
+          "priority": 0
+        },
+        {
+          "id": "drink-flow",
+          "name": "Bebida preparada",
+          "scopeKind": "product",
+          "priority": 0
+        }
+      ],
+      "entryNodeId": "drink",
+      "nodes": [
+        {
+          "id": "drink",
+          "flowId": "host-flow",
+          "title": "Bebida",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "includeNoneOption": false,
+          "noneLabel": null,
+          "isEntry": true,
+          "childOwnerOptionId": null,
+          "options": [
+            {
+              "id": "agua-option",
+              "label": "Agua",
+              "source": "product",
+              "priceMode": "free",
+              "effectivePrice": 0,
+              "refProductId": "agua",
+              "refCategoryId": null,
+              "refVariantName": null,
+              "refListPrice": 20,
+              "variantChoices": null,
+              "emitsChildItem": true,
+              "isBeverage": true,
+              "refProductActive": true
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "flowId": "host-flow",
+          "title": "Después",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": false,
+          "childOwnerOptionId": null,
+          "options": []
+        },
+        {
+          "id": "prepared:sub:agua-option",
+          "flowId": "drink-flow",
+          "title": "Preparación",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": false,
+          "sourceNodeId": "prepared",
+          "childOwnerOptionId": "agua-option",
+          "options": [
+            {
+              "id": "prepared-option:sub:agua-option",
+              "sourceOptionId": "prepared-option",
+              "label": "Preparado",
+              "source": "manual",
+              "priceMode": "delta",
+              "effectivePrice": 5,
+              "refProductId": null,
+              "refCategoryId": null,
+              "refVariantName": null,
+              "refListPrice": null,
+              "variantChoices": null,
+              "emitsChildItem": false,
+              "isBeverage": false
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "host-exit",
+          "fromNodeId": "drink",
+          "fromOptionId": "agua-option",
+          "toNodeId": "after",
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "id": "after-end",
+          "fromNodeId": "after",
+          "fromOptionId": null,
+          "toNodeId": null,
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "id": "prepared-end:sub:agua-option:continue:host-exit",
+          "fromNodeId": "prepared:sub:agua-option",
+          "fromOptionId": "prepared-option:sub:agua-option",
+          "toNodeId": "after",
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "fromNodeId": "drink",
+          "fromOptionId": "agua-option",
+          "toNodeId": "prepared:sub:agua-option",
+          "condition": null,
+          "sortOrder": -1
+        }
+      ]
     }
   },
   {
     "name": "subflujo-no-se-splicea-en-host-multi",
-    "input": { "product": { "id": "plato", "categoryId": "platos", "subcategoryId": null }, "definitions": [{ "id": "host", "name": "Host", "scopeKind": "product", "priority": 0, "active": true }, { "id": "child", "name": "Child", "scopeKind": "product", "priority": 0, "active": true }], "targets": [{ "flowId": "host", "mode": "include", "productId": "plato" }, { "flowId": "child", "mode": "include", "productId": "agua" }], "nodes": [{ "id": "host-node", "flowId": "host", "title": "Varias", "selectMode": "multi", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "isEntry": true, "active": true, "sortOrder": 0 }, { "id": "child-node", "flowId": "child", "title": "Nunca", "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "isEntry": true, "active": true, "sortOrder": 0 }], "options": [{ "id": "agua-option", "nodeId": "host-node", "label": "Agua", "source": "product", "priceMode": "free", "priceDelta": 0, "refProductId": "agua", "refVariantName": null, "emitsChildItem": true, "active": true, "sortOrder": 0 }], "overrides": [], "edges": [], "products": [{ "id": "agua", "name": "Agua", "categoryId": "drinks", "price": 20, "active": true }], "categories": [{ "id": "drinks", "isBeverage": true }] },
-    "expected": { "productId": "plato", "format": "graph", "source": "composed", "flows": [{ "id": "host", "name": "Host", "scopeKind": "product", "priority": 0 }], "entryNodeId": "host-node", "nodes": [{ "id": "host-node", "flowId": "host", "title": "Varias", "subtitle": null, "selectMode": "multi", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "childOwnerOptionId": null, "options": [{ "id": "agua-option", "label": "Agua", "source": "product", "priceMode": "free", "effectivePrice": 0, "refProductId": "agua", "refCategoryId": null, "refVariantName": null, "refListPrice": 20, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true }] }], "edges": [] }
+    "input": {
+      "product": {
+        "id": "plato",
+        "categoryId": "platos",
+        "subcategoryId": null
+      },
+      "definitions": [
+        {
+          "id": "host",
+          "name": "Host",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        },
+        {
+          "id": "child",
+          "name": "Child",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        }
+      ],
+      "targets": [
+        {
+          "flowId": "host",
+          "mode": "include",
+          "productId": "plato"
+        },
+        {
+          "flowId": "child",
+          "mode": "include",
+          "productId": "agua"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "host-node",
+          "flowId": "host",
+          "title": "Varias",
+          "selectMode": "multi",
+          "minSelections": 0,
+          "maxSelections": null,
+          "includeNoneOption": true,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        },
+        {
+          "id": "child-node",
+          "flowId": "child",
+          "title": "Nunca",
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": null,
+          "includeNoneOption": true,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "options": [
+        {
+          "id": "agua-option",
+          "nodeId": "host-node",
+          "label": "Agua",
+          "source": "product",
+          "priceMode": "free",
+          "priceDelta": 0,
+          "refProductId": "agua",
+          "refVariantName": null,
+          "emitsChildItem": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "overrides": [],
+      "edges": [],
+      "products": [
+        {
+          "id": "agua",
+          "name": "Agua",
+          "categoryId": "drinks",
+          "price": 20,
+          "active": true
+        }
+      ],
+      "categories": [
+        {
+          "id": "drinks",
+          "isBeverage": true
+        }
+      ]
+    },
+    "expected": {
+      "productId": "plato",
+      "format": "graph",
+      "source": "composed",
+      "flows": [
+        {
+          "id": "host",
+          "name": "Host",
+          "scopeKind": "product",
+          "priority": 0
+        }
+      ],
+      "entryNodeId": "host-node",
+      "nodes": [
+        {
+          "id": "host-node",
+          "flowId": "host",
+          "title": "Varias",
+          "subtitle": null,
+          "selectMode": "multi",
+          "minSelections": 0,
+          "maxSelections": null,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": true,
+          "childOwnerOptionId": null,
+          "options": [
+            {
+              "id": "agua-option",
+              "label": "Agua",
+              "source": "product",
+              "priceMode": "free",
+              "effectivePrice": 0,
+              "refProductId": "agua",
+              "refCategoryId": null,
+              "refVariantName": null,
+              "refListPrice": 20,
+              "variantChoices": null,
+              "emitsChildItem": true,
+              "isBeverage": true,
+              "refProductActive": true
+            }
+          ]
+        }
+      ],
+      "edges": []
+    }
   },
   {
     "name": "subflujo-ciclico-al-mismo-producto-se-corta",
-    "input": { "product": { "id": "a", "categoryId": "platos", "subcategoryId": null }, "definitions": [{ "id": "a-flow", "name": "A", "scopeKind": "product", "priority": 0, "active": true }], "targets": [{ "flowId": "a-flow", "mode": "include", "productId": "a" }], "nodes": [{ "id": "a-node", "flowId": "a-flow", "title": "A", "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "isEntry": true, "active": true, "sortOrder": 0 }], "options": [{ "id": "a-option", "nodeId": "a-node", "label": "A", "source": "product", "priceMode": "free", "priceDelta": 0, "refProductId": "a", "refVariantName": null, "emitsChildItem": true, "active": true, "sortOrder": 0 }], "overrides": [], "edges": [], "products": [{ "id": "a", "name": "A", "categoryId": "platos", "price": 10, "active": true }], "categories": [{ "id": "platos", "isBeverage": false }] },
-    "expected": { "productId": "a", "format": "graph", "source": "composed", "flows": [{ "id": "a-flow", "name": "A", "scopeKind": "product", "priority": 0 }], "entryNodeId": "a-node", "nodes": [{ "id": "a-node", "flowId": "a-flow", "title": "A", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "childOwnerOptionId": null, "options": [{ "id": "a-option", "label": "A", "source": "product", "priceMode": "free", "effectivePrice": 0, "refProductId": "a", "refCategoryId": null, "refVariantName": null, "refListPrice": 10, "variantChoices": null, "emitsChildItem": true, "isBeverage": false, "refProductActive": true }] }], "edges": [] }
+    "input": {
+      "product": {
+        "id": "a",
+        "categoryId": "platos",
+        "subcategoryId": null
+      },
+      "definitions": [
+        {
+          "id": "a-flow",
+          "name": "A",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        }
+      ],
+      "targets": [
+        {
+          "flowId": "a-flow",
+          "mode": "include",
+          "productId": "a"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "a-node",
+          "flowId": "a-flow",
+          "title": "A",
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": null,
+          "includeNoneOption": true,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "options": [
+        {
+          "id": "a-option",
+          "nodeId": "a-node",
+          "label": "A",
+          "source": "product",
+          "priceMode": "free",
+          "priceDelta": 0,
+          "refProductId": "a",
+          "refVariantName": null,
+          "emitsChildItem": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "overrides": [],
+      "edges": [],
+      "products": [
+        {
+          "id": "a",
+          "name": "A",
+          "categoryId": "platos",
+          "price": 10,
+          "active": true
+        }
+      ],
+      "categories": [
+        {
+          "id": "platos",
+          "isBeverage": false
+        }
+      ]
+    },
+    "expected": {
+      "productId": "a",
+      "format": "graph",
+      "source": "composed",
+      "flows": [
+        {
+          "id": "a-flow",
+          "name": "A",
+          "scopeKind": "product",
+          "priority": 0
+        }
+      ],
+      "entryNodeId": "a-node",
+      "nodes": [
+        {
+          "id": "a-node",
+          "flowId": "a-flow",
+          "title": "A",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": null,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": true,
+          "childOwnerOptionId": null,
+          "options": [
+            {
+              "id": "a-option",
+              "label": "A",
+              "source": "product",
+              "priceMode": "free",
+              "effectivePrice": 0,
+              "refProductId": "a",
+              "refCategoryId": null,
+              "refVariantName": null,
+              "refListPrice": 10,
+              "variantChoices": null,
+              "emitsChildItem": true,
+              "isBeverage": false,
+              "refProductActive": true
+            }
+          ]
+        }
+      ],
+      "edges": []
+    }
   },
   {
     "name": "hijo-sin-flujo-conserva-grafo-actual",
-    "input": { "product": { "id": "plato", "categoryId": "platos", "subcategoryId": null }, "definitions": [{ "id": "host", "name": "Host", "scopeKind": "product", "priority": 0, "active": true }], "targets": [{ "flowId": "host", "mode": "include", "productId": "plato" }], "nodes": [{ "id": "host-node", "flowId": "host", "title": "Hijo", "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "isEntry": true, "active": true, "sortOrder": 0 }], "options": [{ "id": "agua-option", "nodeId": "host-node", "label": "Agua", "source": "product", "priceMode": "free", "priceDelta": 0, "refProductId": "agua", "refVariantName": null, "emitsChildItem": true, "active": true, "sortOrder": 0 }], "overrides": [], "edges": [], "products": [{ "id": "agua", "name": "Agua", "categoryId": "drinks", "price": 20, "active": true }], "categories": [{ "id": "drinks", "isBeverage": true }] },
-    "expected": { "productId": "plato", "format": "graph", "source": "composed", "flows": [{ "id": "host", "name": "Host", "scopeKind": "product", "priority": 0 }], "entryNodeId": "host-node", "nodes": [{ "id": "host-node", "flowId": "host", "title": "Hijo", "subtitle": null, "selectMode": "single", "minSelections": 0, "maxSelections": null, "includeNoneOption": true, "noneLabel": null, "isEntry": true, "childOwnerOptionId": null, "options": [{ "id": "agua-option", "label": "Agua", "source": "product", "priceMode": "free", "effectivePrice": 0, "refProductId": "agua", "refCategoryId": null, "refVariantName": null, "refListPrice": 20, "variantChoices": null, "emitsChildItem": true, "isBeverage": true, "refProductActive": true }] }], "edges": [] }
+    "input": {
+      "product": {
+        "id": "plato",
+        "categoryId": "platos",
+        "subcategoryId": null
+      },
+      "definitions": [
+        {
+          "id": "host",
+          "name": "Host",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        }
+      ],
+      "targets": [
+        {
+          "flowId": "host",
+          "mode": "include",
+          "productId": "plato"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "host-node",
+          "flowId": "host",
+          "title": "Hijo",
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": null,
+          "includeNoneOption": true,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "options": [
+        {
+          "id": "agua-option",
+          "nodeId": "host-node",
+          "label": "Agua",
+          "source": "product",
+          "priceMode": "free",
+          "priceDelta": 0,
+          "refProductId": "agua",
+          "refVariantName": null,
+          "emitsChildItem": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "overrides": [],
+      "edges": [],
+      "products": [
+        {
+          "id": "agua",
+          "name": "Agua",
+          "categoryId": "drinks",
+          "price": 20,
+          "active": true
+        }
+      ],
+      "categories": [
+        {
+          "id": "drinks",
+          "isBeverage": true
+        }
+      ]
+    },
+    "expected": {
+      "productId": "plato",
+      "format": "graph",
+      "source": "composed",
+      "flows": [
+        {
+          "id": "host",
+          "name": "Host",
+          "scopeKind": "product",
+          "priority": 0
+        }
+      ],
+      "entryNodeId": "host-node",
+      "nodes": [
+        {
+          "id": "host-node",
+          "flowId": "host",
+          "title": "Hijo",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": null,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": true,
+          "childOwnerOptionId": null,
+          "options": [
+            {
+              "id": "agua-option",
+              "label": "Agua",
+              "source": "product",
+              "priceMode": "free",
+              "effectivePrice": 0,
+              "refProductId": "agua",
+              "refCategoryId": null,
+              "refVariantName": null,
+              "refListPrice": 20,
+              "variantChoices": null,
+              "emitsChildItem": true,
+              "isBeverage": true,
+              "refProductActive": true
+            }
+          ]
+        }
+      ],
+      "edges": []
+    }
   },
   {
     "name": "subflujo-no-reentra-flujo-ya-activo",
     "input": {
-      "product": { "id": "camarones", "categoryId": "camarones", "subcategoryId": null },
-      "definitions": [{ "id": "package", "name": "Paquete", "scopeKind": "product", "priority": 0, "active": true }],
-      "targets": [{ "flowId": "package", "mode": "include", "productId": "camarones" }, { "flowId": "package", "mode": "include", "categoryId": "pescado" }],
-      "nodes": [{ "id": "entrada", "flowId": "package", "title": "Entrada", "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "isEntry": true, "active": true, "sortOrder": 0 }],
-      "options": [{ "id": "pescadito", "nodeId": "entrada", "label": "Pescadito", "source": "product", "priceMode": "free", "priceDelta": 0, "refProductId": "pescadito", "refVariantName": null, "emitsChildItem": true, "active": true, "sortOrder": 0 }],
-      "overrides": [], "edges": [],
-      "products": [{ "id": "pescadito", "name": "Pescadito", "categoryId": "pescado", "price": 89, "active": true }],
-      "categories": [{ "id": "pescado", "isBeverage": false }]
+      "product": {
+        "id": "camarones",
+        "categoryId": "camarones",
+        "subcategoryId": null
+      },
+      "definitions": [
+        {
+          "id": "package",
+          "name": "Paquete",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        }
+      ],
+      "targets": [
+        {
+          "flowId": "package",
+          "mode": "include",
+          "productId": "camarones"
+        },
+        {
+          "flowId": "package",
+          "mode": "include",
+          "categoryId": "pescado"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "entrada",
+          "flowId": "package",
+          "title": "Entrada",
+          "selectMode": "single",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "includeNoneOption": false,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "options": [
+        {
+          "id": "pescadito",
+          "nodeId": "entrada",
+          "label": "Pescadito",
+          "source": "product",
+          "priceMode": "free",
+          "priceDelta": 0,
+          "refProductId": "pescadito",
+          "refVariantName": null,
+          "emitsChildItem": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "overrides": [],
+      "edges": [],
+      "products": [
+        {
+          "id": "pescadito",
+          "name": "Pescadito",
+          "categoryId": "pescado",
+          "price": 89,
+          "active": true
+        }
+      ],
+      "categories": [
+        {
+          "id": "pescado",
+          "isBeverage": false
+        }
+      ]
     },
     "expected": {
-      "productId": "camarones", "format": "graph", "source": "composed", "flows": [{ "id": "package", "name": "Paquete", "scopeKind": "product", "priority": 0 }], "entryNodeId": "entrada", "edges": [],
-      "nodes": [{ "id": "entrada", "flowId": "package", "title": "Entrada", "subtitle": null, "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "noneLabel": null, "isEntry": true, "childOwnerOptionId": null, "options": [{ "id": "pescadito", "label": "Pescadito", "source": "product", "priceMode": "free", "effectivePrice": 0, "refProductId": "pescadito", "refCategoryId": null, "refVariantName": null, "refListPrice": 89, "variantChoices": null, "emitsChildItem": true, "isBeverage": false, "refProductActive": true }] }]
+      "productId": "camarones",
+      "format": "graph",
+      "source": "composed",
+      "flows": [
+        {
+          "id": "package",
+          "name": "Paquete",
+          "scopeKind": "product",
+          "priority": 0
+        }
+      ],
+      "entryNodeId": "entrada",
+      "edges": [],
+      "nodes": [
+        {
+          "id": "entrada",
+          "flowId": "package",
+          "title": "Entrada",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "includeNoneOption": false,
+          "noneLabel": null,
+          "isEntry": true,
+          "childOwnerOptionId": null,
+          "options": [
+            {
+              "id": "pescadito",
+              "label": "Pescadito",
+              "source": "product",
+              "priceMode": "free",
+              "effectivePrice": 0,
+              "refProductId": "pescadito",
+              "refCategoryId": null,
+              "refVariantName": null,
+              "refListPrice": 89,
+              "variantChoices": null,
+              "emitsChildItem": true,
+              "isBeverage": false,
+              "refProductActive": true
+            }
+          ]
+        }
+      ]
     }
   },
   {
     "name": "categoria-con-variante-una-tarjeta-y-nodo-sintetico",
     "input": {
-      "product": { "id": "main", "categoryId": "mains", "subcategoryId": null },
-      "definitions": [{ "id": "flow", "name": "Paquete", "scopeKind": "product", "priority": 0, "active": true }],
-      "targets": [{ "flowId": "flow", "mode": "include", "productId": "main" }],
-      "nodes": [{ "id": "drink", "flowId": "flow", "title": "Bebida", "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "isEntry": true, "active": true, "sortOrder": 0 }],
-      "options": [{ "id": "all-drinks", "nodeId": "drink", "source": "category", "label": null, "refCategoryId": "drinks", "allowVariantChoice": true, "variantPriceDeltas": { "limonada::Natural": 5, "limonada::Mineral": 5 }, "priceMode": "free", "priceDelta": 0, "emitsChildItem": true, "active": true, "sortOrder": 0 }],
-      "overrides": [], "edges": [],
-      "products": [{ "id": "limonada", "name": "Limonada", "categoryId": "drinks", "price": 35, "variants": "[{\"name\":\"Natural\",\"price\":35},{\"name\":\"Mineral\",\"price\":35}]", "active": true }],
-      "categories": [{ "id": "drinks", "isBeverage": true }]
+      "product": {
+        "id": "main",
+        "categoryId": "mains",
+        "subcategoryId": null
+      },
+      "definitions": [
+        {
+          "id": "flow",
+          "name": "Paquete",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        }
+      ],
+      "targets": [
+        {
+          "flowId": "flow",
+          "mode": "include",
+          "productId": "main"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "drink",
+          "flowId": "flow",
+          "title": "Bebida",
+          "selectMode": "single",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "includeNoneOption": false,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "options": [
+        {
+          "id": "all-drinks",
+          "nodeId": "drink",
+          "source": "category",
+          "label": null,
+          "refCategoryId": "drinks",
+          "allowVariantChoice": true,
+          "variantPriceDeltas": {
+            "limonada::Natural": 5,
+            "limonada::Mineral": 5
+          },
+          "priceMode": "free",
+          "priceDelta": 0,
+          "emitsChildItem": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "overrides": [],
+      "edges": [],
+      "products": [
+        {
+          "id": "limonada",
+          "name": "Limonada",
+          "categoryId": "drinks",
+          "price": 35,
+          "variants": "[{\"name\":\"Natural\",\"price\":35},{\"name\":\"Mineral\",\"price\":35}]",
+          "active": true
+        }
+      ],
+      "categories": [
+        {
+          "id": "drinks",
+          "isBeverage": true
+        }
+      ]
     },
     "expected": {
-      "productId": "main", "format": "graph", "source": "composed", "flows": [{ "id": "flow", "name": "Paquete", "scopeKind": "product", "priority": 0 }], "entryNodeId": "drink",
-      "nodes": [
-        { "id": "drink", "flowId": "flow", "title": "Bebida", "subtitle": null, "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "noneLabel": null, "isEntry": true, "childOwnerOptionId": null, "options": [{ "id": "all-drinks:limonada:", "label": "Limonada", "source": "category", "priceMode": "free", "effectivePrice": 0, "refProductId": "limonada", "refCategoryId": "drinks", "refVariantName": null, "refListPrice": 35, "variantChoices": [{ "name": "Natural", "price": 35 }, { "name": "Mineral", "price": 35 }], "variantPriceDeltas": { "limonada::Natural": 5, "limonada::Mineral": 5 }, "emitsChildItem": true, "isBeverage": true, "refProductActive": true, "refCategoryActive": true }] },
-        { "id": "drink:sub:all-drinks:limonada:", "sourceNodeId": "drink", "flowId": "flow", "title": "Variante", "subtitle": "Limonada", "selectMode": "single", "minSelections": 1, "maxSelections": 1, "includeNoneOption": false, "noneLabel": null, "isEntry": false, "childOwnerOptionId": "all-drinks:limonada:", "options": [{ "id": "all-drinks:Natural:sub:all-drinks:limonada:", "sourceOptionId": "all-drinks", "label": "Natural", "source": "product", "priceMode": "delta", "effectivePrice": 5, "refProductId": "limonada", "refVariantName": "Natural", "refListPrice": 35, "variantChoices": null, "emitsChildItem": false, "isBeverage": true }, { "id": "all-drinks:Mineral:sub:all-drinks:limonada:", "sourceOptionId": "all-drinks", "label": "Mineral", "source": "product", "priceMode": "delta", "effectivePrice": 5, "refProductId": "limonada", "refVariantName": "Mineral", "refListPrice": 35, "variantChoices": null, "emitsChildItem": false, "isBeverage": true }] }
+      "productId": "main",
+      "format": "graph",
+      "source": "composed",
+      "flows": [
+        {
+          "id": "flow",
+          "name": "Paquete",
+          "scopeKind": "product",
+          "priority": 0
+        }
       ],
-      "edges": [{ "fromNodeId": "drink", "fromOptionId": "all-drinks:limonada:", "toNodeId": "drink:sub:all-drinks:limonada:", "condition": null, "sortOrder": -1 }]
+      "entryNodeId": "drink",
+      "nodes": [
+        {
+          "id": "drink",
+          "flowId": "flow",
+          "title": "Bebida",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "includeNoneOption": false,
+          "noneLabel": null,
+          "isEntry": true,
+          "childOwnerOptionId": null,
+          "options": [
+            {
+              "id": "all-drinks:limonada:",
+              "label": "Limonada",
+              "source": "category",
+              "priceMode": "free",
+              "effectivePrice": 0,
+              "refProductId": "limonada",
+              "refCategoryId": "drinks",
+              "refVariantName": null,
+              "refListPrice": 35,
+              "variantChoices": [
+                {
+                  "name": "Natural",
+                  "price": 35
+                },
+                {
+                  "name": "Mineral",
+                  "price": 35
+                }
+              ],
+              "variantPriceDeltas": {
+                "limonada::Natural": 5,
+                "limonada::Mineral": 5
+              },
+              "emitsChildItem": true,
+              "isBeverage": true,
+              "refProductActive": true,
+              "refCategoryActive": true
+            }
+          ]
+        },
+        {
+          "id": "drink:sub:all-drinks:limonada:",
+          "sourceNodeId": "drink",
+          "flowId": "flow",
+          "title": "Variante",
+          "subtitle": "Limonada",
+          "selectMode": "single",
+          "minSelections": 1,
+          "maxSelections": 1,
+          "includeNoneOption": false,
+          "noneLabel": null,
+          "isEntry": false,
+          "childOwnerOptionId": "all-drinks:limonada:",
+          "options": [
+            {
+              "id": "all-drinks:Natural:sub:all-drinks:limonada:",
+              "sourceOptionId": "all-drinks",
+              "label": "Natural",
+              "source": "product",
+              "priceMode": "delta",
+              "effectivePrice": 5,
+              "refProductId": "limonada",
+              "refVariantName": "Natural",
+              "refListPrice": 35,
+              "variantChoices": null,
+              "emitsChildItem": false,
+              "isBeverage": true
+            },
+            {
+              "id": "all-drinks:Mineral:sub:all-drinks:limonada:",
+              "sourceOptionId": "all-drinks",
+              "label": "Mineral",
+              "source": "product",
+              "priceMode": "delta",
+              "effectivePrice": 5,
+              "refProductId": "limonada",
+              "refVariantName": "Mineral",
+              "refListPrice": 35,
+              "variantChoices": null,
+              "emitsChildItem": false,
+              "isBeverage": true
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "fromNodeId": "drink",
+          "fromOptionId": "all-drinks:limonada:",
+          "toNodeId": "drink:sub:all-drinks:limonada:",
+          "condition": null,
+          "sortOrder": -1
+        }
+      ]
+    }
+  },
+  {
+    "name": "flujo-de-producto-vacio-no-esconde-el-flujo-siguiente",
+    "input": {
+      "product": {
+        "id": "aguachile",
+        "categoryId": "aguachiles",
+        "subcategoryId": null
+      },
+      "definitions": [
+        {
+          "id": "vacio",
+          "name": "Flujo de product",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        },
+        {
+          "id": "paquete",
+          "name": "Paquete",
+          "scopeKind": "global",
+          "priority": 100,
+          "active": true
+        }
+      ],
+      "targets": [
+        {
+          "flowId": "vacio",
+          "mode": "include",
+          "productId": "aguachile"
+        },
+        {
+          "flowId": "paquete",
+          "mode": "include",
+          "categoryId": "aguachiles"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "inicio",
+          "flowId": "vacio",
+          "title": "Inicio",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        },
+        {
+          "id": "gate",
+          "flowId": "paquete",
+          "title": "¿Paquete?",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "options": [
+        {
+          "id": "si",
+          "nodeId": "gate",
+          "source": "manual",
+          "label": "Hacer paquete",
+          "priceMode": "free",
+          "priceDelta": 0,
+          "emitsChildItem": false,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "overrides": [],
+      "edges": [
+        {
+          "id": "gate-end",
+          "flowId": "paquete",
+          "fromNodeId": "gate",
+          "fromOptionId": null,
+          "toNodeId": null,
+          "sortOrder": 0
+        }
+      ],
+      "products": [],
+      "categories": []
+    },
+    "expected": {
+      "productId": "aguachile",
+      "format": "graph",
+      "source": "composed",
+      "flows": [
+        {
+          "id": "vacio",
+          "name": "Flujo de product",
+          "scopeKind": "product",
+          "priority": 0
+        },
+        {
+          "id": "paquete",
+          "name": "Paquete",
+          "scopeKind": "global",
+          "priority": 100
+        }
+      ],
+      "entryNodeId": "inicio",
+      "nodes": [
+        {
+          "id": "inicio",
+          "flowId": "vacio",
+          "title": "Inicio",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": true,
+          "childOwnerOptionId": null,
+          "options": []
+        },
+        {
+          "id": "gate",
+          "flowId": "paquete",
+          "title": "¿Paquete?",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": true,
+          "childOwnerOptionId": null,
+          "options": [
+            {
+              "id": "si",
+              "label": "Hacer paquete",
+              "source": "manual",
+              "priceMode": "free",
+              "effectivePrice": 0,
+              "refProductId": null,
+              "refCategoryId": null,
+              "refVariantName": null,
+              "refListPrice": null,
+              "variantChoices": null,
+              "emitsChildItem": false,
+              "isBeverage": false
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "gate-end",
+          "fromNodeId": "gate",
+          "fromOptionId": null,
+          "toNodeId": null,
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "fromNodeId": "inicio",
+          "fromOptionId": null,
+          "toNodeId": "gate",
+          "condition": null,
+          "sortOrder": 0
+        }
+      ]
+    }
+  },
+  {
+    "name": "subflujo-sin-salida-retoma-la-salida-del-host",
+    "input": {
+      "product": {
+        "id": "main",
+        "categoryId": "mains",
+        "subcategoryId": null
+      },
+      "definitions": [
+        {
+          "id": "host",
+          "name": "Paquete",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        },
+        {
+          "id": "child",
+          "name": "Preparado",
+          "scopeKind": "product",
+          "priority": 0,
+          "active": true
+        }
+      ],
+      "targets": [
+        {
+          "flowId": "host",
+          "mode": "include",
+          "productId": "main"
+        },
+        {
+          "flowId": "child",
+          "mode": "include",
+          "productId": "pepsi"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "drink",
+          "flowId": "host",
+          "title": "Bebida",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        },
+        {
+          "id": "dessert",
+          "flowId": "host",
+          "title": "Postre",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": false,
+          "active": true,
+          "sortOrder": 1
+        },
+        {
+          "id": "prepared",
+          "flowId": "child",
+          "title": "Preparado",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": true,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "options": [
+        {
+          "id": "pepsi-option",
+          "nodeId": "drink",
+          "source": "product",
+          "label": "Pepsi",
+          "priceMode": "free",
+          "priceDelta": 0,
+          "emitsChildItem": true,
+          "active": true,
+          "sortOrder": 0,
+          "refProductId": "pepsi"
+        },
+        {
+          "id": "flan",
+          "nodeId": "dessert",
+          "source": "manual",
+          "label": "Flan",
+          "priceMode": "free",
+          "priceDelta": 0,
+          "emitsChildItem": false,
+          "active": true,
+          "sortOrder": 0
+        },
+        {
+          "id": "yes",
+          "nodeId": "prepared",
+          "source": "manual",
+          "label": "Preparado",
+          "priceMode": "free",
+          "priceDelta": 0,
+          "emitsChildItem": false,
+          "active": true,
+          "sortOrder": 0
+        }
+      ],
+      "overrides": [],
+      "edges": [
+        {
+          "id": "drink-next",
+          "flowId": "host",
+          "fromNodeId": "drink",
+          "fromOptionId": null,
+          "toNodeId": "dessert",
+          "sortOrder": 0
+        },
+        {
+          "id": "dessert-end",
+          "flowId": "host",
+          "fromNodeId": "dessert",
+          "fromOptionId": null,
+          "toNodeId": null,
+          "sortOrder": 0
+        }
+      ],
+      "products": [
+        {
+          "id": "pepsi",
+          "name": "Pepsi",
+          "categoryId": "drinks",
+          "price": 25,
+          "variants": null,
+          "active": true
+        }
+      ],
+      "categories": [
+        {
+          "id": "drinks",
+          "isBeverage": true
+        }
+      ]
+    },
+    "expected": {
+      "productId": "main",
+      "format": "graph",
+      "source": "composed",
+      "flows": [
+        {
+          "id": "host",
+          "name": "Paquete",
+          "scopeKind": "product",
+          "priority": 0
+        },
+        {
+          "id": "child",
+          "name": "Preparado",
+          "scopeKind": "product",
+          "priority": 0
+        }
+      ],
+      "entryNodeId": "drink",
+      "nodes": [
+        {
+          "id": "drink",
+          "flowId": "host",
+          "title": "Bebida",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": true,
+          "childOwnerOptionId": null,
+          "options": [
+            {
+              "id": "pepsi-option",
+              "label": "Pepsi",
+              "source": "product",
+              "priceMode": "free",
+              "effectivePrice": 0,
+              "refProductId": "pepsi",
+              "refCategoryId": null,
+              "refVariantName": null,
+              "refListPrice": 25,
+              "variantChoices": null,
+              "emitsChildItem": true,
+              "isBeverage": true,
+              "refProductActive": true
+            }
+          ]
+        },
+        {
+          "id": "dessert",
+          "flowId": "host",
+          "title": "Postre",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": false,
+          "childOwnerOptionId": null,
+          "options": [
+            {
+              "id": "flan",
+              "label": "Flan",
+              "source": "manual",
+              "priceMode": "free",
+              "effectivePrice": 0,
+              "refProductId": null,
+              "refCategoryId": null,
+              "refVariantName": null,
+              "refListPrice": null,
+              "variantChoices": null,
+              "emitsChildItem": false,
+              "isBeverage": false
+            }
+          ]
+        },
+        {
+          "id": "prepared:sub:pepsi-option",
+          "flowId": "child",
+          "title": "Preparado",
+          "subtitle": null,
+          "selectMode": "single",
+          "minSelections": 0,
+          "maxSelections": 1,
+          "includeNoneOption": true,
+          "noneLabel": null,
+          "isEntry": false,
+          "sourceNodeId": "prepared",
+          "childOwnerOptionId": "pepsi-option",
+          "options": [
+            {
+              "id": "yes:sub:pepsi-option",
+              "label": "Preparado",
+              "source": "manual",
+              "priceMode": "free",
+              "effectivePrice": 0,
+              "refProductId": null,
+              "refCategoryId": null,
+              "refVariantName": null,
+              "refListPrice": null,
+              "variantChoices": null,
+              "emitsChildItem": false,
+              "isBeverage": false,
+              "sourceOptionId": "yes"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "drink-next",
+          "fromNodeId": "drink",
+          "fromOptionId": null,
+          "toNodeId": "dessert",
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "id": "dessert-end",
+          "fromNodeId": "dessert",
+          "fromOptionId": null,
+          "toNodeId": null,
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "fromNodeId": "prepared:sub:pepsi-option",
+          "fromOptionId": null,
+          "toNodeId": "dessert",
+          "condition": null,
+          "sortOrder": 0
+        },
+        {
+          "fromNodeId": "drink",
+          "fromOptionId": "pepsi-option",
+          "toNodeId": "prepared:sub:pepsi-option",
+          "condition": null,
+          "sortOrder": -1
+        }
+      ]
     }
   }
 ]

@@ -111,14 +111,23 @@ export function composeFlowGraph(input: ComposeRows): FlowGraph | null {
   const nodes: FlowNode[] = regular.rawNodes.map((node) => ({ id: node.id, flowId: node.flowId, title: node.title, subtitle: node.subtitle ?? null, selectMode: node.selectMode, minSelections: node.minSelections, maxSelections: node.maxSelections, includeNoneOption: node.includeNoneOption, noneLabel: node.noneLabel ?? null, isEntry: node.isEntry, childOwnerOptionId: null, options: regular.byNode.get(node.id) ?? [] }))
   const entryFor = (flows: any[], graphNodes: readonly FlowNode[]) => new Map(flows.map((flow) => [flow.id, graphNodes.find((node) => node.flowId === flow.id && node.isEntry)?.id]))
   const entries = entryFor(selected, nodes)
-  const composeEdges = (flows: any[], entriesByFlow: Map<string, string | undefined>): FlowEdge[] => {
+  // `closeDeadEnds` is for subflow instances, whose "end" is rewired to the host's exits.
+  const composeEdges = (flows: any[], entriesByFlow: Map<string, string | undefined>, flowNodes: readonly any[], closeDeadEnds = false): FlowEdge[] => {
     const flowIds = new Set(flows.map((flow) => flow.id))
-    return input.edges.filter((edge) => flowIds.has(edge.flowId)).map((edge) => {
-      const index = flows.findIndex((flow) => flow.id === edge.flowId)
-      return { id: edge.id, fromNodeId: edge.fromNodeId, fromOptionId: edge.fromOptionId ?? null, toNodeId: edge.toNodeId ?? entriesByFlow.get(flows[index + 1]?.id) ?? null, condition: edge.condition ?? null, sortOrder: edge.sortOrder }
-    })
+    // A later flow without an entry node must not swallow the ones after it.
+    const nextEntry = (flowId: string) => flows.slice(flows.findIndex((flow) => flow.id === flowId) + 1).map((flow) => entriesByFlow.get(flow.id)).find((entry) => entry !== undefined) ?? null
+    const composed: FlowEdge[] = input.edges.filter((edge) => flowIds.has(edge.flowId)).map((edge) => ({ id: edge.id, fromNodeId: edge.fromNodeId, fromOptionId: edge.fromOptionId ?? null, toNodeId: edge.toNodeId ?? nextEntry(edge.flowId), condition: edge.condition ?? null, sortOrder: edge.sortOrder }))
+    // A node saved without any exit used to end the whole composition, silently
+    // dropping every later flow (an empty product flow hid Paquete). Its end is
+    // the end of ITS flow only.
+    for (const node of flowNodes) {
+      if (composed.some((edge) => edge.fromNodeId === node.id)) continue
+      const toNodeId = nextEntry(node.flowId)
+      if (toNodeId !== null || closeDeadEnds) composed.push({ fromNodeId: node.id, fromOptionId: null, toNodeId, condition: null, sortOrder: 0 })
+    }
+    return composed
   }
-  const edges = composeEdges(selected, entries)
+  const edges = composeEdges(selected, entries, regular.rawNodes)
   const flowSummaries = [...selected]
   // A child can be targeted by the same flow as its host (Pescadito is Pescado,
   // which is a Paquete target). Never re-enter a host flow: traversal has no
@@ -147,7 +156,7 @@ export function composeFlowGraph(input: ComposeRows): FlowGraph | null {
       for (const rawNode of child?.rawNodes ?? []) {
         nodes.push({ id: nodeId(rawNode.id), flowId: rawNode.flowId, title: rawNode.title, subtitle: rawNode.subtitle ?? null, selectMode: rawNode.selectMode, minSelections: rawNode.minSelections, maxSelections: rawNode.maxSelections, includeNoneOption: rawNode.includeNoneOption, noneLabel: rawNode.noneLabel ?? null, isEntry: false, sourceNodeId: rawNode.id, childOwnerOptionId: hostOption.id, options: (child?.byNode.get(rawNode.id) ?? []).map((option) => ({ ...option, id: optionId(option.id), sourceOptionId: sourceId(option.id), emitsChildItem: false })) })
       }
-      const childEdges = composeEdges(childFlows, childEntries)
+      const childEdges = composeEdges(childFlows, childEntries, child?.rawNodes ?? [], true)
       for (const edge of childEdges) {
         if (edge.toNodeId !== null) {
           edges.push({ ...edge, id: edge.id ? `${edge.id}:sub:${hostOption.id}` : undefined, fromNodeId: nodeId(edge.fromNodeId), fromOptionId: edge.fromOptionId === null ? null : optionId(edge.fromOptionId), toNodeId: nodeId(edge.toNodeId) })

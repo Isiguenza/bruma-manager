@@ -294,17 +294,24 @@ export async function replaceGraph(flowId: string, value: unknown): Promise<{ pr
     }
   }
 
-  const statements: BatchItem<"pg">[] = [
-    db.delete(flowEdges).where(eq(flowEdges.flowId, flowId)),
-    db.delete(flowNodes).where(eq(flowNodes.flowId, flowId)),
-  ]
+  // Upsert by id instead of delete + reinsert: order_item_selections points at
+  // nodes/options with ON DELETE SET NULL, so recreating a row with the same id
+  // still wiped the reference of every historical selection on each save.
+  const keptNodeIds = new Set(nodeIdMap.values())
+  const keptOptionIds = new Set(optionIdMap.values())
+  const removedNodeIds = [...nodeIds].filter((id) => !keptNodeIds.has(id))
+  const removedOptionIds = [...optionIds].filter((id) => !keptOptionIds.has(id))
+  const survivingOptionIds = [...optionIds].filter((id) => keptOptionIds.has(id))
+  const statements: BatchItem<"pg">[] = [db.delete(flowEdges).where(eq(flowEdges.flowId, flowId))]
+  if (removedOptionIds.length > 0) statements.push(db.delete(flowNodeOptions).where(inArray(flowNodeOptions.id, removedOptionIds)))
+  if (removedNodeIds.length > 0) statements.push(db.delete(flowNodes).where(inArray(flowNodes.id, removedNodeIds)))
+  if (survivingOptionIds.length > 0) statements.push(db.delete(flowOptionPriceOverrides).where(inArray(flowOptionPriceOverrides.optionId, survivingOptionIds)))
   for (const node of prepared.nodes) {
-    statements.push(db.insert(flowNodes).values({
-      id: nodeIdMap.get(node.id)!,
+    const values = {
       flowId,
       title: asString(node.title),
       subtitle: asNullableString(node.subtitle),
-      selectMode: node.selectMode === "multi" ? "multi" : "single",
+      selectMode: node.selectMode === "multi" ? "multi" as const : "single" as const,
       minSelections: asNumber(node.minSelections),
       maxSelections: node.maxSelections === null || node.maxSelections === undefined ? null : asNumber(node.maxSelections),
       includeNoneOption: asBoolean(node.includeNoneOption, true),
@@ -314,26 +321,27 @@ export async function replaceGraph(flowId: string, value: unknown): Promise<{ pr
       posY: asNumber(node.posY),
       sortOrder: asNumber(node.sortOrder),
       active: asBoolean(node.active, true),
-    }))
+    }
+    statements.push(db.insert(flowNodes).values({ id: nodeIdMap.get(node.id)!, ...values }).onConflictDoUpdate({ target: flowNodes.id, set: values }))
   }
   for (const node of prepared.nodes) {
     for (const option of node.options) {
-      statements.push(db.insert(flowNodeOptions).values({
-        id: optionIdMap.get(option.id)!,
+      const values = {
         nodeId: nodeIdMap.get(node.id)!,
-        source: option.source === "product" || option.source === "category" ? option.source : "manual",
+        source: option.source === "product" || option.source === "category" ? option.source as "product" | "category" : "manual" as const,
         label: asNullableString(option.label),
         refProductId: asNullableString(option.refProductId),
         refCategoryId: asNullableString(option.refCategoryId),
         refVariantName: asNullableString(option.refVariantName),
         allowVariantChoice: asBoolean(option.allowVariantChoice, false),
         variantPriceDeltas: option.variantPriceDeltas && typeof option.variantPriceDeltas === "object" && !Array.isArray(option.variantPriceDeltas) ? option.variantPriceDeltas : null,
-        priceMode: option.priceMode === "free" || option.priceMode === "product_price" ? option.priceMode : "delta",
+        priceMode: option.priceMode === "free" || option.priceMode === "product_price" ? option.priceMode as "free" | "product_price" : "delta" as const,
         priceDelta: String(asNumber(option.priceDelta)),
         emitsChildItem: asBoolean(option.emitsChildItem, false),
         sortOrder: asNumber(option.sortOrder),
         active: asBoolean(option.active, true),
-      }))
+      }
+      statements.push(db.insert(flowNodeOptions).values({ id: optionIdMap.get(option.id)!, ...values }).onConflictDoUpdate({ target: flowNodeOptions.id, set: values }))
       for (const override of asArray(option.priceOverrides)) {
         statements.push(db.insert(flowOptionPriceOverrides).values({
           optionId: optionIdMap.get(option.id)!,
