@@ -164,7 +164,7 @@ export function FlowEditor({ flowId, onBack }: { flowId: string; onBack?: () => 
   if (loading) return <div className="grid h-[70vh] place-items-center text-muted-foreground">Cargando flujo…</div>
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] min-h-[640px] flex-col bg-background">
+    <div className="flex h-[calc(100dvh-6.5rem)] min-h-[560px] flex-col overflow-hidden rounded-xl border bg-background">
       {/* Entrances only: these rows are not gesture-driven, so a short critically-damped ease is enough. */}
       <style>{`
         @keyframes flowRowIn { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: none; } }

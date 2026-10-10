@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { ArrowBendDownRight, ArrowElbowDownRight, FlagCheckered, GitBranch, Plus, Target, TreeStructure, Warning } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { optionName, type TreeBranch, type TreeContext, type TreeStep } from "./model"
@@ -46,13 +47,24 @@ function stepMeta(node: EditorNode): string {
 
 export function BranchTree({ trunk, orphans, context, selection, invalidNodeIds, appliesSummary, isSubflow, onSelect, onAddAfter, onOpenSubflow }: Props) {
   const selectedId = selection?.kind === "step" ? selection.nodeId : null
+  const root = useRef<HTMLDivElement>(null)
 
-  const renderSteps = (steps: TreeStep[], depth: number, allowAdd: boolean) => (
+  // A step added at the bottom, or opened from a problem banner, must not land off-screen.
+  useEffect(() => {
+    if (selectedId === null) return
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    root.current?.querySelector("[aria-current=step]")?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" })
+  }, [selectedId])
+
+  // The whole line you are working on stays lit, siblings included; only the
+  // OTHER branches step back.
+  const renderSteps = (steps: TreeStep[], depth: number, allowAdd: boolean, lit = false) => {
+    const onPath = lit || selectedId === null || steps.some((step) => containsNode(step, selectedId))
+    return (
     <ol className="relative">
       <span aria-hidden className={cn("absolute bottom-3 left-[11px] top-3 w-0.5 rounded-full", hue(depth).rail)} />
       {steps.map((step) => {
         const selected = step.node.id === selectedId
-        const onPath = selectedId === null || containsNode(step, selectedId)
         return (
           <li key={step.node.id} className="flow-row-in relative pb-1 pl-8">
             <span
@@ -76,7 +88,7 @@ export function BranchTree({ trunk, orphans, context, selection, invalidNodeIds,
               )}
             >
               <span className="flex items-center gap-2">
-                <span className={cn("truncate text-[15px] font-semibold tracking-[-0.01em]", step.node.options.length === 0 && "italic text-muted-foreground")}>
+                <span className={cn("truncate pr-1 text-[15px] font-semibold tracking-[-0.01em]", step.node.options.length === 0 && "italic text-muted-foreground")}>
                   {step.node.title || "Paso sin título"}
                 </span>
                 {invalidNodeIds.has(step.node.id) && <Warning className="size-4 shrink-0 text-destructive" weight="fill" />}
@@ -94,7 +106,10 @@ export function BranchTree({ trunk, orphans, context, selection, invalidNodeIds,
               )}
             </button>
 
-            {step.branches.map((branch) => renderBranch(branch, depth + 1, !onPath))}
+            {step.branches.map((branch) =>
+              // A branch is lit when you are inside it, or standing on the step it grows from.
+              renderBranch(branch, depth + 1, selectedId !== null && !selected && !(branch.target.kind === "steps" && branch.target.steps.some((child) => containsNode(child, selectedId))), selected),
+            )}
 
             {allowAdd && (
               <button
@@ -112,11 +127,12 @@ export function BranchTree({ trunk, orphans, context, selection, invalidNodeIds,
         )
       })}
     </ol>
-  )
+    )
+  }
 
   // A plain function, not a component: a component declared here would get a new
   // identity every render and replay its entrance animation on every keystroke.
-  function renderBranch(branch: TreeBranch, depth: number, dim: boolean) {
+  function renderBranch(branch: TreeBranch, depth: number, dim: boolean, lit: boolean) {
     const color = hue(depth)
     const Icon = branch.tone === "subflow" ? TreeStructure : branch.tone === "rule" ? ArrowElbowDownRight : GitBranch
     return (
@@ -128,7 +144,7 @@ export function BranchTree({ trunk, orphans, context, selection, invalidNodeIds,
         </div>
         {branch.target.kind === "steps" && (
           <>
-            {renderSteps(branch.target.steps, depth, false)}
+            {renderSteps(branch.target.steps, depth, false, lit)}
             <p className="ml-8 flex items-center gap-1.5 pb-1 text-xs text-muted-foreground">
               <ArrowBendDownRight className="size-3.5" />
               {branch.target.rejoinTitle ? `regresa a «${branch.target.rejoinTitle}»` : "termina este flujo"}
@@ -169,7 +185,7 @@ export function BranchTree({ trunk, orphans, context, selection, invalidNodeIds,
   }
 
   return (
-    <div className="space-y-3 p-4">
+    <div ref={root} className="space-y-3 p-4">
       {!isSubflow && (
         <button
           type="button"

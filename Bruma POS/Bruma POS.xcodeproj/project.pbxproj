@@ -63,6 +63,7 @@
 				Styles/GlassButtonStyle.swift,
 				Styles/GlassModifiers.swift,
 				Styles/Haptics.swift,
+				Styles/NotesTargetPicker.swift,
 				Styles/PinNumpadView.swift,
 				Styles/SessionLockMonitor.swift,
 				ViewModels/POSViewModel.swift,

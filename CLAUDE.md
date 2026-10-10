@@ -157,7 +157,8 @@ producto las dos tarjetas decían "Limonada" y "Limonada"; si lo "arreglas"
 cambiando solo la etiqueta, el hijo pasa a llamarse "Mineral". Los vectores
 `engine-vectors.json` fijan las dos mitades a la vez.
 
-La migración `drizzle/manual_flow_node_option_variant_price_deltas.sql` queda
+`drizzle/manual_flow_branches.sql` ya está aplicada en Neon. La migración
+`drizzle/manual_flow_node_option_variant_price_deltas.sql` queda
 sin aplicar: se ejecuta el SQL manualmente en Neon; **nunca** `npm run db:migrate`.
 
 **Gotcha de flujos personalizados por categoría:** en
@@ -698,10 +699,34 @@ adaptadora** (`POSViewModel.itemDicts(for:)` y el armado del body de
 implementaciones y rompe los vectores compartidos. Mandar el nombre equivocado
 no da error — `child_item_id` queda en `null` en silencio.
 
-**Gotcha de subflujos de hijos — una sola profundidad, solo host `single`:** al
-resolver una opción `emitsChildItem` de un nodo `single`, el composer splicea
-el flujo aplicable del producto hijo ya en el mismo grafo; `multi` queda
-explícitamente fuera hasta que el motor tenga una pila para varios subflujos.
+**Ramas = todo se compila en el servidor a lo que el motor YA entiende.** El
+motor del cliente (TS y Swift) no tiene pila ni sabe de variantes excluidas,
+subflujos propios o hosts multi, y no se tocó: el composer los traduce a nodos
+de paso + condiciones `variantNameIn` / `optionSelected`, así las apps ya
+instaladas lo reciben sin actualizar. Si agregas una capacidad de ramas, el
+default es compilarla igual, no extender el motor. Piezas:
+- **Variante excluida de un flujo** (`flow_targets.variant_name`, solo en un
+  `exclude` de producto; "Paquete en Orden de 3, no en Pieza"): nodo
+  `<flowId>:variant-gate` que entra al flujo solo con `variantNameIn`. Se emite
+  el nombre crudo Y el recortado: en datos reales hay `"Orden de 3 "` con
+  espacio al final y el cliente compara el string tal cual.
+- **Cuadritos** (`flow_node_options.hidden_refs`): lista de OCULTOS
+  `"<productId>"` / `"<productId>::<variante>"`, para que un platillo nuevo de
+  la categoría aparezca solo. `subflow_hidden_refs` es lo mismo para "este
+  platillo no abre su subflujo".
+- **Subflujo de una opción** (`child_flow_mode`): `inherit` (el flujo que le
+  toque al producto hijo, lo de siempre), `none`, o `custom` + `child_flow_id`
+  → un flujo con `flow_definitions.parent_flow_id`, que **nunca** aplica por
+  targets. Se crean con `scope_kind='product'` y sin targets a propósito: así
+  tampoco aplica en un composer que no conozca `parent_flow_id`.
+- **Host multi**: una compuerta `<nodeId>:gate:<optionId>` por opción
+  (`optionSelected`) encadenadas a un `<nodeId>:join` que hereda las salidas.
+- **Anidado**: solo los subflujos `custom` anidan (tope 3); uno heredado nunca,
+  para que el flujo de un hijo no arrastre el de un nieto.
+
+**Subflujos de hijos:** al
+resolver una opción `emitsChildItem`, el composer splicea
+el flujo aplicable del producto hijo ya en el mismo grafo.
 Los flujos activos del anfitrión se excluyen al resolver cada hijo: reentrar
 `Paquete` por `Entrada → Pescadito` volvería a pedir un paquete dentro de sí
 mismo y el traversal no tiene una pila para soportarlo. Instancias hermanas
@@ -719,6 +744,26 @@ envían en el `CartItem` hijo, sin `childIndex`; nunca se espejean en los
 `customModifiers` del padre. Al persistir una instancia spliceada, el motor usa
 `sourceNodeId` / `sourceOptionId` en lugar del id con `:sub:`: el backend valida
 esos campos como UUID puros antes de insertar `order_item_selections`.
+
+**Editor de flujos (`components/flow-editor/`) — las aristas no se editan.**
+Izquierda: árbol de ramas de solo lectura (`buildTree`). Derecha: un paso a la
+vez en 4 pantallas (Pregunta → Opciones → Precios → Qué sigue). `model.ts` es
+el ÚNICO lugar que traduce "qué sigue" a aristas (`setDefaultNext`,
+`setOptionNext`, `addBranchStep`); la arista default sin condición siempre va
+al final porque gana la primera que cumple. `ChipGrid` es el mismo componente
+en los tres lugares donde algo se expande (a qué platillos aplica, qué muestra
+una categoría, quién abre subflujo). "Probar" camina el grafo que resuelve el
+servidor (`?format=graph`) con el motor real: usa lo guardado, no el borrador.
+Limitación conocida: una opción de CATEGORÍA no puede tener camino propio (su
+id en runtime es `raw:producto:variante` y la arista apunta al id crudo); el
+editor no ofrece esa rama.
+
+**Comentarios por platillo (POS/Mobile):** `Styles/NotesTargetPicker.swift`
+(compartido, en `membershipExceptions`). `tempNotes`/`selectedQuickNoteIds`
+siguen siendo el borrador del platillo ACTIVO; `selectNotesTarget` guarda el
+anterior en `notesDraftsByItem` y apunta `pendingCartItem` al hijo, que es lo
+que las vistas ya usan para filtrar notas rápidas. No hizo falta tocar API ni
+impresión: cada `order_item` ya viajaba con su `notes`.
 
 **Tres copias a mano que hay que mantener en sync (el repo ya vivía así):**
 `lib/flows/compose.ts` ↔ `api-server/src/lib/flowCompose.ts` (duplicadas porque

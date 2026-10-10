@@ -159,6 +159,9 @@ class POSViewModel: ObservableObject {
     @Published var tempNotes = ""
     @Published var selectedQuickNoteIds: Set<String> = []
     @Published var showFreeTextNotes = false
+    /// Qué platillo del paquete está recibiendo el comentario (0 = el padre).
+    @Published private(set) var notesTargetIndex = 0
+    private var notesDraftsByItem: [Int: (quickNoteIds: Set<String>, text: String)] = [:]
     
     // MARK: - Cart
     // El `didSet` persiste un borrador en UserDefaults (ver `CartDraftStore`
@@ -2551,6 +2554,8 @@ class POSViewModel: ObservableObject {
         selectedProduct = nil
         selectedFlowVariant = nil
         pendingFlowItems = []
+        notesTargetIndex = 0
+        notesDraftsByItem = [:]
         productNotes = ""
     }
 
@@ -2626,8 +2631,47 @@ class POSViewModel: ObservableObject {
         guard let items = buildFlowCartItems(), let parent = items.first else { return }
         pendingFlowItems = items
         pendingCartItem = parent
+        notesTargetIndex = 0
+        notesDraftsByItem = [:]
         tempNotes = productNotes
         showNotesDialog = true
+    }
+
+    // MARK: - Comentarios por platillo
+
+    /// Platillos del paquete en armado; cada uno lleva su propio comentario.
+    /// `tempNotes`/`selectedQuickNoteIds` siempre son el borrador del platillo
+    /// activo, así las vistas siguen enlazadas a lo mismo de siempre.
+    var notesTargets: [NotesTarget] {
+        pendingFlowItems.enumerated().map { index, item in
+            let draft = index == notesTargetIndex ? currentNotesDraft : notesDraftsByItem[index]
+            let hasNote = !(draft?.quickNoteIds.isEmpty ?? true) || !(draft?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            return NotesTarget(id: index, name: item.productName, isChild: index > 0, hasNote: hasNote)
+        }
+    }
+
+    private var currentNotesDraft: (quickNoteIds: Set<String>, text: String) {
+        (selectedQuickNoteIds, tempNotes)
+    }
+
+    func selectNotesTarget(_ index: Int) {
+        guard pendingFlowItems.indices.contains(index), index != notesTargetIndex else { return }
+        notesDraftsByItem[notesTargetIndex] = currentNotesDraft
+        let draft = notesDraftsByItem[index] ?? ([], "")
+        notesTargetIndex = index
+        selectedQuickNoteIds = draft.quickNoteIds
+        tempNotes = draft.text
+        showFreeTextNotes = !draft.text.isEmpty
+        // Las vistas filtran las notas rápidas por `pendingCartItem`: al apuntar
+        // a la bebida salen "sin hielos", no las notas del platillo fuerte.
+        pendingCartItem = pendingFlowItems[index]
+    }
+
+    private func noteText(for draft: (quickNoteIds: Set<String>, text: String)?) -> String {
+        guard let draft else { return "" }
+        let labels = quickNotes.filter { draft.quickNoteIds.contains($0.id) }.map { $0.label }
+        let freeText = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (labels + (freeText.isEmpty ? [] : [freeText])).joined(separator: ", ")
     }
 
     func finishFlowAndAddToCart() {
@@ -2644,8 +2688,11 @@ class POSViewModel: ObservableObject {
         let freeText = tempNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         item.notes = (labels + (freeText.isEmpty ? [] : [freeText])).joined(separator: ", ")
         if !pendingFlowItems.isEmpty {
+            notesDraftsByItem[notesTargetIndex] = currentNotesDraft
             var items = pendingFlowItems
-            items[0].notes = item.notes
+            for index in items.indices {
+                items[index].notes = noteText(for: notesDraftsByItem[index])
+            }
             addToCart(items)
         } else {
             addToCart(item)
@@ -2662,6 +2709,9 @@ class POSViewModel: ObservableObject {
     }
 
     func handleCancelNotes() {
+        // "Editar selección" conserva el borrador: que sea el del padre, no el del
+        // hijo que estuviera activo, o su nota se le pegaría al platillo principal.
+        selectNotesTarget(0)
         showNotesDialog = false
         // Only clear pending item if not in a custom flow (so user can go back)
         if flowGraph == nil {

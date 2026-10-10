@@ -226,6 +226,8 @@ struct ProductGridView: View {
                         )
                     }
 
+                    NotesTargetPicker(targets: vm.notesTargets, selectedId: vm.notesTargetIndex) { vm.selectNotesTarget($0) }
+
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Comentarios especiales").font(.subheadline.bold()).foregroundColor(.white)
                         Text("Instrucciones, preferencias o alergias").font(.caption).foregroundColor(.gray)
