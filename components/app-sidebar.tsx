@@ -26,6 +26,7 @@ import {
   List,
   Notepad,
   ChatText,
+  GitBranch,
   Receipt,
 } from "@phosphor-icons/react";
 import { BrumaLogo } from "@/components/bruma-logo";
@@ -86,6 +87,11 @@ const menuNavItems = [
     title: "Notas Rápidas",
     url: "/inventory/quick-notes",
     icon: ChatText,
+  },
+  {
+    title: "Flujos",
+    url: "/flows",
+    icon: GitBranch,
   },
 ];
 
