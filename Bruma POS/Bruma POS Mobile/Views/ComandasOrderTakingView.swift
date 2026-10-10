@@ -553,9 +553,9 @@ private struct MobileNotesNode: View {
                     }
 
                     if !applicableQuickNotes.isEmpty {
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible())], spacing: 8) {
                             ForEach(applicableQuickNotes) { note in
-                                MobileFlowOption(label: note.label, priceLabel: nil, selected: vm.selectedQuickNoteIds.contains(note.id)) {
+                                MobileFlowOption(label: note.label, priceLabel: nil, selected: vm.selectedQuickNoteIds.contains(note.id), height: 54) {
                                     Haptics.tap()
                                     if vm.selectedQuickNoteIds.contains(note.id) {
                                         vm.selectedQuickNoteIds.remove(note.id)
@@ -565,6 +565,11 @@ private struct MobileNotesNode: View {
                                 }
                             }
                         }
+                        // Cada platillo trae sus propias notas rápidas. Sin esto, las que
+                        // se repiten entre dos platillos se deslizaban a su nueva posición;
+                        // al cambiar de platillo la rejilla completa se funde en su lugar.
+                        .id(vm.notesTargetIndex)
+                        .transition(.opacity.animation(.easeInOut(duration: 0.18)))
                     }
 
                     Button {
@@ -659,12 +664,14 @@ private struct MobileFlowOption: View {
     let priceLabel: String?
     var showsPlatformBadge = false
     let selected: Bool
+    /// Las notas rápidas usan una tarjeta más baja que las opciones de flujo.
+    var height: CGFloat = 90
     let action: () -> Void
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .topTrailing) {
                 VStack(spacing: 6) {
-                    Text(label).font(.subheadline.weight(.medium)).foregroundColor(.white).multilineTextAlignment(.center)
+                    Text(label).font(.subheadline.weight(.medium)).foregroundColor(.white).multilineTextAlignment(.center).lineLimit(height < 80 ? 2 : nil).minimumScaleFactor(height < 80 ? 0.85 : 1).padding(.horizontal, height < 80 ? 8 : 0)
                     if let priceLabel {
                         HStack(spacing: 4) {
                             Text(priceLabel).font(.caption).foregroundColor(.blue)
@@ -676,9 +683,9 @@ private struct MobileFlowOption: View {
                         }
                     }
                 }
-                .frame(maxWidth: .infinity).frame(height: 90)
+                .frame(maxWidth: .infinity).frame(height: height)
                 .modifier(FlatCardTinted(color: selected ? .blue : .gray))
-                if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue).padding(6) }
+                if selected { Image(systemName: "checkmark.circle.fill").font(height < 80 ? .caption : .body).foregroundStyle(.blue).padding(height < 80 ? 4 : 6) }
             }
         }
         .buttonStyle(.plain)
