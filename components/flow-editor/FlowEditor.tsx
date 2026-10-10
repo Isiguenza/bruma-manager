@@ -1,82 +1,275 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Background, BackgroundVariant, Controls, MiniMap, ReactFlow, type Connection, type Edge, type Node, type NodeTypes } from "@xyflow/react"
-import "@xyflow/react/dist/style.css"
+import { useRouter } from "next/navigation"
+import { CaretLeft, Play, Warning } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { PromotionProductPicker, type PromotionProductSelection } from "@/components/promotion-product-picker"
-import type { Category, Product } from "@/lib/types"
+import { Switch } from "@/components/ui/switch"
 import { validateGraph } from "@/lib/flows/validate"
-import { AddStepPanel } from "./AddStepPanel"
-import { FlowSimulator } from "./FlowSimulator"
-import { StepEditPanel } from "./StepEditPanel"
-import { StepNode } from "./StepNode"
-import { problemIds, temporaryId, toValidationGraph, type EditorEdge, type EditorNode, type FlowDocument, type FlowTarget } from "./types"
+import { cn } from "@/lib/utils"
+import type { Category, Product } from "@/lib/types"
+import { AppliesPanel } from "./AppliesPanel"
+import { BranchTree, type Selection } from "./BranchTree"
+import { addStepAfter, buildTree, flowsForProduct, moveStepUp, removeNode, trunkIds, updateOption, variantsOf, type TreeContext } from "./model"
+import { StepWizard } from "./StepWizard"
+import { TestPanel } from "./TestPanel"
+import { normalizeDocument, toValidationGraph, type EditorOption, type FlowDocument, type FlowListItem } from "./types"
 
-const nodeTypes = { step: StepNode } as unknown as NodeTypes
-const emptyDocument = (id: string): FlowDocument => ({ definition: { id, name: "Nuevo flujo", description: null, scopeKind: "global", priority: 0, active: true }, targets: [], nodes: [], edges: [] })
-const conditionText = (edge: EditorEdge) => { const condition = edge.condition; if (!condition) return "sin condición"; return [condition.variantNameIn?.join("|"), condition.productHasTag && `tag:${condition.productHasTag}`, condition.productIdIn?.length && "producto", condition.categoryIdIn?.length && "categoría", condition.optionSelected && "opción previa"].filter(Boolean).join(" · ") }
-const list = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean)
+const emptyDocument = (id: string): FlowDocument => ({
+  definition: { id, name: "Nuevo flujo", description: null, scopeKind: "global", priority: 0, active: true, parentFlowId: null },
+  targets: [],
+  nodes: [],
+  edges: [],
+  subflows: [],
+})
 
+const snapshot = (document: FlowDocument) => JSON.stringify([document.definition, document.nodes, document.edges, document.targets])
+
+/**
+ * Left: the flow drawn as branches (read-only, it is the map). Right: one thing at
+ * a time, screen by screen. Raw edges and ids never surface; `model.ts` translates
+ * "what comes next" into them.
+ */
 export function FlowEditor({ flowId, onBack }: { flowId: string; onBack?: () => void }) {
+  const router = useRouter()
   const [document, setDocument] = useState<FlowDocument>(() => emptyDocument(flowId))
+  const [saved, setSaved] = useState("")
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [flows, setFlows] = useState<FlowListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [showAdd, setShowAdd] = useState(false)
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
-  const [targetSelection, setTargetSelection] = useState<PromotionProductSelection>({ applyTo: "specific_products", categoryId: "", productIds: [] })
-  const [targetMode, setTargetMode] = useState<"include" | "exclude">("include")
+  const [selection, setSelection] = useState<Selection>(null)
 
-  useEffect(() => { void Promise.all([fetch(`/api/flows/${flowId}`), fetch("/api/products"), fetch("/api/categories")]).then(async ([flow, productRows, categoryRows]) => { if (!flow.ok) throw new Error("No se pudo cargar el flujo"); setDocument(await flow.json()); if (productRows.ok) setProducts(await productRows.json()); if (categoryRows.ok) setCategories(await categoryRows.json()) }).catch((error) => toast.error(error.message)).finally(() => setLoading(false)) }, [flowId])
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    void Promise.all([fetch(`/api/flows/${flowId}`), fetch("/api/products"), fetch("/api/categories"), fetch("/api/flows")])
+      .then(async ([flow, productRows, categoryRows, flowRows]) => {
+        if (!flow.ok) throw new Error("No se pudo cargar el flujo")
+        const loaded = normalizeDocument(await flow.json())
+        if (!alive) return
+        setDocument(loaded)
+        setSaved(snapshot(loaded))
+        setSelection(loaded.definition.parentFlowId || loaded.targets.length > 0 || loaded.nodes.some((node) => node.options.length > 0) ? null : { kind: "applies" })
+        if (productRows.ok) setProducts(await productRows.json())
+        if (categoryRows.ok) setCategories(await categoryRows.json())
+        if (flowRows.ok) setFlows(await flowRows.json())
+      })
+      .catch((error) => toast.error(error.message))
+      .finally(() => alive && setLoading(false))
+    return () => {
+      alive = false
+    }
+  }, [flowId])
 
-  const evidence = useMemo(() => ({ products: new Map(products.map((product) => [product.id, product.active])), categories: new Map(categories.map((category) => [category.id, category.active])) }), [products, categories])
-  const problems = useMemo(() => validateGraph(toValidationGraph(document, evidence)), [document, evidence])
-  const errors = problems.filter((problem) => problem.severity === "error")
-  const invalid = useMemo(() => problemIds(problems), [problems])
-  const selectedNode = document.nodes.find((node) => node.id === selectedNodeId) ?? null
-  const selectedEdge = document.edges.find((edge) => edge.id === selectedEdgeId) ?? null
-  const flowNodes: Node[] = document.nodes.map((node) => ({ id: node.id, type: "step", position: { x: node.posX, y: node.posY }, data: { node, invalid: invalid.nodes.has(node.id) } }))
-  const flowEdges: Edge[] = document.edges.map((edge) => ({ id: edge.id, source: edge.fromNodeId, target: edge.toNodeId ?? edge.fromNodeId, label: `#${edge.sortOrder + 1} · ${edge.fromOptionId ? "opción" : "default"} · ${conditionText(edge)}`, animated: true, style: { stroke: invalid.edges.has(edge.id) ? "hsl(var(--destructive))" : undefined, strokeWidth: invalid.edges.has(edge.id) ? 3 : undefined }, labelStyle: { fill: invalid.edges.has(edge.id) ? "hsl(var(--destructive))" : undefined, fontSize: 11 }, data: { terminal: edge.toNodeId === null } }))
-  const updateNode = (next: EditorNode) => setDocument((current) => ({ ...current, nodes: current.nodes.map((node) => node.id === next.id ? next : node) }))
-  const markNodeAsEntry = (id: string) => setDocument((current) => ({ ...current, nodes: current.nodes.map((node) => ({ ...node, isEntry: node.id === id })) }))
-  const deleteNode = (id: string) => setDocument((current) => {
-    if (current.nodes.length <= 1) return current
-    const nodes = current.nodes.filter((node) => node.id !== id)
-    const deletedEntry = current.nodes.some((node) => node.id === id && node.isEntry)
-    return { ...current, nodes: deletedEntry ? nodes.map((node, index) => ({ ...node, isEntry: index === 0 })) : nodes, edges: current.edges.filter((edge) => edge.fromNodeId !== id && edge.toNodeId !== id) }
-  })
-  const addNode = (title: string, step: boolean) => {
-    const node: EditorNode = { id: temporaryId("node"), title, subtitle: null, selectMode: "single", minSelections: 0, maxSelections: null, includeNoneOption: true, noneLabel: null, isEntry: !document.nodes.some((item) => item.isEntry), posX: 100 + document.nodes.length * 60, posY: 100 + document.nodes.length * 80, sortOrder: document.nodes.length, active: true, options: step ? [] : [{ id: temporaryId("option"), source: "manual", label: "Opción", refProductId: null, refCategoryId: null, refVariantName: null, allowVariantChoice: false, variantPriceDeltas: {}, priceMode: "delta", priceDelta: "0", emitsChildItem: false, sortOrder: 0, active: true, priceOverrides: [] }] }
-    setDocument((current) => ({ ...current, nodes: [...current.nodes, node] })); setSelectedNodeId(node.id); setShowAdd(false)
+  const dirty = saved !== "" && snapshot(document) !== saved
+  const isSubflow = document.definition.parentFlowId !== null
+  const parent = flows.find((flow) => flow.id === document.definition.parentFlowId)
+
+  const evidence = useMemo(
+    () => ({ products: new Map(products.map((product) => [product.id, product.active])), categories: new Map(categories.map((category) => [category.id, category.active])) }),
+    [products, categories],
+  )
+  const problems = useMemo(() => validateGraph(toValidationGraph(document, evidence)).filter((problem) => problem.severity === "error"), [document, evidence])
+  const invalidNodeIds = useMemo(() => new Set(problems.flatMap((problem) => (problem.nodeId ? [problem.nodeId] : []))), [problems])
+
+  const context: TreeContext = useMemo(() => {
+    const categoryName = (id: string | null) => categories.find((category) => category.id === id)?.name ?? "…"
+    const inheritedFlowNames = (option: EditorOption) => {
+      if (!option.emitsChildItem || option.source === "manual") return []
+      const referenced = products.filter(
+        (product) => product.active && (option.source === "category" ? product.categoryId === option.refCategoryId && !option.hiddenRefs.includes(product.id) && !option.subflowHiddenRefs.includes(product.id) : product.id === option.refProductId),
+      )
+      return [...new Set(referenced.flatMap((product) => flowsForProduct(flows, product, flowId).map((flow) => flow.name)))]
+    }
+    return { products, categoryName, inheritedFlowNames }
+  }, [products, categories, flows, flowId])
+
+  const tree = useMemo(() => buildTree(document, context), [document, context])
+
+  const targetProducts = useMemo(() => {
+    const includes = document.targets.filter((target) => target.mode === "include")
+    const off = new Set(document.targets.filter((target) => target.mode === "exclude" && target.productId && !target.variantName).map((target) => target.productId))
+    return products.filter(
+      (product) =>
+        product.active &&
+        !off.has(product.id) &&
+        includes.some((target) => target.productId === product.id || (target.categoryId !== null && target.categoryId === product.categoryId) || (target.subcategoryId !== null && target.subcategoryId === (product.subcategoryId ?? null))),
+    )
+  }, [document.targets, products])
+  const targetVariantNames = useMemo(() => [...new Set(targetProducts.flatMap((product) => variantsOf(product).map((variant) => variant.name)))], [targetProducts])
+
+  const appliesSummary = useMemo(() => {
+    const names = document.targets.filter((target) => target.mode === "include").map((target) => target.targetName ?? categories.find((category) => category.id === target.categoryId)?.name ?? products.find((product) => product.id === target.productId)?.name ?? "…")
+    const exceptions = document.targets.filter((target) => target.mode === "exclude").length
+    if (names.length === 0) return document.definition.scopeKind === "global" ? "En todos los platillos" : "Todavía en ninguno"
+    return `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3}` : ""}${exceptions ? ` · ${exceptions} apagado${exceptions === 1 ? "" : "s"}` : ""}`
+  }, [document.targets, document.definition.scopeKind, categories, products])
+
+  const selectedNode = selection?.kind === "step" ? (document.nodes.find((node) => node.id === selection.nodeId) ?? null) : null
+
+  const leave = (path: string) => {
+    if (dirty && !confirm("Hay cambios sin guardar. ¿Salir de todos modos?")) return
+    router.push(path)
   }
-  const appendEdge = (fromNodeId: string, toNodeId: string | null) => {
-    const edgeId = temporaryId("edge")
-    setDocument((current) => {
-      const outgoing = current.edges.filter((edge) => edge.fromNodeId === fromNodeId).sort((left, right) => left.sortOrder - right.sortOrder)
-      const sortOrders = new Map(outgoing.map((edge, index) => [edge.id, index]))
-      return { ...current, edges: [...current.edges.map((edge) => sortOrders.has(edge.id) ? { ...edge, sortOrder: sortOrders.get(edge.id)! } : edge), { id: edgeId, fromNodeId, fromOptionId: null, toNodeId, condition: null, sortOrder: outgoing.length }] }
-    })
-    return edgeId
-  }
-  const connect = (connection: Connection) => { if (!connection.source || !connection.target) return; appendEdge(connection.source, connection.target) }
-  const addEdgeFromNode = (nodeId: string) => { const edgeId = appendEdge(nodeId, null); setSelectedEdgeId(edgeId); setSelectedNodeId(null) }
-  const updateEdge = (patch: Partial<EditorEdge>) => selectedEdge && setDocument((current) => ({ ...current, edges: current.edges.map((edge) => edge.id === selectedEdge.id ? { ...edge, ...patch } : edge) }))
-  const moveEdge = (direction: -1 | 1) => { if (!selectedEdge) return; const ordered = document.edges.filter((edge) => edge.fromNodeId === selectedEdge.fromNodeId).sort((a, b) => a.sortOrder - b.sortOrder); const index = ordered.findIndex((edge) => edge.id === selectedEdge.id); const swapIndex = index + direction; if (index < 0 || !ordered[swapIndex]) return; [ordered[index], ordered[swapIndex]] = [ordered[swapIndex], ordered[index]]; const sortOrders = new Map(ordered.map((edge, position) => [edge.id, position])); setDocument((current) => ({ ...current, edges: current.edges.map((edge) => sortOrders.has(edge.id) ? { ...edge, sortOrder: sortOrders.get(edge.id)! } : edge) })) }
-  const addTargets = () => { const targets: FlowTarget[] = targetSelection.applyTo === "category" ? [{ mode: targetMode, categoryId: targetSelection.categoryId, subcategoryId: null, productId: null, targetName: categories.find((category) => category.id === targetSelection.categoryId)?.name }] : targetSelection.productIds.map((productId) => ({ mode: targetMode, categoryId: null, subcategoryId: null, productId, targetName: products.find((product) => product.id === productId)?.name })); setDocument((current) => ({ ...current, targets: [...current.targets, ...targets] })); setTargetSelection({ applyTo: "specific_products", categoryId: "", productIds: [] }) }
-  const save = async () => { if (errors.length > 0) { toast.error("Corrige los errores de validación antes de guardar"); return } setSaving(true); try { await fetch(`/api/flows/${flowId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(document.definition) }); const graph = await fetch(`/api/flows/${flowId}/graph`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nodes: document.nodes, edges: document.edges }) }); if (!graph.ok) { const body = await graph.json(); throw new Error(body.error ?? "El servidor rechazó el grafo") } const targets = await fetch(`/api/flows/${flowId}/targets`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targets: document.targets }) }); if (!targets.ok) throw new Error("No se pudieron guardar los targets"); const saved = await graph.json(); setDocument({ ...saved, targets: await targets.json() }); toast.success("Flujo guardado") } catch (error) { toast.error(error instanceof Error ? error.message : "Error guardando flujo") } finally { setSaving(false) } }
-  if (loading) return <div className="grid h-[70vh] place-items-center text-muted-foreground">Cargando editor…</div>
-  return <div className="flex h-[calc(100vh-4rem)] min-h-[700px] flex-col bg-background"><header className="flex flex-wrap items-center gap-3 border-b bg-card px-4 py-3"><Button variant="outline" size="sm" onClick={onBack}>Volver</Button><div className="min-w-52 flex-1"><Input className="h-8 font-semibold" value={document.definition.name} onChange={(event) => setDocument((current) => ({ ...current, definition: { ...current.definition, name: event.target.value } }))} /><p className="mt-1 text-xs text-muted-foreground">Las aristas se evalúan en orden: la #1 que cumple decide el siguiente nodo y también es el camino default para clientes antiguos.</p></div><Button onClick={() => setShowAdd(true)}>Agregar nodo</Button><Button disabled={saving || errors.length > 0} onClick={save}>{saving ? "Guardando…" : `Guardar${errors.length ? ` (${errors.length} errores)` : ""}`}</Button></header><div className="grid min-h-0 flex-1 lg:grid-cols-[1fr_340px]"><main className="relative min-h-[420px]"><ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onConnect={connect} onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null) }} onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null) }} onNodeDragStop={(_, node) => setDocument((current) => ({ ...current, nodes: current.nodes.map((item) => item.id === node.id ? { ...item, posX: Math.round(node.position.x), posY: Math.round(node.position.y) } : item) }))} fitView><Background variant={BackgroundVariant.Dots} /><Controls /><MiniMap /></ReactFlow>{showAdd && <AddStepPanel onAdd={addNode} onClose={() => setShowAdd(false)} />}{selectedNode && <StepEditPanel node={selectedNode} products={products} categories={categories} onUpdate={updateNode} onMarkAsEntry={() => markNodeAsEntry(selectedNode.id)} onAddEdge={() => addEdgeFromNode(selectedNode.id)} canDelete={document.nodes.length > 1} onDelete={() => { deleteNode(selectedNode.id); setSelectedNodeId(null) }} onClose={() => setSelectedNodeId(null)} />}{selectedEdge && <EdgePanel edge={selectedEdge} nodes={document.nodes} onUpdate={updateEdge} onDelete={() => { setDocument((current) => ({ ...current, edges: current.edges.filter((edge) => edge.id !== selectedEdge.id) })); setSelectedEdgeId(null) }} onMove={moveEdge} />}</main><aside className="space-y-4 overflow-y-auto border-l bg-card p-4"><section><h2 className="font-semibold">Validación en vivo</h2>{problems.length === 0 ? <p className="mt-2 rounded bg-emerald-500/10 p-2 text-sm text-emerald-700">Sin problemas detectados.</p> : <ul className="mt-2 space-y-2">{problems.map((problem, index) => <li key={`${problem.code}-${index}`} className={`rounded p-2 text-xs ${problem.severity === "error" ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-700"}`}>{problem.message}</li>)}</ul>}</section><section className="space-y-2 border-t pt-4"><h2 className="font-semibold">Targets</h2><p className="text-xs text-muted-foreground">Los include aplican el flujo; exclude siempre gana.</p><PromotionProductPicker products={products} categories={categories} value={targetSelection} onChange={setTargetSelection} /><div className="flex gap-2"><select className="rounded border bg-background p-2 text-sm" value={targetMode} onChange={(event) => setTargetMode(event.target.value as "include" | "exclude")}><option value="include">Incluir</option><option value="exclude">Excluir</option></select><Button size="sm" onClick={addTargets}>Agregar</Button></div><div className="space-y-1">{document.targets.map((target, index) => <div className="flex items-center gap-2 rounded border p-2 text-xs" key={`${target.mode}-${target.categoryId ?? target.productId}-${index}`}><span className="font-medium">{target.mode}</span><span className="flex-1 truncate">{target.targetName ?? target.categoryId ?? target.productId}</span><button onClick={() => setDocument((current) => ({ ...current, targets: current.targets.filter((_, currentIndex) => currentIndex !== index) }))}>×</button></div>)}</div></section><FlowSimulator document={document} products={products} categories={categories} /></aside></div></div>
-}
 
-function EdgePanel({ edge, nodes, onUpdate, onDelete, onMove }: { edge: EditorEdge; nodes: EditorNode[]; onUpdate: (patch: Partial<EditorEdge>) => void; onDelete: () => void; onMove: (direction: -1 | 1) => void }) {
-  const source = nodes.find((node) => node.id === edge.fromNodeId)
-  const condition = edge.condition ?? {}
-  const change = (patch: Record<string, unknown>) => { const next: Record<string, unknown> = { ...condition, ...patch }; Object.keys(next).forEach((key) => { if (next[key] === "" || (Array.isArray(next[key]) && next[key].length === 0)) delete next[key] }); onUpdate({ condition: Object.keys(next).length ? next as EditorEdge["condition"] : null }) }
-  return <aside className="absolute right-0 top-0 z-20 h-full w-96 overflow-y-auto border-l bg-card p-5 shadow-xl"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Arista #{edge.sortOrder + 1}</h2><p className="text-xs text-muted-foreground">La primera arista que cumple gana.</p></div><Button size="sm" variant="ghost" onClick={onDelete}>Eliminar</Button></div><div className="mt-4 space-y-3"><label className="space-y-1 text-sm"><span>Siguiente nodo</span><select className="w-full rounded border bg-background p-2" value={edge.toNodeId ?? "__end__"} onChange={(event) => onUpdate({ toNodeId: event.target.value === "__end__" ? null : event.target.value })}><option value="__end__">Fin del flujo</option>{nodes.filter((node) => node.id !== edge.fromNodeId).map((node) => <option key={node.id} value={node.id}>{node.title}</option>)}</select></label><label className="space-y-1 text-sm"><span>Sale al elegir</span><select className="w-full rounded border bg-background p-2" value={edge.fromOptionId ?? ""} onChange={(event) => onUpdate({ fromOptionId: event.target.value || null })}><option value="">Cualquier opción (default)</option>{source?.options.map((option) => <option key={option.id} value={option.id}>{option.label || "Sin etiqueta"}</option>)}</select></label><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => onMove(-1)}>↑ Prioridad</Button><Button variant="outline" size="sm" onClick={() => onMove(1)}>↓ Prioridad</Button></div><p className="rounded bg-muted p-2 text-xs text-muted-foreground">La menor prioridad es también el camino usado para aplanar el flujo hacia clientes viejos.</p><label className="space-y-1 text-sm"><span>variantNameIn (separa con coma)</span><Input value={condition.variantNameIn?.join(", ") ?? ""} onChange={(event) => change({ variantNameIn: list(event.target.value) })} /></label><label className="space-y-1 text-sm"><span>productHasTag</span><Input value={condition.productHasTag ?? ""} onChange={(event) => change({ productHasTag: event.target.value })} /></label><label className="space-y-1 text-sm"><span>productIdIn (coma)</span><Input value={condition.productIdIn?.join(", ") ?? ""} onChange={(event) => change({ productIdIn: list(event.target.value) })} /></label><label className="space-y-1 text-sm"><span>categoryIdIn (coma)</span><Input value={condition.categoryIdIn?.join(", ") ?? ""} onChange={(event) => change({ categoryIdIn: list(event.target.value) })} /></label><label className="space-y-1 text-sm"><span>optionSelected</span><select className="w-full rounded border bg-background p-2" value={condition.optionSelected ?? ""} onChange={(event) => change({ optionSelected: event.target.value })}><option value="">Sin condición de opción</option>{nodes.flatMap((node) => node.options).map((option) => <option key={option.id} value={option.id}>{option.label || option.id}</option>)}</select></label></div></aside>
+  const save = async () => {
+    if (problems.length > 0) return toast.error("Hay pasos con problemas; revísalos antes de guardar")
+    const everywhere = !isSubflow && document.definition.scopeKind === "global" && !document.targets.some((target) => target.mode === "include") && document.nodes.some((node) => node.options.length > 0)
+    if (everywhere && !confirm("No elegiste platillos: este flujo va a salir en TODOS. ¿Guardar así?")) return
+    setSaving(true)
+    // Ids are reassigned on save, so the selected step is found again by position.
+    const selectedIndex = selection?.kind === "step" ? document.nodes.findIndex((node) => node.id === selection.nodeId) : -1
+    try {
+      const json = { method: "", headers: { "Content-Type": "application/json" } }
+      const definition = await fetch(`/api/flows/${flowId}`, { ...json, method: "PATCH", body: JSON.stringify({ name: document.definition.name.trim() || "Flujo sin nombre", active: document.definition.active, priority: document.definition.priority }) })
+      if (!definition.ok) throw new Error("No se pudo guardar el nombre del flujo")
+      const graph = await fetch(`/api/flows/${flowId}/graph`, { ...json, method: "PUT", body: JSON.stringify({ nodes: document.nodes.map((node, sortOrder) => ({ ...node, sortOrder })), edges: document.edges }) })
+      if (!graph.ok) throw new Error((await graph.json().catch(() => null))?.error ?? "El servidor rechazó el flujo")
+      if (!isSubflow) {
+        const targets = await fetch(`/api/flows/${flowId}/targets`, { ...json, method: "PUT", body: JSON.stringify({ targets: document.targets }) })
+        if (!targets.ok) throw new Error("No se pudo guardar en qué platillos sale")
+      }
+      const fresh = normalizeDocument(await (await fetch(`/api/flows/${flowId}`)).json())
+      setDocument(fresh)
+      setSaved(snapshot(fresh))
+      if (selectedIndex >= 0 && fresh.nodes[selectedIndex]) setSelection({ kind: "step", nodeId: fresh.nodes[selectedIndex].id })
+      toast.success("Guardado. Los iPads lo toman al momento.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo guardar")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const addStep = (afterNodeId: string | null) => {
+    const created = addStepAfter(document, afterNodeId, "Paso nuevo")
+    setDocument(created.document)
+    setSelection({ kind: "step", nodeId: created.nodeId })
+  }
+
+  const createSubflow = async (nodeId: string, optionId: string, name: string) => {
+    // scopeKind "product" with no targets: a composer that predates parent_flow_id
+    // would never apply it either, so an embedded flow cannot leak into the menu.
+    const response = await fetch("/api/flows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, scopeKind: "product", parentFlowId: flowId, firstStepTitle: "Primera pregunta" }) })
+    if (!response.ok) return toast.error("No se pudo crear el subflujo")
+    const created = normalizeDocument(await response.json())
+    setDocument((current) => ({ ...updateOption(current, nodeId, optionId, { childFlowMode: "custom", childFlowId: created.definition.id }), subflows: [...current.subflows, { id: created.definition.id, name: created.definition.name, active: true }] }))
+    toast.success("Subflujo creado. Guarda y ábrelo para armar sus pasos.")
+  }
+
+  if (loading) return <div className="grid h-[70vh] place-items-center text-muted-foreground">Cargando flujo…</div>
+
+  return (
+    <div className="flex h-[calc(100vh-4rem)] min-h-[640px] flex-col bg-background">
+      {/* Entrances only: these rows are not gesture-driven, so a short critically-damped ease is enough. */}
+      <style>{`
+        @keyframes flowRowIn { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: none; } }
+        @keyframes flowScreenIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+        .flow-row-in { animation: flowRowIn 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: left top; }
+        .flow-screen-in { animation: flowScreenIn 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+        @media (prefers-reduced-motion: reduce) {
+          .flow-row-in, .flow-screen-in { animation: flowFade 160ms ease both; }
+          @keyframes flowFade { from { opacity: 0; } to { opacity: 1; } }
+        }
+      `}</style>
+
+      <header className="flex flex-wrap items-center gap-3 border-b bg-card/80 px-4 py-2.5 backdrop-blur">
+        <Button variant="ghost" size="sm" onClick={() => (isSubflow && parent ? leave(`/flows/${parent.id}`) : dirty && !confirm("Hay cambios sin guardar. ¿Salir de todos modos?") ? undefined : onBack ? onBack() : router.push("/flows"))}>
+          <CaretLeft className="size-4" /> {isSubflow ? (parent?.name ?? "Flujo principal") : "Flujos"}
+        </Button>
+        <div className="min-w-48 flex-1">
+          {isSubflow && <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Subflujo propio</p>}
+          <Input
+            className="h-9 border-transparent bg-transparent px-1 text-lg font-semibold tracking-[-0.015em] shadow-none hover:border-border focus-visible:border-border"
+            value={document.definition.name}
+            onChange={(event) => setDocument((current) => ({ ...current, definition: { ...current.definition, name: event.target.value } }))}
+            aria-label="Nombre del flujo"
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Switch checked={document.definition.active} onCheckedChange={(active) => setDocument((current) => ({ ...current, definition: { ...current.definition, active } }))} />
+          {document.definition.active ? "Activo" : "Apagado"}
+        </label>
+        {!isSubflow && (
+          <Button variant={selection?.kind === "test" ? "secondary" : "outline"} size="sm" onClick={() => setSelection({ kind: "test" })}>
+            <Play className="size-4" weight="fill" /> Probar
+          </Button>
+        )}
+        <Button size="sm" disabled={saving || !dirty || problems.length > 0} onClick={save}>
+          {saving ? "Guardando…" : dirty ? "Guardar" : "Guardado"}
+        </Button>
+      </header>
+
+      {problems.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-sm">
+          <Warning className="size-4 shrink-0 text-destructive" weight="fill" />
+          {problems.slice(0, 3).map((problem, index) => (
+            <button
+              key={index}
+              type="button"
+              className="rounded-md px-1.5 py-0.5 text-left text-destructive underline-offset-2 hover:underline"
+              onClick={() => problem.nodeId && setSelection({ kind: "step", nodeId: problem.nodeId })}
+            >
+              {problem.nodeId ? `«${document.nodes.find((node) => node.id === problem.nodeId)?.title ?? "Paso"}»: ` : ""}
+              {problem.message}
+            </button>
+          ))}
+          {problems.length > 3 && <span className="text-muted-foreground">y {problems.length - 3} más</span>}
+        </div>
+      )}
+
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(320px,440px)_1fr]">
+        <aside className="min-h-0 overflow-y-auto border-r bg-muted/20">
+          <BranchTree
+            trunk={tree.trunk}
+            orphans={tree.orphans}
+            context={context}
+            selection={selection}
+            invalidNodeIds={invalidNodeIds}
+            appliesSummary={appliesSummary}
+            isSubflow={isSubflow}
+            onSelect={setSelection}
+            onAddAfter={addStep}
+            onOpenSubflow={(id) => leave(`/flows/${id}`)}
+          />
+        </aside>
+        <main className={cn("min-h-0 bg-card", selection === null && "grid place-items-center")}>
+          {selection === null && (
+            <div className="max-w-sm p-8 text-center">
+              <p className="text-base font-semibold">Toca un paso para configurarlo</p>
+              <p className="mt-1 text-sm text-muted-foreground">A la izquierda está el flujo como lo recorre el mesero: el tronco son los pasos y cada rama es un camino que solo abren ciertas opciones.</p>
+            </div>
+          )}
+          {selection?.kind === "applies" && <AppliesPanel document={document} products={products} categories={categories} onChange={(targets) => setDocument((current) => ({ ...current, targets }))} />}
+          {selection?.kind === "test" && <TestPanel products={products} categories={categories} suggestedProductIds={targetProducts.map((product) => product.id)} dirty={dirty} />}
+          {selectedNode && (
+            <StepWizard
+              key={selectedNode.id}
+              document={document}
+              node={selectedNode}
+              products={products}
+              categories={categories}
+              flows={flows}
+              targetVariantNames={targetVariantNames}
+              canMoveUp={trunkIds(document).indexOf(selectedNode.id) > 0}
+              onChange={setDocument}
+              onSelectNode={(nodeId) => setSelection({ kind: "step", nodeId })}
+              onMoveUp={() => setDocument(moveStepUp(document, selectedNode.id))}
+              onDelete={() => {
+                if (!confirm(`¿Borrar el paso «${selectedNode.title}»? Lo que llegaba a él seguirá al paso siguiente.`)) return
+                setDocument(removeNode(document, selectedNode.id))
+                setSelection(null)
+              }}
+              onCreateSubflow={(optionId, name) => void createSubflow(selectedNode.id, optionId, name)}
+              onOpenSubflow={(id) => leave(`/flows/${id}`)}
+            />
+          )}
+        </main>
+      </div>
+    </div>
+  )
 }
