@@ -2847,7 +2847,15 @@ class POSViewModel: ObservableObject {
         
         Task {
             if let itemId = item.itemId, let orderId = item.orderId {
-                try? await APIService.shared.voidItem(orderId: orderId, itemId: itemId, reason: voidReason.isEmpty ? "Sin razón" : voidReason, voidedBy: employeeId)
+                // El servidor anula al padre y a sus hijos en el mismo batch. Si la
+                // anulación falla no se quita nada del carrito: antes desaparecía el
+                // paquete en pantalla y seguía vivo (y cobrable) en la orden.
+                do {
+                    try await APIService.shared.voidItem(orderId: orderId, itemId: itemId, reason: voidReason.isEmpty ? "Sin razón" : voidReason, voidedBy: employeeId)
+                } catch {
+                    showToast("No se pudo eliminar \(item.productName). Intenta de nuevo.", isError: true)
+                    return
+                }
             }
             removeCartGroup(parentId: item.id)
             showToast("Item eliminado: \(item.productName)")
