@@ -367,8 +367,7 @@ struct CartItemRow: View {
                     .foregroundColor(.white)
                     .frame(width: 20, height: 20)
                     .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(LinearGradient(colors: [Color(red: 0.23, green: 0.62, blue: 1), Color(red: 0.04, green: 0.44, blue: 0.88)], startPoint: .top, endPoint: .bottom))
+                        RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.blue)
                     )
                 Text(item.packageLabel ?? "Paquete")
                     .font(.caption.weight(.semibold))
@@ -448,30 +447,12 @@ struct CartItemRow: View {
                 .background(Color.white.opacity(0.02))
                 .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1) }
         }
-        .background(
-            ZStack {
-                Color(red: 0.09, green: 0.09, blue: 0.1)
-                // La luz azul pega en la esquina superior y se apaga: identidad sin pintar la tarjeta.
-                RadialGradient(colors: [Color.blue.opacity(0.22), .clear], center: .topLeading, startRadius: 0, endRadius: 150)
-            }
-        )
+        .background(Color(red: 0.09, green: 0.09, blue: 0.1))
         .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        stops: [
-                            .init(color: Color.blue.opacity(0.75), location: 0),
-                            .init(color: Color.blue.opacity(0.16), location: 0.34),
-                            .init(color: Color.white.opacity(0.09), location: 0.62),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
+                .strokeBorder(Color.blue.opacity(0.45), lineWidth: 1)
         )
-        .shadow(color: Color.blue.opacity(0.18), radius: 10, y: 6)
     }
 
     private func includedRow(_ child: CartItem) -> some View {
