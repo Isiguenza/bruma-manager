@@ -4,7 +4,23 @@ struct CartView: View {
     @ObservedObject var vm: POSViewModel
 
     @State private var showCartRejectDialog = false
+    /// Paquetes plegados en esta sesión del carrito (por id local del platillo padre).
+    @State private var collapsedPackageIds: Set<UUID> = []
     @State private var cartRejectReason = ""
+
+    private func isDrawnInsidePackageCard(_ item: CartItem) -> Bool {
+        guard let parentId = item.parentLocalId else { return false }
+        return vm.cart.contains { $0.id == parentId }
+    }
+
+    private func collapseBinding(for item: CartItem) -> Binding<Bool> {
+        Binding(
+            get: { collapsedPackageIds.contains(item.id) },
+            set: { collapsed in
+                if collapsed { collapsedPackageIds.insert(item.id) } else { collapsedPackageIds.remove(item.id) }
+            }
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -312,6 +328,9 @@ struct CartView: View {
                                 }
                             
                             case .item(let index, let item, let showCourseHeader, let showSeatHeader):
+                                // Un incluido ya se dibuja DENTRO de la tarjeta de su paquete
+                                // (CartItemRow.packageCard). Sin vista aquí tampoco deja hueco.
+                                if !isDrawnInsidePackageCard(item) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     if showCourseHeader {
                                         HStack(spacing: 6) {
@@ -348,7 +367,8 @@ struct CartView: View {
                                         .padding(.top, showCourseHeader ? 4 : 0)
                                     }
                                     
-                                    CartItemRow(item: item, index: index, vm: vm)
+                                    CartItemRow(item: item, index: index, vm: vm, isCollapsed: collapseBinding(for: item))
+                                }
                                 }
                             }
                         }
@@ -570,6 +590,7 @@ struct CartView: View {
                         Image(systemName: hasUnsentItems ? "arrow.up.forward" : needsReadyStep ? "bell.badge.fill" : needsDeliveringStep ? "bicycle" : (isPaidTakeout ? "checkmark.circle.fill" : "creditcard.fill"))
                             .font(.callout)
                             .contentTransition(.symbolEffect(.replace))
+                            .fontWeight(.bold)
 
                         Text(hasUnsentItems ? "Enviar a Cocina" : needsReadyStep ? "Marcar listo" : needsDeliveringStep ? "Marcar en camino" : (isPaidTakeout ? "Finalizar orden" : "Pagar"))
                             .font(.callout.weight(.semibold))

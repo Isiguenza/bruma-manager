@@ -775,6 +775,14 @@ en el carrito (`removeCartGroup`, `cartRenderElements`, la rama de
 `CartItemRow`) compara `parentLocalId` contra `id`; si vuelve a fallar algo de
 paquetes tras salir y volver a una mesa, revisa primero esa igualdad.
 
+**Paquete en el carrito del iPad = UNA tarjeta.** `CartItemRow.packageCard`
+dibuja al padre con sus incluidos adentro (pozo hundido, plegable), y
+`CartView` se salta a los hijos (`isDrawnInsidePackageCard`) en vez de pintarlos
+como renglones. `vm.cartRenderElements` (compartido con Mobile) sigue
+devolviendo a los hijos: quien los omite es la vista, no el ViewModel. El
+estado de plegado vive en `CartView.collapsedPackageIds`, no en `@State` del
+renglón, porque el `LazyVStack` recicla renglones al hacer scroll.
+
 **Tres copias a mano que hay que mantener en sync (el repo ya vivía así):**
 `lib/flows/compose.ts` ↔ `api-server/src/lib/flowCompose.ts` (duplicadas porque
 `api-server` es un proyecto TS aparte, `rootDir:"."`, que no puede importar de la
