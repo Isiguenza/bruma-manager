@@ -440,6 +440,8 @@ struct CartItemRow: View {
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.black.opacity(0.3)))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.04), lineWidth: 1))
                 .padding(.horizontal, 8)
+                // El aire de arriba va dentro de lo que se pliega: cerrada no deja hueco.
+                .padding(.top, 6)
                 .padding(.bottom, 10)
                 // Se cierra como una persiana: el pozo se queda quieto y la tarjeta lo
                 // va tapando desde abajo. Antes se insertaba/quitaba con un `move`, y
