@@ -378,7 +378,7 @@ struct CartItemRow: View {
                     Button {
                         Haptics.tap()
                         // No lo lanza un gesto, así que se asienta sin rebote.
-                        withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 1)) {
+                        withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.36, dampingFraction: 1)) {
                             isCollapsed.wrappedValue.toggle()
                         }
                     } label: {
@@ -415,14 +415,18 @@ struct CartItemRow: View {
                         .font(.caption2)
                         .foregroundColor(Color(white: 0.6))
                         .lineLimit(1)
-                        .transition(.opacity)
+                        // Entra tarde y sale pronto: nunca convive con la lista a medio cerrar.
+                        .transition(.asymmetric(
+                            insertion: .opacity.animation(.easeOut(duration: 0.18).delay(0.12)),
+                            removal: .opacity.animation(.easeOut(duration: 0.08))
+                        ))
                 }
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 12)
 
-            if !collapsed && !children.isEmpty {
+            if !children.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(children.enumerated()), id: \.element.id) { position, child in
                         if position > 0 {
@@ -437,7 +441,15 @@ struct CartItemRow: View {
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.04), lineWidth: 1))
                 .padding(.horizontal, 8)
                 .padding(.bottom, 10)
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                // Se cierra como una persiana: el pozo se queda quieto y la tarjeta lo
+                // va tapando desde abajo. Antes se insertaba/quitaba con un `move`, y
+                // los incluidos subían encimándose al nombre del platillo.
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(height: collapsed ? 0 : nil, alignment: .top)
+                .clipped()
+                .opacity(collapsed ? 0 : 1)
+                .allowsHitTesting(!collapsed)
+                .accessibilityHidden(collapsed)
             }
 
             footerRow
