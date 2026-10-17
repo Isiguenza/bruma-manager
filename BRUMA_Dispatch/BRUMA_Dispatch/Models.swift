@@ -68,7 +68,7 @@ extension OrderItem: Codable {
         case frostingName, dryToppingName, extraName, customModifiers
         case product, createdAt, deliveredToTable, isBeverage, parentItemId, packageLabel
     }
-    
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -93,78 +93,6 @@ extension OrderItem: Codable {
         parentItemId = try container.decodeIfPresent(String.self, forKey: .parentItemId)
         packageLabel = try container.decodeIfPresent(String.self, forKey: .packageLabel)
     }
-}
-
-// MARK: - OrderBatch (grupo de items enviados juntos)
-struct OrderBatch: Identifiable {
-    let id: String
-    let orderId: String
-    let orderNumber: Int
-    let items: [OrderItem]
-    let createdAt: String
-    let table: Table?
-    let customerName: String?
-    let preparationTime: Int?
-    var isRush: Bool = false
-    var isOnHold: Bool = false
-    var holdAccumulatedSeconds: Int = 0
-    var isPractice: Bool = false
-    
-    // Effective elapsed minutes excluding hold time
-    var effectiveElapsedMinutes: Double {
-        guard let date = parseDate(createdAt) else { return 0 }
-        let total = Date().timeIntervalSince(date)
-        let effective = max(0, total - Double(holdAccumulatedSeconds))
-        return effective / 60.0
-    }
-    
-    var urgency: OrderUrgency {
-        let elapsed = effectiveElapsedMinutes
-        if elapsed < 4 { return .normal }
-        if elapsed < 7 { return .attention }
-        if elapsed < 10 { return .warning }
-        return .urgent
-    }
-    
-    private func parseDate(_ dateString: String) -> Date? {
-        let formats = [
-            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ",
-            "yyyy-MM-dd'T'HH:mm:ss'Z'",
-            "yyyy-MM-dd'T'HH:mm:ssZ",
-        ]
-        
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = TimeZone(identifier: "UTC")
-        
-        for format in formats {
-            df.dateFormat = format
-            if let date = df.date(from: dateString) {
-                return date
-            }
-        }
-        
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso.date(from: dateString) {
-            return date
-        }
-        
-        iso.formatOptions = [.withInternetDateTime]
-        return iso.date(from: dateString)
-    }
-}
-
-// MARK: - CompletedOrder (franja de "recién completadas" con deshacer)
-struct CompletedOrder: Identifiable {
-    let id: String          // orderId
-    let orderNumber: Int
-    let label: String       // "Mesa 5" / "Llevar - Juan"
-    let itemIds: [String]
-    let completedAt: Date
 }
 
 // MARK: - Product
@@ -199,19 +127,144 @@ struct ModifierOption: Codable {
     let name: String
 }
 
-// MARK: - Order Urgency
-enum OrderUrgency {
-    case normal   // < 4 min
-    case attention // 4-7 min
-    case warning  // 7-10 min
-    case urgent   // > 10 min
-    
-    var color: String {
-        switch self {
-        case .normal: return "gray"
-        case .attention: return "yellow"
-        case .warning: return "orange"
-        case .urgent: return "red"
+// MARK: - Fechas del API
+
+/// Parser único de fechas del API. Los formatters se crean una sola vez: antes
+/// cada tarjeta armaba los suyos en cada render (y el reloj redibujaba todo el
+/// board cada segundo).
+enum PassDate {
+    private static let isoFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let isoPlain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let fallback: DateFormatter = {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(identifier: "UTC")
+        return df
+    }()
+
+    private static let fallbackFormats = [
+        "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ",
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd HH:mm:ss.SSS",
+        "yyyy-MM-dd HH:mm:ss",
+    ]
+
+    private static let hourFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "h:mm a"
+        df.locale = Locale(identifier: "en_US")
+        return df
+    }()
+
+    static func parse(_ string: String?) -> Date? {
+        guard let string, !string.isEmpty else { return nil }
+        if let d = isoFractional.date(from: string) { return d }
+        if let d = isoPlain.date(from: string) { return d }
+        for format in fallbackFormats {
+            fallback.dateFormat = format
+            if let d = fallback.date(from: string) { return d }
         }
+        return nil
     }
+
+    static func hour(_ date: Date) -> String {
+        hourFormatter.string(from: date)
+    }
+
+    /// "mm:ss" (los minutos siguen creciendo después de 59).
+    static func clock(_ seconds: Int) -> String {
+        let s = max(0, seconds)
+        return String(format: "%02d:%02d", s / 60, s % 60)
+    }
+}
+
+// MARK: - Modelo de pantalla del Pase
+//
+// Las vistas NO leen `Order`/`OrderItem` ni observan el ViewModel: reciben
+// estos structs ya resueltos (entregado optimista incluido). Al ser Equatable,
+// SwiftUI se salta las tarjetas que no cambiaron.
+
+struct PassItem: Identifiable, Equatable {
+    let id: String
+    let quantity: Int
+    let name: String
+    let modifiers: [String]
+    let note: String?
+    /// De dónde viene una bebida que se subió a "BEBIDAS" (paquete, asiento,
+    /// tiempo), o la etiqueta de paquete de un platillo.
+    let context: String?
+    let isChild: Bool
+    let delivered: Bool
+}
+
+struct PassSection: Identifiable, Equatable {
+    let id: String
+    let title: String?
+    let isBeverages: Bool
+    let items: [PassItem]
+}
+
+/// Una RONDA (batch) de una orden: la unidad del board.
+struct PassTicket: Identifiable, Equatable {
+    let id: String
+    let orderId: String
+    let orderNumber: Int
+    let title: String
+    let subtitle: String
+    /// Etiqueta para la franja de "recién entregadas".
+    let label: String
+    let startDate: Date
+    let isRush: Bool
+    let isOnHold: Bool
+    let holdStartedAt: Date?
+    let holdAccumulatedSeconds: Int
+    let isPractice: Bool
+    let sections: [PassSection]
+    /// Todos los items no anulados de la ronda (para reimprimir completa).
+    let reprintItemIds: [String]
+
+    static let attentionSeconds = 4 * 60
+    static let warningSeconds = 7 * 60
+    static let lateSeconds = 10 * 60
+
+    var items: [PassItem] { sections.flatMap(\.items) }
+    var totalCount: Int { sections.reduce(0) { $0 + $1.items.count } }
+    var doneCount: Int { sections.reduce(0) { $0 + $1.items.filter(\.delivered).count } }
+    var pendingItemIds: [String] { items.filter { !$0.delivered }.map(\.id) }
+
+    /// Segundos efectivos de preparación: el tiempo en pausa no cuenta, y
+    /// mientras la orden está en pausa el reloj se queda congelado.
+    func elapsedSeconds(at now: Date) -> Int {
+        let end = (isOnHold ? holdStartedAt : nil) ?? now
+        return max(0, Int(end.timeIntervalSince(startDate)) - holdAccumulatedSeconds)
+    }
+
+    func isLate(at now: Date) -> Bool {
+        !isOnHold && elapsedSeconds(at: now) >= Self.lateSeconds
+    }
+}
+
+// MARK: - CompletedOrder (franja de "recién entregadas" con deshacer)
+struct CompletedOrder: Identifiable, Equatable {
+    let id: String          // id de la ronda (batch)
+    let orderNumber: Int
+    let label: String       // "MESA 5" / "LLEVAR · Juan"
+    let itemIds: [String]
+    let completedAt: Date
+}
+
+struct PassToast: Equatable {
+    let message: String
+    let isError: Bool
 }

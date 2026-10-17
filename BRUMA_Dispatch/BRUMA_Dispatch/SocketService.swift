@@ -11,6 +11,7 @@ class SocketService: ObservableObject {
     @Published var isConnected = false
     
     // Callbacks for events
+    var onConnect: (() -> Void)?
     var onNewOrder: (() -> Void)?
     var onOrderUpdated: ((String) -> Void)?
     var onOrderRush: ((String) -> Void)?
@@ -19,7 +20,7 @@ class SocketService: ObservableObject {
     private init() {}
     
     func connect(baseURL: String) {
-        guard let url = URL(string: baseURL) else { return }
+        guard manager == nil, let url = URL(string: baseURL) else { return }
         
         manager = SocketManager(socketURL: url, config: [
             .log(false),
@@ -46,6 +47,7 @@ class SocketService: ObservableObject {
             print("🔌 Socket connected (Dispatch)")
             self?.isConnected = true
             self?.joinRooms()
+            self?.onConnect?()
         }
         
         socket?.on(clientEvent: .disconnect) { [weak self] data, ack in

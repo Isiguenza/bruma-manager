@@ -204,7 +204,15 @@ class POSViewModel: ObservableObject {
     @Published var currentOrderStatus: String?
     @Published var showLocationModal = false
     @Published var submitting = false
-    
+    /// Órdenes a las que ESTE dispositivo les está agregando items ahora mismo.
+    /// `POST /orders/:id/items` emite `order:updated` con la orden completa y el
+    /// eco nos llega a media operación: aplicarlo metía la copia del servidor de
+    /// los items nuevos además de la copia local (todavía sin `orderId`), así que
+    /// el carrito quedaba con platillos duplicados y el ticket/cobro salían mal
+    /// hasta el siguiente refresh. Mientras una orden está aquí, el flujo que la
+    /// envía es dueño del carrito y los ecos se ignoran.
+    private var isSyncingCartToServer = false
+
     // MARK: - Guest Count Dialog
     @Published var showGuestCountDialog = false
     @Published var showInitialGuestDialog = false
@@ -1369,11 +1377,14 @@ class POSViewModel: ObservableObject {
     }
     
     private func refreshOrderFromSocket() async {
-        guard let table = selectedTable else { return }
+        guard let table = selectedTable, !isSyncingCartToServer else { return }
         do {
             let orders = try await APIService.shared.fetchOrdersByTable(tableId: table.id)
             let activeOrders = orders.filter { $0.paymentStatus != "paid" && $0.status != "completed" }
-            
+            // Un envío pudo arrancar mientras esperábamos la respuesta: lo que
+            // trajimos ya no refleja lo que hay en el carrito.
+            guard !isSyncingCartToServer, selectedTable?.id == table.id else { return }
+
             if let mainOrder = activeOrders.first {
                 currentOrderId = mainOrder.id
                 currentOrderNumber = mainOrder.orderNumber
@@ -1387,7 +1398,9 @@ class POSViewModel: ObservableObject {
                         }
                     }
                 }
-                cart = allItems
+                // Lo que el mesero capturó y no ha mandado no existe en el
+                // servidor: reemplazar el carrito completo lo borraba en silencio.
+                cart = allItems + cart.filter { !$0.sentToKitchen && $0.itemId == nil }
                 applyPromotions()
             }
         } catch {
@@ -1406,7 +1419,9 @@ class POSViewModel: ObservableObject {
         let paymentStatus = dict["paymentStatus"] as? String
 
         // 1) Carrito de la mesa actualmente abierta (si es la que cambió).
-        if let selected = selectedTable, selected.id == tableId {
+        // Si este dispositivo está mandando items de la mesa abierta, el payload
+        // es nuestro propio eco a medio camino — ver `isSyncingCartToServer`.
+        if let selected = selectedTable, selected.id == tableId, !isSyncingCartToServer {
             let decoded = decodeOrderPayload(dict)
             if let decoded, decoded.items != nil,
                (currentOrderId == nil || currentOrderId == decoded.id) {
@@ -3426,6 +3441,27 @@ class POSViewModel: ObservableObject {
 
     /// Envía a cocina los items no enviados. Si se pasa `course` (coursing),
     /// solo dispara ese Tiempo; los demás tiempos quedan pendientes.
+    /// Marca como enviados los items del carrito que cumplen `shouldClaim` y les
+    /// asigna el id del servidor. Cada id se reparte UNA sola vez: emparejar solo
+    /// por productId hacía que dos líneas del mismo producto (p. ej. Americano
+    /// Frío y Americano Caliente) se quedaran con el MISMO itemId — y de ahí en
+    /// adelante anular, marcar entregado o cambiar cantidad apuntaba al item
+    /// equivocado. El nombre ya trae la variante, así que se prefiere como desempate.
+    private func claimServerItems(_ serverItems: [OrderItem], orderId: String, where shouldClaim: (CartItem) -> Bool) {
+        var claimedItemIds = Set(cart.compactMap { $0.itemId })
+        for i in cart.indices {
+            guard shouldClaim(cart[i]) else { continue }
+            cart[i].sentToKitchen = true
+            cart[i].orderId = orderId
+            guard cart[i].itemId == nil else { continue }
+            let unclaimed = serverItems.filter { !claimedItemIds.contains($0.id) && $0.productId == cart[i].productId }
+            if let match = unclaimed.first(where: { $0.productName == cart[i].productName }) ?? unclaimed.first {
+                cart[i].itemId = match.id
+                claimedItemIds.insert(match.id)
+            }
+        }
+    }
+
     func handleSendToKitchen(course: Int? = nil) {
         guard !submitting else {
             print("⚠️ handleSendToKitchen: already submitting, ignoring")
@@ -3446,7 +3482,9 @@ class POSViewModel: ObservableObject {
         print("🔥 handleSendToKitchen: currentOrderId=\(currentOrderId ?? "nil"), selectedTable=\(selectedTable?.id ?? "nil"), items=\(unsentItems.count)")
         
         submitting = true
+        isSyncingCartToServer = true
         Task {
+            defer { isSyncingCartToServer = false }
             do {
                 if let orderId = currentOrderId {
                     // Add items to existing order
@@ -3463,24 +3501,8 @@ class POSViewModel: ObservableObject {
                     )
                     
                     // Mark only the items just sent (respeta el filtro de tiempo).
-                    // Cada id del servidor se reparte UNA sola vez: emparejar solo
-                    // por productId hacía que dos líneas del mismo producto (p. ej.
-                    // Americano Frío y Americano Caliente) se quedaran con el MISMO
-                    // itemId — y de ahí en adelante anular, marcar entregado o
-                    // cambiar cantidad apuntaba al item equivocado. El nombre ya
-                    // trae la variante, así que se prefiere como desempate.
-                    let serverItems = updated.items ?? []
-                    var claimedItemIds = Set(cart.compactMap { $0.itemId })
-                    for i in cart.indices {
-                        guard !cart[i].sentToKitchen, course == nil || cart[i].course == course else { continue }
-                        cart[i].sentToKitchen = true
-                        cart[i].orderId = orderId
-                        guard cart[i].itemId == nil else { continue }
-                        let unclaimed = serverItems.filter { !claimedItemIds.contains($0.id) && $0.productId == cart[i].productId }
-                        if let match = unclaimed.first(where: { $0.productName == cart[i].productName }) ?? unclaimed.first {
-                            cart[i].itemId = match.id
-                            claimedItemIds.insert(match.id)
-                        }
+                    claimServerItems(updated.items ?? [], orderId: orderId) { item in
+                        !item.sentToKitchen && (course == nil || item.course == course)
                     }
                     
                     await printComanda(items: unsentItems, orderId: orderId)
@@ -3520,11 +3542,8 @@ class POSViewModel: ObservableObject {
                         try? await APIService.shared.updateTableStatus(tableId: table.id, status: "occupied")
                     }
                     
-                    for i in cart.indices {
-                        if !cart[i].sentToKitchen && (course == nil || cart[i].course == course) {
-                            cart[i].sentToKitchen = true
-                            cart[i].orderId = order.id
-                        }
+                    claimServerItems(order.items ?? [], orderId: order.id) { item in
+                        !item.sentToKitchen && (course == nil || item.course == course)
                     }
 
                     await printComanda(items: unsentItems, orderId: order.id)
@@ -3792,14 +3811,13 @@ class POSViewModel: ObservableObject {
             // Existing order — add unsent items then go to payment
             let unsentItems = cart.filter { !$0.sentToKitchen && $0.itemId == nil }
             if !unsentItems.isEmpty {
+                isSyncingCartToServer = true
                 Task {
+                    defer { isSyncingCartToServer = false }
                     let itemDicts = itemDicts(for: unsentItems)
-                    let _ = try? await APIService.shared.addItemsToOrder(orderId: orderId, items: itemDicts)
-                    for i in cart.indices {
-                        if !cart[i].sentToKitchen && cart[i].itemId == nil {
-                            cart[i].sentToKitchen = true
-                            cart[i].orderId = orderId
-                        }
+                    let updated = try? await APIService.shared.addItemsToOrder(orderId: orderId, items: itemDicts)
+                    claimServerItems(updated?.items ?? [], orderId: orderId) { item in
+                        !item.sentToKitchen && item.itemId == nil
                     }
                     
                     if !itemAssignments.isEmpty {
@@ -4166,7 +4184,10 @@ class POSViewModel: ObservableObject {
         for item in itemsToPrint {
             let seat = item.seat.isEmpty ? "C" : item.seat
             if seatGroups[seat] == nil { seatGroups[seat] = [:] }
-            let key = "\(item.productId)-\(item.unitPrice)-\(item.promotionId ?? "none")-\(item.customModifiers ?? "")"
+            // productName va en la llave porque trae la variante: sin él, dos
+            // variantes con el mismo precio se juntaban en una línea con el
+            // nombre de la primera y la otra desaparecía del ticket.
+            let key = "\(item.productId)-\(item.productName)-\(item.unitPrice)-\(item.promotionId ?? "none")-\(item.customModifiers ?? "")"
             if var existing = seatGroups[seat]?[key] {
                 existing.qty += item.quantity
                 existing.total = Double(existing.qty) * (existing.originalPrice ?? existing.price)

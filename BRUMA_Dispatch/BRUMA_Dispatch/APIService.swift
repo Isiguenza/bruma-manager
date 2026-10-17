@@ -31,57 +31,39 @@ class APIService {
         environment.baseURL
     }
     
+    /// Timeout corto: en el Pase una petición colgada 60s (el default) deja el
+    /// board congelado sin avisar.
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 12
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+
     private init() {}
     
     // Fetch orders with status "preparing"
     func fetchPreparingOrders() async throws -> [Order] {
+        #if DEBUG
+        if DemoBackend.isEnabled { return try DemoBackend.shared.fetchOrders() }
+        #endif
         guard let url = URL(string: "\(baseURL)/api/orders?status=preparing") else {
             throw URLError(.badURL)
         }
         
-        let (data, response) = try await URLSession.shared.data(from: url)
+        // Nunca servir una respuesta cacheada: el board debe ser el estado real.
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
-        }
-        
-        // Debug: print raw JSON for first item to check field names
-        if let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-           let firstOrder = jsonArray.first,
-           let items = firstOrder["items"] as? [[String: Any]],
-           let firstItem = items.first {
-            print("🔬 RAW JSON first item keys: \(firstItem.keys.sorted())")
-            print("🔬 RAW JSON createdAt value: \(firstItem["createdAt"] ?? "KEY_NOT_FOUND")")
-            print("🔬 RAW JSON created_at value: \(firstItem["created_at"] ?? "KEY_NOT_FOUND")")
-            print("🔬 RAW JSON deliveredToTable: \(firstItem["deliveredToTable"] ?? "KEY_NOT_FOUND")")
-            print("🔬 RAW JSON delivered_to_table: \(firstItem["delivered_to_table"] ?? "KEY_NOT_FOUND")")
         }
         
         let decoder = JSONDecoder()
         let orders = try decoder.decode([Order].self, from: data)
         return orders
-    }
-    
-    // Mark order as ready (deprecated - use markBatchAsReady instead)
-    func markOrderAsReady(orderId: String) async throws {
-        guard let url = URL(string: "\(baseURL)/api/orders/\(orderId)/status") else {
-            throw URLError(.badURL)
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let body = ["status": "ready"]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        
-        let (_, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
     }
     
     // Rush order (toggle priority)
@@ -91,7 +73,7 @@ class APIService {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -103,7 +85,7 @@ class APIService {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -111,12 +93,15 @@ class APIService {
     
     // Hold order (pause)
     func holdOrder(orderId: String) async throws {
+        #if DEBUG
+        if DemoBackend.isEnabled { return DemoBackend.shared.setHold(orderId, true) }
+        #endif
         guard let url = URL(string: "\(baseURL)/api/orders/\(orderId)/hold") else {
             throw URLError(.badURL)
         }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -124,26 +109,27 @@ class APIService {
     
     // Unhold order (resume)
     func unholdOrder(orderId: String) async throws {
+        #if DEBUG
+        if DemoBackend.isEnabled { return DemoBackend.shared.setHold(orderId, false) }
+        #endif
         guard let url = URL(string: "\(baseURL)/api/orders/\(orderId)/unhold") else {
             throw URLError(.badURL)
         }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
     }
     
-    // Mark batch of items as ready (delivered to table)
-    func markBatchAsReady(itemIds: [String]) async throws {
-        try await setItemsDelivered(itemIds, delivered: true)
-    }
-
     /// Reimprime la comanda de cocina. Si `itemIds` no está vacío, reimprime
     /// solo esa ronda; si no, toda la orden. El backend espera el resultado de
     /// la impresora, así que si truena aquí es que la impresora/conexión falló.
     func reprintComanda(orderId: String, itemIds: [String]) async throws {
+        #if DEBUG
+        if DemoBackend.isEnabled { try await Task.sleep(nanoseconds: 1_200_000_000); return }
+        #endif
         guard let url = URL(string: "\(baseURL)/api/orders/\(orderId)/reprint-comanda") else {
             throw URLError(.badURL)
         }
@@ -151,7 +137,8 @@ class APIService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["itemIds": itemIds])
-        let (_, response) = try await URLSession.shared.data(for: request)
+        request.timeoutInterval = 30  // espera a la impresora
+        let (_, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
             throw URLError(.badServerResponse)
@@ -162,6 +149,9 @@ class APIService {
     /// "Deshacer" en la franja de completadas). `delivered: false` regresa la
     /// orden a "preparando" si se había auto-completado.
     func setItemsDelivered(_ itemIds: [String], delivered: Bool) async throws {
+        #if DEBUG
+        if DemoBackend.isEnabled { return DemoBackend.shared.setDelivered(itemIds, delivered) }
+        #endif
         guard !itemIds.isEmpty else { return }
         let path = delivered ? "batch-ready" : "batch-unready"
         guard let url = URL(string: "\(baseURL)/api/order-items/\(path)") else {
@@ -173,7 +163,7 @@ class APIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["itemIds": itemIds])
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)

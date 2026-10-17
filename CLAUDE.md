@@ -41,11 +41,30 @@ deja de aplicar, corregirlo o borrarlo en vez de apilar notas viejas.
   `createdAt` de los items, así que dos rondas de la misma mesa son dos
   tarjetas independientes. Una tarjeta se va del board cuando SUS platillos
   están entregados, sin esperar a las otras rondas de esa mesa. La detección de
-  completadas y las "fotos" (`batchSnapshots`) son a nivel batch; el board
-  filtra las rondas 100% entregadas en `fetchOrders` (no en
-  `convertOrdersToBatches`, que devuelve todas). El backend pasa la orden a
-  `ready` solo cuando TODOS sus items están entregados. Franja de "recién
-  completadas" con Deshacer (60s); estado optimista en `deliveredOverride`.
+  completadas y las "fotos" (`snapshots`) son a nivel batch; todo eso vive en
+  `OrdersViewModel.rebuild()`, que NO toca red: se llama tras cada fetch y tras
+  cada toque (por eso el check responde al instante). El backend pasa la orden a
+  `ready` solo cuando TODOS sus items están entregados. Franja inferior de
+  "recién entregadas" con Deshacer (60s) — revierte solo lo que entregó el
+  último toque; estado optimista en `deliveredOverride`.
+  **UI = riel horizontal oscuro** (`ContentView.PassRail` + `TicketCardView`),
+  la ronda más antigua a la izquierda. Las vistas reciben structs ya resueltos
+  (`PassTicket`/`PassSection`/`PassItem`, Equatable) y NUNCA observan el
+  ViewModel; los cronómetros son `TimelineView` locales, no un `@Published`
+  que redibuje el board cada segundo.
+  **Gotchas del Pase:** (1) `GET /api/orders` no ordena los items y Postgres
+  los regresa en otro orden cada vez que se actualiza una fila (p.ej. al
+  marcarla entregada) — `makeBatches` ordena por `(createdAt, id)`; sin eso los
+  platillos brincan de lugar y el id de la ronda (`<orderId>_<primer raíz>`)
+  cambia. (2) El sonido depende de **items nunca vistos** (`seenItemIds`), no
+  de ids de ronda ni del evento `order:new` (que el backend también emite al
+  dividir cuentas): antes volvía a sonar al marcar/deshacer. (3) Bebidas van
+  hasta arriba en su propia sección, incluidas las que son hijo de un paquete
+  (se sacan de debajo del padre y llevan la etiqueta "PAQUETE · <padre>"). (4)
+  Con filtro alimentos/bebidas, completar, "Entregar todo" y Deshacer solo
+  cuentan lo que esa estación ve. (5) Para probar sin tocar producción: lanzar
+  en Debug con el argumento `-passDemo` (`DemoBackend.swift`) — un toque en el
+  simulador contra el API real marca el platillo entregado en el restaurante.
   Cada tarjeta tiene botón "Reimprimir" → `POST /api/orders/:id/reprint-comanda`
   con `itemIds` de esa ronda (el endpoint acepta `itemIds` opcional: con él
   reimprime solo esos items, sin él toda la orden).
@@ -549,6 +568,18 @@ completos, así que `updateDeliveryOrderFlags` los aplica con
 `Order.withPriorityAndHold(...)` (copy con esos 2 campos reemplazados) sin
 tocar red. Si se agrega un nuevo handler de socket, el default debe ser
 "aplicar el payload", no "refetch y ya".
+
+**Gotcha — el eco de nuestro propio envío duplicaba platillos (ticket y cobro
+mal):** `POST /orders/:id/items` emite `order:updated` con la orden completa, y
+ese eco le llega al MISMO iPad mientras `handleSendToKitchen` todavía espera la
+respuesta. `applyDecodedOrderToCart` metía la copia del servidor de los items
+nuevos sin quitar la copia local (aún sin `orderId`) → carrito duplicado, y
+como `payOrder` manda `subtotal` calculado del carrito, el cobro quedaba inflado;
+el siguiente refresh lo "arreglaba" solo. Por eso `isSyncingCartToServer` hace
+que los ecos de la mesa abierta se ignoren mientras este dispositivo manda items
+(`handleSendToKitchen` y `handleCheckout`). Si agregas otro flujo que llame
+`addItemsToOrder`/`createOrder`, préndelo también y empareja ids con
+`claimServerItems`.
 
 **Chips del mapa de mesas (`TableMapView.swift`) NUNCA deben tomar el `vm`
 completo.** `TableMapChip`/`MergedTableChip` reciben solo el `Table` (o los
