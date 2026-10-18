@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import { getPassAssetResolver } from "./pass-assets";
 
 const BG_COLOR = { r: 255, g: 255, b: 255 };
 
@@ -15,7 +16,7 @@ async function getSharp() {
 async function generateStripImage(
   stamps: number,
   total: number,
-  assetsPath: string
+  asset: (file: string) => string
 ): Promise<{ strip: Buffer; strip2x: Buffer }> {
   const sharp = await getSharp();
   const W2 = 750, H2 = 246;
@@ -28,10 +29,10 @@ async function generateStripImage(
   const startX = Math.round((W2 - totalW) / 2);
   const startY = Math.round((H2 - totalH) / 2);
 
-  const hatBuf = await sharp(path.join(assetsPath, "sello@2x.png"))
+  const hatBuf = await sharp(asset("sello@2x.png"))
     .resize(STAMP_SIZE, STAMP_SIZE, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .toBuffer();
-  const emptyBuf = await sharp(path.join(assetsPath, "sello_vacio@2x.png"))
+  const emptyBuf = await sharp(asset("sello_vacio@2x.png"))
     .resize(STAMP_SIZE, STAMP_SIZE, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .toBuffer();
 
@@ -103,19 +104,19 @@ export async function generateApplePass(card: any): Promise<Buffer> {
     signerKey = fs.readFileSync(path.join(certsPath, "signerKey.pem"), "utf-8");
   }
 
-  const assetsPath = path.resolve(projectRoot, "public", "pass-assets");
+  const asset = await getPassAssetResolver();
   const buffers: Record<string, Buffer> = {};
   const staticFiles = ["icon.png", "icon@2x.png"];
   for (const file of staticFiles) {
-    const filePath = path.join(assetsPath, file);
+    const filePath = asset(file);
     if (fs.existsSync(filePath)) {
       buffers[file] = fs.readFileSync(filePath);
     }
   }
 
   const sharp = await getSharp();
-  const logoPath = path.join(assetsPath, "logo.png");
-  const logo2xPath = path.join(assetsPath, "logo@2x.png");
+  const logoPath = asset("logo.png");
+  const logo2xPath = asset("logo@2x.png");
   if (fs.existsSync(logo2xPath)) {
     buffers["logo@2x.png"] = await sharp(logo2xPath)
       .resize(260, 80, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } })
@@ -132,7 +133,7 @@ export async function generateApplePass(card: any): Promise<Buffer> {
   const { strip, strip2x } = await generateStripImage(
     card.stamps,
     card.stampsPerReward,
-    assetsPath
+    asset
   );
   buffers["strip.png"] = strip;
   buffers["strip@2x.png"] = strip2x;

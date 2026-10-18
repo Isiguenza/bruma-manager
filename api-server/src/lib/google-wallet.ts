@@ -1,6 +1,7 @@
 import jwt, { SignOptions } from "jsonwebtoken";
 import path from "path";
 import fs from "fs";
+import { getPassAssetResolver } from "./pass-assets";
 
 const GOOGLE_AUTH_URL = "https://oauth2.googleapis.com/token";
 const WALLET_API_BASE = "https://walletobjects.googleapis.com/walletobjects/v1";
@@ -18,7 +19,7 @@ async function getSharp() {
 // Generate a stamp strip image for Google Wallet heroImage (2 rows x 4 stamps)
 async function generateStampImage(stamps: number, total: number): Promise<Buffer> {
   const sharp = await getSharp();
-  const assetsPath = path.join(process.cwd(), "public", "pass-assets");
+  const asset = await getPassAssetResolver();
 
   const W = 1032;
   const H = 336;
@@ -35,8 +36,8 @@ async function generateStampImage(stamps: number, total: number): Promise<Buffer
 
   const composites: any[] = [];
 
-  const filledPath = path.join(assetsPath, "sello@2x.png");
-  const emptyPath = path.join(assetsPath, "sello_vacio@2x.png");
+  const filledPath = asset("sello@2x.png");
+  const emptyPath = asset("sello_vacio@2x.png");
 
   for (let i = 0; i < total; i++) {
     const isFilled = i < stamps;
@@ -157,6 +158,35 @@ export function generateGoogleWalletSaveUrl(cardId: string): string {
   return `https://pay.google.com/gp/v/save/${token}`;
 }
 
+const DEFAULT_PROGRAM_LOGO_URI = "https://cdn.cocinabruma.com.mx/logo.png";
+let uploadedLogo: { hash: string; uri: Promise<string> } | null = null;
+
+// Google shows programLogo as a circle, so it uses its own square file instead
+// of Apple's wide logo. If google-logo.png exists (active season or originals)
+// it's uploaded to R2 once per content hash — the hash is in the key, so each
+// design gets its own URL and Google doesn't serve a cached old logo;
+// otherwise the class keeps the default CDN logo.
+async function getProgramLogoUri(): Promise<string> {
+  const logoPath = (await getPassAssetResolver())("google-logo.png");
+  if (!fs.existsSync(logoPath)) return DEFAULT_PROGRAM_LOGO_URI;
+
+  const buffer = fs.readFileSync(logoPath);
+  const hash = require("crypto").createHash("sha256").update(buffer).digest("hex").slice(0, 12);
+  if (uploadedLogo?.hash !== hash) {
+    const uri = uploadToR2(buffer, `pass-assets/google-logo-${hash}.png`);
+    uploadedLogo = { hash, uri };
+    uri.catch(() => {
+      if (uploadedLogo?.hash === hash) uploadedLogo = null;
+    });
+  }
+  try {
+    return await uploadedLogo!.uri;
+  } catch (error) {
+    console.error("[API Google Wallet] Logo upload failed, using default:", error);
+    return DEFAULT_PROGRAM_LOGO_URI;
+  }
+}
+
 export async function createOrUpdateGoogleWalletClass() {
   try {
     const accessToken = await getGoogleAccessToken();
@@ -168,7 +198,7 @@ export async function createOrUpdateGoogleWalletClass() {
       programName: "Tarjeta de Lealtad BRUMA",
       programLogo: {
         sourceUri: {
-          uri: "https://cdn.cocinabruma.com.mx/logo.png",
+          uri: await getProgramLogoUri(),
         },
         contentDescription: {
           defaultValue: {
@@ -245,6 +275,11 @@ function getSignatureKey(key: string, dateStamp: string, regionName: string, ser
 }
 
 async function uploadStampToR2(buffer: Buffer, cardId: string): Promise<string> {
+  const url = await uploadToR2(buffer, `bruma-stamps/${cardId}.png`);
+  return `${url}?v=${Date.now()}`;
+}
+
+async function uploadToR2(buffer: Buffer, key: string): Promise<string> {
   const accountId = process.env.R2_ACCOUNT_ID;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretKey = process.env.R2_SECRET_ACCESS_KEY;
@@ -255,7 +290,6 @@ async function uploadStampToR2(buffer: Buffer, cardId: string): Promise<string> 
     throw new Error("Missing R2 credentials. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL");
   }
 
-  const key = `bruma-stamps/${cardId}.png`;
   const host = `${accountId}.r2.cloudflarestorage.com`;
   const endpoint = `https://${host}/${bucket}/${key}`;
 
@@ -313,13 +347,18 @@ async function uploadStampToR2(buffer: Buffer, cardId: string): Promise<string> 
     throw new Error(`R2 upload failed: ${res.status} ${body}`);
   }
 
-  // Return public URL with cache-busting timestamp
-  return `${publicUrlBase}/${key}?v=${Date.now()}`;
+  return `${publicUrlBase}/${key}`;
 }
 
-export async function createOrUpdateGoogleWalletObject(card: any) {
+// skipClass: the caller already refreshed the class (bulk refresh).
+// createIfMissing=false: only touch cards the customer actually saved to Google.
+export async function createOrUpdateGoogleWalletObject(
+  card: any,
+  opts: { skipClass?: boolean; createIfMissing?: boolean } = {}
+) {
+  const { skipClass = false, createIfMissing = true } = opts;
   try {
-    await createOrUpdateGoogleWalletClass();
+    if (!skipClass) await createOrUpdateGoogleWalletClass();
 
     // Generate and upload stamp image
     let stampImageUrl: string | undefined;
@@ -418,6 +457,8 @@ export async function createOrUpdateGoogleWalletObject(card: any) {
       return;
     }
 
+    if (updateRes.status === 404 && !createIfMissing) return;
+
     if (updateRes.status === 404) {
       const createRes = await fetch(`${WALLET_API_BASE}/loyaltyObject`, {
         method: "POST",
@@ -444,4 +485,19 @@ export async function createOrUpdateGoogleWalletObject(card: any) {
   } catch (error) {
     console.error("[API Google Wallet] Error:", error);
   }
+}
+
+// Re-renders every Google card (new stamp art) after a design change. The
+// class (logo) is updated once up front; objects go 4 at a time.
+export async function refreshAllGoogleWalletObjects(cards: any[]) {
+  if (!process.env.GOOGLE_WALLET_ISSUER_ID || !process.env.GOOGLE_WALLET_CLASS_ID) return;
+  await createOrUpdateGoogleWalletClass();
+  const queue = [...cards];
+  const worker = async () => {
+    for (let card = queue.shift(); card; card = queue.shift()) {
+      await createOrUpdateGoogleWalletObject(card, { skipClass: true, createIfMissing: false });
+    }
+  };
+  await Promise.all(Array.from({ length: 4 }, worker));
+  console.log(`[API Google Wallet] Bulk refresh done: ${cards.length} cards`);
 }

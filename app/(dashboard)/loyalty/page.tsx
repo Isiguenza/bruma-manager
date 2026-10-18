@@ -85,6 +85,16 @@ export default function LoyaltyPage() {
   const [promoMessage, setPromoMessage] = useState("");
   const [promoTarget, setPromoTarget] = useState<"all" | "specific">("all");
   const [selectedCardsForPromo, setSelectedCardsForPromo] = useState<string[]>([]);
+
+  // Refresh wallet cards dialog
+  const [refreshDialogOpen, setRefreshDialogOpen] = useState(false);
+  const [refreshTarget, setRefreshTarget] = useState<"all" | "specific">("specific");
+  const [refreshSearch, setRefreshSearch] = useState("");
+  const [selectedCardsForRefresh, setSelectedCardsForRefresh] = useState<string[]>([]);
+  // Wallet design: "" = original, otherwise a folder in api-server/public/pass-assets/seasons/
+  const [walletSeasons, setWalletSeasons] = useState<string[]>([]);
+  const [activeWalletSeason, setActiveWalletSeason] = useState("");
+  const [refreshSeason, setRefreshSeason] = useState("");
   const [origin, setOrigin] = useState("");
   const [deviceType, setDeviceType] = useState<string>("other");
 
@@ -177,21 +187,59 @@ export default function LoyaltyPage() {
     }
   }
 
-  async function handleInvalidateAll() {
-    const confirmed = confirm(
-      "¿Actualizar todos los passes de Apple Wallet? Esto forzará la actualización en los dispositivos de los clientes."
-    );
-    if (!confirmed) return;
-    
+  async function openRefreshDialog() {
+    setRefreshDialogOpen(true);
     try {
-      const res = await fetch("/api/wallet/invalidate-all", {
+      const res = await fetch(`${getApiUrl()}/api/wallet-seasons`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setWalletSeasons(data.seasons ?? []);
+      setActiveWalletSeason(data.active ?? "");
+      setRefreshSeason(data.active ?? "");
+    } catch {
+      toast.error("No se pudieron cargar las temporadas");
+    }
+  }
+
+  async function handleRefreshCards() {
+    const designName = refreshSeason || "Original";
+    if (refreshTarget === "all") {
+      const confirmed = confirm(
+        `¿Actualizar las ${cards.length} tarjetas con el diseño "${designName}"?`
+      );
+      if (!confirmed) return;
+    } else if (refreshSeason !== activeWalletSeason) {
+      const confirmed = confirm(
+        `El diseño "${designName}" queda activo para TODAS las tarjetas: las que no actualices ahora lo recibirán en su próximo sello. ¿Continuar?`
+      );
+      if (!confirmed) return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/loyalty-cards/refresh-all`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cardIds: refreshTarget === "specific" ? selectedCardsForRefresh : undefined,
+          season: refreshSeason || null,
+        }),
       });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      toast.success(data.message);
+      setActiveWalletSeason(data.season ?? "");
+      toast.success(
+        data.apple
+          ? `${data.cards} tarjeta(s) actualizada(s) · aviso enviado a ${data.apple.sent} iPhone(s)`
+          : `${data.cards} tarjeta(s) actualizada(s) (no se pudo avisar a Apple Wallet)`
+      );
+      setRefreshDialogOpen(false);
+      setSelectedCardsForRefresh([]);
+      setRefreshSearch("");
     } catch {
-      toast.error("Error al invalidar passes");
+      toast.error("Error al actualizar tarjetas");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -271,8 +319,8 @@ export default function LoyaltyPage() {
           <Button variant="outline" onClick={() => setPromoDialogOpen(true)}>
             <PaperPlaneTilt className="mr-1 size-4" /> Enviar Promoción
           </Button>
-          <Button variant="outline" onClick={handleInvalidateAll}>
-            <ArrowsClockwise className="mr-1 size-4" /> Actualizar Passes
+          <Button variant="outline" onClick={openRefreshDialog}>
+            <ArrowsClockwise className="mr-1 size-4" /> Actualizar Tarjetas
           </Button>
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="mr-1 size-4" /> Nueva Tarjeta
@@ -818,6 +866,123 @@ export default function LoyaltyPage() {
               disabled={submitting || !promoMessage.trim()}
             >
               {submitting ? "Enviando..." : "Enviar Promoción"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Refresh Wallet Cards Dialog */}
+      <Dialog open={refreshDialogOpen} onOpenChange={setRefreshDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Actualizar Tarjetas</DialogTitle>
+            <DialogDescription>
+              Reenvía el diseño elegido (logo y sellos) a Apple Wallet y Google Wallet.
+              Prueba primero con tu tarjeta antes de mandarlo a todas.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Diseño</Label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {["", ...walletSeasons].map((season) => (
+                  <Button
+                    key={season || "original"}
+                    type="button"
+                    variant={refreshSeason === season ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRefreshSeason(season)}
+                  >
+                    {season || "Original"}
+                    {season === activeWalletSeason && " (activo)"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label>Tarjetas</Label>
+              <div className="flex gap-2 mt-2">
+                <Button
+                  type="button"
+                  variant={refreshTarget === "specific" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setRefreshTarget("specific")}
+                >
+                  Seleccionar tarjetas
+                </Button>
+                <Button
+                  type="button"
+                  variant={refreshTarget === "all" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setRefreshTarget("all")}
+                >
+                  Todas las tarjetas ({cards.length})
+                </Button>
+              </div>
+            </div>
+
+            {refreshTarget === "specific" && (
+              <div className="space-y-2">
+                <Input
+                  value={refreshSearch}
+                  onChange={(e) => setRefreshSearch(e.target.value)}
+                  placeholder="Buscar por nombre o teléfono..."
+                />
+                <div className="border rounded-md p-3 max-h-60 overflow-y-auto">
+                  {cards
+                    .filter((card) => {
+                      const q = refreshSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return (
+                        card.customerName.toLowerCase().includes(q) ||
+                        (card.customerPhone ?? "").includes(q)
+                      );
+                    })
+                    .map((card) => (
+                      <label
+                        key={card.id}
+                        className="flex items-center gap-2 py-1 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedCardsForRefresh.includes(card.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCardsForRefresh((prev) => [...prev, card.id]);
+                            } else {
+                              setSelectedCardsForRefresh((prev) =>
+                                prev.filter((id) => id !== card.id)
+                              );
+                            }
+                          }}
+                        />
+                        <span className="text-sm">
+                          {card.customerName} — {card.customerPhone}
+                        </span>
+                      </label>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefreshDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleRefreshCards}
+              disabled={
+                submitting ||
+                (refreshTarget === "specific" && selectedCardsForRefresh.length === 0)
+              }
+            >
+              {submitting
+                ? "Actualizando..."
+                : refreshTarget === "all"
+                  ? "Actualizar todas"
+                  : `Actualizar ${selectedCardsForRefresh.length} tarjeta(s)`}
             </Button>
           </DialogFooter>
         </DialogContent>

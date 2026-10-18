@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { db, schema } from "../db";
 import { eq, desc, inArray, isNull, sql } from "drizzle-orm";
-import { sendAppleWalletPush } from "../lib/apple-push";
-import { createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
+import { sendAppleWalletPush, sendAppleWalletPushToAll } from "../lib/apple-push";
+import { createOrUpdateGoogleWalletObject, refreshAllGoogleWalletObjects } from "../lib/google-wallet";
+import { getActiveWalletSeason, listWalletSeasons, setActiveWalletSeason } from "../lib/pass-assets";
 
 const router = Router();
 
@@ -392,6 +393,62 @@ router.post("/loyalty-cards/promotions", async (req, res) => {
   } catch (error) {
     console.error("Error sending promotion:", error);
     res.status(500).json({ error: "Error al enviar promoción" });
+  }
+});
+
+// GET /api/wallet-seasons
+// Season folders available in public/pass-assets/seasons/ and the active one
+// (null = original design). Not under /loyalty-cards/ so it can't be caught
+// by GET /loyalty-cards/:id.
+router.get("/wallet-seasons", async (_req, res) => {
+  res.json({ seasons: listWalletSeasons(), active: await getActiveWalletSeason() });
+});
+
+// POST /api/loyalty-cards/refresh-all  { cardIds?: string[], season?: string | null }
+// Re-sends every card (or only `cardIds`, to test a design on one card) after
+// a design change. `season` (if present) first switches the active design for
+// ALL cards — a card that isn't refreshed now still picks it up the next time
+// Wallet re-downloads it (e.g. on its next stamp). Apple only re-downloads a
+// pass whose updatedAt is newer than its last sync AND after a push, so both
+// are needed. Google's re-render runs in the background: it uploads one image
+// per card.
+router.post("/loyalty-cards/refresh-all", async (req, res) => {
+  try {
+    const rawIds = req.body?.cardIds;
+    const cardIds = Array.isArray(rawIds) ? rawIds.filter((id: unknown) => typeof id === "string") : undefined;
+    if (cardIds && cardIds.length === 0) {
+      return res.status(400).json({ error: "Selecciona al menos una tarjeta" });
+    }
+
+    if (req.body && "season" in req.body) {
+      const season = req.body.season || null;
+      if (season !== null && !listWalletSeasons().includes(season)) {
+        return res.status(400).json({ error: `No existe la temporada "${season}"` });
+      }
+      await setActiveWalletSeason(season);
+    }
+
+    const cards = await db
+      .update(schema.loyaltyCards)
+      .set({ updatedAt: new Date() })
+      .where(cardIds ? inArray(schema.loyaltyCards.id, cardIds) : undefined)
+      .returning();
+
+    let apple: { devices: number; sent: number; failed: number } | null = null;
+    try {
+      apple = await sendAppleWalletPushToAll(cardIds);
+    } catch (error) {
+      console.error("[Refresh all] Apple push error:", error);
+    }
+
+    refreshAllGoogleWalletObjects(cards).catch((error) =>
+      console.error("[Refresh all] Google Wallet error:", error)
+    );
+
+    res.json({ success: true, cards: cards.length, apple, season: await getActiveWalletSeason() });
+  } catch (error) {
+    console.error("Error refreshing wallet cards:", error);
+    res.status(500).json({ error: "Error al actualizar tarjetas" });
   }
 });
 

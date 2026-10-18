@@ -1,6 +1,6 @@
 import apn from "apn";
 import { db, schema } from "../db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 function getApnPrivateKey(): string {
   const key = process.env.APPLE_APN_PRIVATE_KEY || "";
@@ -68,5 +68,45 @@ export async function sendAppleWalletPush(serialNumber: string) {
     provider.shutdown();
   } catch (error) {
     console.error("[API Apple Push] Error:", error);
+  }
+}
+
+// Push to every registered device at once (one APNs connection), or only the
+// devices holding `serialNumbers`. Used after a design change: each Wallet then
+// asks which passes changed since its last sync, so the cards' updatedAt must
+// be bumped BEFORE calling this.
+export async function sendAppleWalletPushToAll(
+  serialNumbers?: string[]
+): Promise<{ devices: number; sent: number; failed: number }> {
+  const passTypeId = process.env.APPLE_PASS_TYPE_ID || "";
+  const keyId = process.env.APPLE_APN_KEY_ID;
+  const teamId = process.env.APPLE_APN_TEAM_ID;
+  const privateKey = getApnPrivateKey();
+
+  if (!keyId || !teamId || !privateKey || !passTypeId) {
+    throw new Error("Apple Wallet push not configured");
+  }
+
+  const registrations = await db.query.walletDeviceRegistrations.findMany({
+    where: serialNumbers ? inArray(schema.walletDeviceRegistrations.serialNumber, serialNumbers) : undefined,
+  });
+  const tokens = [...new Set(registrations.map((r) => r.pushToken).filter((t): t is string => !!t))];
+  if (tokens.length === 0) return { devices: 0, sent: 0, failed: 0 };
+
+  const provider = new apn.Provider({
+    token: { key: privateKey, keyId, teamId },
+    production: process.env.APPLE_APN_SANDBOX !== "true",
+  });
+
+  try {
+    const notification = new apn.Notification();
+    notification.topic = passTypeId;
+    notification.contentAvailable = true;
+
+    const result = await provider.send(notification, tokens);
+    console.log(`[API Apple Push] Bulk: ${result.sent.length} sent, ${result.failed.length} failed`);
+    return { devices: tokens.length, sent: result.sent.length, failed: result.failed.length };
+  } finally {
+    provider.shutdown();
   }
 }

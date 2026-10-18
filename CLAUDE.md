@@ -485,6 +485,31 @@ porque el contenedor corre en UTC y Excel no tiene zonas horarias: las fechas se
 escriben como hora de pared local (`wallClock`), si no un gasto de las 9 pm
 saldría con la fecha del día siguiente.
 
+## Tarjetas de lealtad (Apple/Google Wallet): cambiar el diseño
+
+El arte original vive en `api-server/public/pass-assets/` (las copias en
+`public/` y `certs/` de la raíz son del backend Next viejo, ya no las sirve
+nadie): `logo*.png` (logo ancho arriba en Apple, 320×100 @2x),
+`sello@2x.png`/`sello_vacio@2x.png` (la franja de Apple y la hero image de
+Google se generan con sharp a partir de esos dos) y `google-logo.png` opcional
+(cuadrado; Google lo recorta en círculo; si no existe se usa
+`cdn.cocinabruma.com.mx/logo.png`). **Temporadas:** carpeta
+`pass-assets/seasons/<nombre>/` con solo los archivos que cambian; lo que falte
+cae al original (`lib/pass-assets.ts`, único lugar que resuelve rutas). La
+activa está en `restaurant_settings.wallet_season` (`drizzle/manual_wallet_season.sql`),
+leída con SQL crudo y **fuera del schema de Drizzle a propósito**: si la
+columna faltara, `findFirst()` de esa tabla tumbaría los pedidos en línea.
+La temporada es global: una tarjeta que no se refresque la toma en su próximo
+sello.
+
+Cambiar archivos + deploy NO actualiza las tarjetas instaladas: Apple solo baja
+de nuevo un pass si su `updatedAt` es más nuevo que su último sync **y** le
+llega un push. Botón "Actualizar Tarjetas" en `/loyalty` →
+`POST /api/loyalty-cards/refresh-all` (`cardIds?`, `season?`): fija la
+temporada, sube `updatedAt`, manda push a los dispositivos de esas tarjetas y
+regenera los objetos de Google en segundo plano (sin crear los que el cliente
+nunca guardó).
+
 ## Stripe: test vs live
 
 `customer_stripe_accounts.stripe_customer_id` no es válido entre modo test y
