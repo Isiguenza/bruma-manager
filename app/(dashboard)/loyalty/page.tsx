@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -29,51 +28,104 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Plus,
   MagnifyingGlass,
-  CreditCard,
   Stamp,
   Gift,
   Eye,
-  DownloadSimple,
-  Camera,
   Barcode,
   ArrowsClockwise,
   Trash,
   PaperPlaneTilt,
+  PencilSimple,
+  Cake,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import { QRCodeSVG } from "qrcode.react";
 import { FaApple, FaGoogle } from "react-icons/fa";
-import type { LoyaltyCard } from "@/lib/types";
+import type { LoyaltyCard, LoyaltyTransaction } from "@/lib/types";
 import { getApiUrl } from "@/lib/utils";
+import { ApplePassPreview } from "@/components/apple-pass-preview";
 
 interface CardForm {
   customerName: string;
+  customerLastName: string;
   customerPhone: string;
   customerEmail: string;
+  birthDate: string;
   stampsPerReward: string;
 }
 
 const emptyForm: CardForm = {
   customerName: "",
+  customerLastName: "",
   customerPhone: "",
   customerEmail: "",
+  birthDate: "",
   stampsPerReward: "8",
 };
+
+type CardFilter = "all" | "reward" | "near" | "birthday" | "inactive";
+type CardSort = "recent" | "activity" | "stamps" | "name";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function fullName(card: LoyaltyCard) {
+  return `${card.customerName} ${card.customerLastName || ""}`.trim();
+}
+
+// birthDate is a plain "YYYY-MM-DD" date column: read the month from the
+// string, never through new Date() (UTC parsing would shift it a day).
+function birthdayIsThisMonth(card: LoyaltyCard) {
+  if (!card.birthDate) return false;
+  return parseInt(card.birthDate.slice(5, 7), 10) === new Date().getMonth() + 1;
+}
+
+function formatBirthDate(value: string) {
+  const [y, m, d] = value.split("-").map(Number);
+  return format(new Date(y, m - 1, d), "d 'de' MMMM", { locale: es });
+}
+
+function isNearReward(card: LoyaltyCard) {
+  return card.stamps > 0 && card.stampsPerReward - card.stamps <= 2;
+}
+
+function lastActivityMs(card: LoyaltyCard) {
+  return card.lastActivityAt ? new Date(card.lastActivityAt).getTime() : 0;
+}
+
+function isInactive(card: LoyaltyCard) {
+  const last = lastActivityMs(card) || new Date(card.createdAt).getTime();
+  return Date.now() - last > 60 * DAY_MS;
+}
 
 export default function LoyaltyPage() {
   const [cards, setCards] = useState<LoyaltyCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [cardFilter, setCardFilter] = useState<CardFilter>("all");
+  const [cardSort, setCardSort] = useState<CardSort>("recent");
+
+  // Create / edit
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [form, setForm] = useState<CardForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
-  const [selectedCard, setSelectedCard] = useState<LoyaltyCard | null>(null);
 
-  // Stamp dialog
+  // Detail
+  const [selectedCard, setSelectedCard] = useState<LoyaltyCard | null>(null);
+  const [transactions, setTransactions] = useState<LoyaltyTransaction[]>([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+
   const [stampDialogOpen, setStampDialogOpen] = useState(false);
   const [stampCard, setStampCard] = useState<LoyaltyCard | null>(null);
   const [stampsToAdd, setStampsToAdd] = useState(1);
@@ -83,7 +135,7 @@ export default function LoyaltyPage() {
   // Promotion dialog
   const [promoDialogOpen, setPromoDialogOpen] = useState(false);
   const [promoMessage, setPromoMessage] = useState("");
-  const [promoTarget, setPromoTarget] = useState<"all" | "specific">("all");
+  const [promoTarget, setPromoTarget] = useState<"all" | "birthday" | "specific">("all");
   const [selectedCardsForPromo, setSelectedCardsForPromo] = useState<string[]>([]);
 
   // Refresh wallet cards dialog
@@ -112,41 +164,111 @@ export default function LoyaltyPage() {
     fetchCards();
   }, []);
 
-  async function fetchCards() {
+  async function fetchCards(): Promise<LoyaltyCard[]> {
     try {
       const res = await fetch(`${getApiUrl()}/api/loyalty-cards`);
-      if (res.ok) setCards(await res.json());
+      if (res.ok) {
+        const data: LoyaltyCard[] = await res.json();
+        setCards(data);
+        return data;
+      }
     } catch {
       toast.error("Error cargando tarjetas");
     } finally {
       setLoading(false);
     }
+    return [];
   }
 
-  async function handleCreate() {
-    if (!form.customerName) {
-      toast.error("El nombre es requerido");
+  // Refetch the list and keep the open detail in sync with it.
+  async function reloadCards(detailCardId?: string) {
+    const data = await fetchCards();
+    if (detailCardId) {
+      const fresh = data.find((c) => c.id === detailCardId);
+      if (fresh) setSelectedCard(fresh);
+    }
+  }
+
+  async function loadTransactions(cardId: string) {
+    setTransactionsLoading(true);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/loyalty-cards/${cardId}/transactions`);
+      if (res.ok) setTransactions(await res.json());
+    } catch {
+      toast.error("Error cargando historial");
+    } finally {
+      setTransactionsLoading(false);
+    }
+  }
+
+  function openDetail(card: LoyaltyCard) {
+    setSelectedCard(card);
+    setTransactions([]);
+    loadTransactions(card.id);
+  }
+
+  function openCreateDialog() {
+    setEditingCardId(null);
+    setForm(emptyForm);
+    setDialogOpen(true);
+  }
+
+  function openEditDialog(card: LoyaltyCard) {
+    setEditingCardId(card.id);
+    setForm({
+      customerName: card.customerName,
+      customerLastName: card.customerLastName || "",
+      customerPhone: card.customerPhone || "",
+      customerEmail: card.customerEmail || "",
+      birthDate: card.birthDate || "",
+      stampsPerReward: String(card.stampsPerReward),
+    });
+    setDialogOpen(true);
+  }
+
+  async function handleSaveCard() {
+    if (!form.customerName.trim() || !form.customerLastName.trim()) {
+      toast.error("Nombre y apellido son requeridos");
+      return;
+    }
+    if (!editingCardId && !form.customerPhone.trim()) {
+      toast.error("El teléfono es requerido");
       return;
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`${getApiUrl()}/api/loyalty-cards`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerName: form.customerName,
-          customerPhone: form.customerPhone || null,
-          customerEmail: form.customerEmail || null,
-          stampsPerReward: parseInt(form.stampsPerReward) || 8,
-        }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Tarjeta creada exitosamente");
+      const body = {
+        customerName: form.customerName,
+        customerLastName: form.customerLastName,
+        customerPhone: form.customerPhone,
+        customerEmail: form.customerEmail,
+        birthDate: form.birthDate || null,
+        ...(editingCardId ? {} : { stampsPerReward: parseInt(form.stampsPerReward) || 8 }),
+      };
+      const res = await fetch(
+        editingCardId
+          ? `${getApiUrl()}/api/loyalty-cards/${editingCardId}`
+          : `${getApiUrl()}/api/loyalty-cards`,
+        {
+          method: editingCardId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error);
+      }
+      toast.success(editingCardId ? "Cliente actualizado" : "Tarjeta creada exitosamente");
       setDialogOpen(false);
       setForm(emptyForm);
-      fetchCards();
-    } catch {
-      toast.error("Error creando tarjeta");
+      await reloadCards(editingCardId && selectedCard?.id === editingCardId ? editingCardId : undefined);
+      setEditingCardId(null);
+    } catch (error) {
+      toast.error(
+        (error as Error).message ||
+          (editingCardId ? "Error actualizando cliente" : "Error creando tarjeta")
+      );
     } finally {
       setSubmitting(false);
     }
@@ -173,15 +295,21 @@ export default function LoyaltyPage() {
     }
   }
 
-  async function handleRedeemReward(cardId: string) {
+  async function handleRedeemReward(card: LoyaltyCard) {
+    const confirmed = confirm(
+      `¿Canjear 1 premio de ${fullName(card)}? Le quedarán ${card.rewardsAvailable - 1}.`
+    );
+    if (!confirmed) return;
+
     try {
-      const res = await fetch(`${getApiUrl()}/api/loyalty-cards/${cardId}/redeem`, {
+      const res = await fetch(`${getApiUrl()}/api/loyalty-cards/${card.id}/redeem`, {
         method: "POST",
       });
       if (!res.ok) throw new Error();
       toast.success("Premio canjeado");
-      fetchCards();
-      setSelectedCard(null);
+      // Keep the detail open with the updated card and history.
+      await reloadCards(card.id);
+      loadTransactions(card.id);
     } catch {
       toast.error("Error canjeando premio");
     }
@@ -248,7 +376,7 @@ export default function LoyaltyPage() {
       `¿Eliminar la tarjeta de ${cardName}? Esta acción no se puede deshacer.`
     );
     if (!confirmed) return;
-    
+
     try {
       const res = await fetch(`${getApiUrl()}/api/loyalty-cards/${cardId}`, {
         method: "DELETE",
@@ -262,9 +390,21 @@ export default function LoyaltyPage() {
     }
   }
 
+  const birthdayCards = useMemo(() => cards.filter(birthdayIsThisMonth), [cards]);
+
   async function handleSendPromotion() {
     if (!promoMessage.trim()) {
       toast.error("El mensaje es requerido");
+      return;
+    }
+    const targetCardIds =
+      promoTarget === "specific"
+        ? selectedCardsForPromo
+        : promoTarget === "birthday"
+          ? birthdayCards.map((c) => c.id)
+          : undefined;
+    if (targetCardIds && targetCardIds.length === 0) {
+      toast.error("No hay tarjetas seleccionadas");
       return;
     }
     setSubmitting(true);
@@ -274,16 +414,21 @@ export default function LoyaltyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: promoMessage.trim(),
-          targetType: promoTarget,
-          targetCardIds: promoTarget === "specific" ? selectedCardsForPromo : undefined,
+          targetType: targetCardIds ? "specific" : "all",
+          targetCardIds,
         }),
       });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      toast.success(`Promoción enviada a ${data.sentTo} tarjetas`);
+      toast.success(
+        data.apple
+          ? `Promoción enviada a ${data.sentTo} tarjetas · ${data.apple.sent} iPhone(s) avisados, Android en camino`
+          : `Promoción enviada a ${data.sentTo} tarjetas`
+      );
       setPromoDialogOpen(false);
       setPromoMessage("");
       setSelectedCardsForPromo([]);
+      fetchCards();
     } catch {
       toast.error("Error enviando promoción");
     } finally {
@@ -292,37 +437,76 @@ export default function LoyaltyPage() {
   }
 
   function downloadPass(cardId: string) {
-    window.open(`/api/wallet/pass/${cardId}`, "_blank");
+    window.open(`${getApiUrl()}/api/wallet/pass/${cardId}`, "_blank");
   }
 
   function addToGoogleWallet(cardId: string) {
     window.open(`${getApiUrl()}/api/wallet/google-pass/${cardId}`, "_blank");
   }
 
-  const filtered = cards.filter((c) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      c.customerName.toLowerCase().includes(q) ||
-      c.customerPhone?.toLowerCase().includes(q) ||
-      c.barcodeValue.toLowerCase().includes(q)
-    );
-  });
+  const stats = useMemo(() => {
+    const now = Date.now();
+    return {
+      total: cards.length,
+      withApple: cards.filter((c) => (c.appleDevices ?? 0) > 0).length,
+      active30: cards.filter((c) => lastActivityMs(c) > now - 30 * DAY_MS).length,
+      pendingRewards: cards.reduce((sum, c) => sum + c.rewardsAvailable, 0),
+      withPendingRewards: cards.filter((c) => c.rewardsAvailable > 0).length,
+      near: cards.filter(isNearReward).length,
+    };
+  }, [cards]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = cards.filter((c) => {
+      if (cardFilter === "reward" && c.rewardsAvailable === 0) return false;
+      if (cardFilter === "near" && !isNearReward(c)) return false;
+      if (cardFilter === "birthday" && !birthdayIsThisMonth(c)) return false;
+      if (cardFilter === "inactive" && !isInactive(c)) return false;
+      if (!q) return true;
+      return (
+        fullName(c).toLowerCase().includes(q) ||
+        (c.customerPhone ?? "").toLowerCase().includes(q) ||
+        (c.customerEmail ?? "").toLowerCase().includes(q) ||
+        c.barcodeValue.toLowerCase().includes(q)
+      );
+    });
+    const sorted = [...list];
+    if (cardSort === "activity") sorted.sort((a, b) => lastActivityMs(b) - lastActivityMs(a));
+    else if (cardSort === "stamps")
+      sorted.sort(
+        (a, b) =>
+          b.rewardsAvailable - a.rewardsAvailable ||
+          b.stamps - a.stamps ||
+          b.totalStamps - a.totalStamps
+      );
+    else if (cardSort === "name") sorted.sort((a, b) => fullName(a).localeCompare(fullName(b), "es"));
+    else sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return sorted;
+  }, [cards, search, cardFilter, cardSort]);
+
+  const filterOptions: { value: CardFilter; label: string; count?: number }[] = [
+    { value: "all", label: "Todos", count: cards.length },
+    { value: "reward", label: "Con premio", count: stats.withPendingRewards },
+    { value: "near", label: "Cerca del premio", count: stats.near },
+    { value: "birthday", label: "Cumplen este mes", count: birthdayCards.length },
+    { value: "inactive", label: "Sin venir +60 días" },
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold tracking-tight">
           Clientes Frecuentes
         </h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setPromoDialogOpen(true)}>
             <PaperPlaneTilt className="mr-1 size-4" /> Enviar Promoción
           </Button>
           <Button variant="outline" onClick={openRefreshDialog}>
             <ArrowsClockwise className="mr-1 size-4" /> Actualizar Tarjetas
           </Button>
-          <Button onClick={() => setDialogOpen(true)}>
+          <Button onClick={openCreateDialog}>
             <Plus className="mr-1 size-4" /> Nueva Tarjeta
           </Button>
         </div>
@@ -345,7 +529,7 @@ export default function LoyaltyPage() {
           <div className="space-y-1">
             <h3 className="font-semibold">Registro de clientes</h3>
             <p className="text-sm text-muted-foreground">
-              Muestra este QR a tus clientes para que se registren desde su celular y obtengan su tarjeta de Apple Wallet.
+              Muestra este QR a tus clientes para que se registren desde su celular y guarden su tarjeta en Apple Wallet o Google Wallet.
             </p>
             <code className="block text-xs text-muted-foreground">
               {registerUrl}
@@ -354,49 +538,92 @@ export default function LoyaltyPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Total Tarjetas</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{cards.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              Sellos Totales
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {cards.reduce((sum, c) => sum + c.totalStamps, 0)}
+            <p className="text-2xl font-bold">{stats.total}</p>
+            <p className="text-xs text-muted-foreground">
+              {stats.withApple} con Apple Wallet
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              Premios Canjeados
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Activos (30 días)</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">
-              {cards.reduce((sum, c) => sum + c.rewardsRedeemed, 0)}
+            <p className="text-2xl font-bold">{stats.active30}</p>
+            <p className="text-xs text-muted-foreground">
+              con un sello o canje reciente
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Premios por Canjear</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{stats.pendingRewards}</p>
+            <p className="text-xs text-muted-foreground">
+              de {stats.withPendingRewards} cliente(s)
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Cerca del Premio</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{stats.near}</p>
+            <p className="text-xs text-muted-foreground">
+              a 1–2 sellos · buen blanco para promo
             </p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="relative">
-        <MagnifyingGlass className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Buscar por nombre, teléfono o código..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      <div className="space-y-3">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative flex-1">
+            <MagnifyingGlass className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nombre, apellido, teléfono, email o código..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={cardSort} onValueChange={(v) => setCardSort(v as CardSort)}>
+            <SelectTrigger className="sm:w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="recent">Más recientes</SelectItem>
+              <SelectItem value="activity">Última visita</SelectItem>
+              <SelectItem value="stamps">Más sellos / premios</SelectItem>
+              <SelectItem value="name">Nombre (A–Z)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {filterOptions.map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={cardFilter === option.value ? "default" : "outline"}
+              onClick={() => setCardFilter(option.value)}
+            >
+              {option.label}
+              {option.count !== undefined && (
+                <span className="ml-1 opacity-70">{option.count}</span>
+              )}
+            </Button>
+          ))}
+        </div>
       </div>
 
       <Card>
@@ -405,9 +632,9 @@ export default function LoyaltyPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Cliente</TableHead>
-                <TableHead>Código</TableHead>
                 <TableHead className="text-center">Sellos</TableHead>
                 <TableHead className="text-center">Premios</TableHead>
+                <TableHead>Última visita</TableHead>
                 <TableHead>Creada</TableHead>
                 <TableHead className="w-32" />
               </TableRow>
@@ -425,7 +652,9 @@ export default function LoyaltyPage() {
                     colSpan={6}
                     className="h-32 text-center text-muted-foreground"
                   >
-                    No hay tarjetas registradas
+                    {cards.length === 0
+                      ? "No hay tarjetas registradas"
+                      : "Ningún cliente coincide con el filtro"}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -433,16 +662,25 @@ export default function LoyaltyPage() {
                   <TableRow key={card.id}>
                     <TableCell>
                       <div>
-                        <p className="font-medium">{card.customerName}</p>
+                        <p className="flex items-center gap-1.5 font-medium">
+                          {fullName(card)}
+                          {(card.appleDevices ?? 0) > 0 && (
+                            <span title="Tiene la tarjeta en Apple Wallet">
+                              <FaApple className="size-3.5 text-muted-foreground" />
+                            </span>
+                          )}
+                          {birthdayIsThisMonth(card) && (
+                            <span title="Cumple este mes">
+                              <Cake className="size-4 text-pink-500" weight="fill" />
+                            </span>
+                          )}
+                        </p>
                         {card.customerPhone && (
                           <p className="text-xs text-muted-foreground">
                             {card.customerPhone}
                           </p>
                         )}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <code className="text-xs">{card.barcodeValue}</code>
                     </TableCell>
                     <TableCell className="text-center">
                       <Badge variant="secondary">
@@ -459,6 +697,14 @@ export default function LoyaltyPage() {
                         <Gift className="mr-1 size-3" />
                         {card.rewardsAvailable}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {card.lastActivityAt
+                        ? formatDistanceToNow(new Date(card.lastActivityAt), {
+                            locale: es,
+                            addSuffix: true,
+                          })
+                        : "—"}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {format(new Date(card.createdAt), "dd MMM yy", {
@@ -481,10 +727,18 @@ export default function LoyaltyPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => setSelectedCard(card)}
+                          onClick={() => openDetail(card)}
                           title="Ver detalle"
                         >
                           <Eye className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditDialog(card)}
+                          title="Editar cliente"
+                        >
+                          <PencilSimple className="size-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -516,7 +770,7 @@ export default function LoyaltyPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDeleteCard(card.id, card.customerName)}
+                          onClick={() => handleDeleteCard(card.id, fullName(card))}
                           title="Eliminar tarjeta"
                           className="text-destructive hover:text-destructive"
                         >
@@ -532,29 +786,51 @@ export default function LoyaltyPage() {
         </CardContent>
       </Card>
 
-      {/* Create Card Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {/* Create / Edit Card Dialog */}
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) setEditingCardId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Nueva Tarjeta de Cliente</DialogTitle>
+            <DialogTitle>
+              {editingCardId ? "Editar Cliente" : "Nueva Tarjeta de Cliente"}
+            </DialogTitle>
             <DialogDescription>
-              Crea una tarjeta de lealtad para un nuevo cliente
+              {editingCardId
+                ? "Los cambios también se reflejan en su tarjeta de Wallet."
+                : "Crea una tarjeta de lealtad para un nuevo cliente"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Nombre del cliente *</Label>
-              <Input
-                value={form.customerName}
-                onChange={(e) =>
-                  setForm({ ...form, customerName: e.target.value })
-                }
-                placeholder="Nombre completo"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Nombre *</Label>
+                <Input
+                  value={form.customerName}
+                  onChange={(e) =>
+                    setForm({ ...form, customerName: e.target.value })
+                  }
+                  placeholder="Nombre"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Apellido *</Label>
+                <Input
+                  value={form.customerLastName}
+                  onChange={(e) =>
+                    setForm({ ...form, customerLastName: e.target.value })
+                  }
+                  placeholder="Apellido"
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Teléfono</Label>
+                <Label>Teléfono{editingCardId ? "" : " *"}</Label>
                 <Input
                   value={form.customerPhone}
                   onChange={(e) =>
@@ -575,27 +851,42 @@ export default function LoyaltyPage() {
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Sellos para premio</Label>
-              <Input
-                type="number"
-                value={form.stampsPerReward}
-                onChange={(e) =>
-                  setForm({ ...form, stampsPerReward: e.target.value })
-                }
-                placeholder="8"
-              />
-              <p className="text-xs text-muted-foreground">
-                Cantidad de sellos necesarios para obtener un premio
-              </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Cumpleaños</Label>
+                <Input
+                  type="date"
+                  value={form.birthDate}
+                  onChange={(e) =>
+                    setForm({ ...form, birthDate: e.target.value })
+                  }
+                />
+              </div>
+              {!editingCardId && (
+                <div className="space-y-2">
+                  <Label>Sellos para premio</Label>
+                  <Input
+                    type="number"
+                    value={form.stampsPerReward}
+                    onChange={(e) =>
+                      setForm({ ...form, stampsPerReward: e.target.value })
+                    }
+                    placeholder="8"
+                  />
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleCreate} disabled={submitting}>
-              {submitting ? "Creando..." : "Crear Tarjeta"}
+            <Button onClick={handleSaveCard} disabled={submitting}>
+              {submitting
+                ? "Guardando..."
+                : editingCardId
+                  ? "Guardar Cambios"
+                  : "Crear Tarjeta"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -607,7 +898,7 @@ export default function LoyaltyPage() {
           <DialogHeader>
             <DialogTitle>Agregar Sellos</DialogTitle>
             <DialogDescription>
-              {stampCard?.customerName} — {stampCard?.stamps}/
+              {stampCard && fullName(stampCard)} — {stampCard?.stamps}/
               {stampCard?.stampsPerReward} sellos actuales
             </DialogDescription>
           </DialogHeader>
@@ -641,58 +932,23 @@ export default function LoyaltyPage() {
 
       {/* Card Detail Dialog */}
       <Dialog open={!!selectedCard} onOpenChange={() => setSelectedCard(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{selectedCard?.customerName}</DialogTitle>
+            <DialogTitle>{selectedCard && fullName(selectedCard)}</DialogTitle>
           </DialogHeader>
           {selectedCard && (
             <div className="space-y-4">
-              {/* Visual stamp card */}
-              <div className="rounded-xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #004b49 0%, #003d3b 100%)' }}>
-                <p className="text-lg font-bold">BRUMA</p>
-                <div className="mt-4 grid grid-cols-4 gap-2">
-                  {Array.from({ length: selectedCard.stampsPerReward }).map(
-                    (_, i) => (
-                      <div
-                        key={i}
-                        className={`flex size-12 items-center justify-center rounded-full border-2 ${
-                          i < selectedCard.stamps
-                            ? "border-white bg-white/20"
-                            : "border-white/30"
-                        }`}
-                      >
-                        {i < selectedCard.stamps ? (
-                          <span className="text-lg">🍹</span>
-                        ) : (
-                          <span className="text-xs opacity-40">{i + 1}</span>
-                        )}
-                      </div>
-                    )
-                  )}
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs uppercase opacity-70">Sellos</p>
-                    <p className="text-xl font-bold">
-                      {selectedCard.stamps} sellos
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase opacity-70">
-                      Premios Disponibles
-                    </p>
-                    <p className="text-xl font-bold">
-                      {selectedCard.rewardsAvailable} premios
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <ApplePassPreview card={selectedCard} />
 
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <span className="text-muted-foreground">Teléfono</span>
                 <span>{selectedCard.customerPhone || "—"}</span>
                 <span className="text-muted-foreground">Email</span>
-                <span>{selectedCard.customerEmail || "—"}</span>
+                <span className="break-all">{selectedCard.customerEmail || "—"}</span>
+                <span className="text-muted-foreground">Cumpleaños</span>
+                <span>
+                  {selectedCard.birthDate ? formatBirthDate(selectedCard.birthDate) : "—"}
+                </span>
                 <span className="text-muted-foreground">Código</span>
                 <code className="text-xs">{selectedCard.barcodeValue}</code>
                 <span className="text-muted-foreground">Total sellos</span>
@@ -701,32 +957,38 @@ export default function LoyaltyPage() {
                   Premios canjeados
                 </span>
                 <span>{selectedCard.rewardsRedeemed}</span>
-              </div>
-
-              {/* QR for this card's Wallet pass */}
-              <div className="flex flex-col items-center gap-2 rounded-lg border p-4">
-                <p className="text-xs font-medium text-muted-foreground">Escanea para Apple Wallet</p>
-                {origin && (
-                  <QRCodeSVG
-                    value={`${origin}/api/wallet/pass/${selectedCard.id}`}
-                    size={140}
-                    level="M"
-                    bgColor="#ffffff"
-                    fgColor="#000000"
-                  />
+                <span className="text-muted-foreground">Apple Wallet</span>
+                <span>
+                  {(selectedCard.appleDevices ?? 0) > 0
+                    ? `Instalada (${selectedCard.appleDevices} dispositivo${selectedCard.appleDevices === 1 ? "" : "s"})`
+                    : "No instalada"}
+                </span>
+                {selectedCard.latestMessage && (
+                  <>
+                    <span className="text-muted-foreground">Último mensaje</span>
+                    <span>{selectedCard.latestMessage}</span>
+                  </>
                 )}
               </div>
 
               <div className="flex flex-wrap gap-2">
                 {selectedCard.rewardsAvailable > 0 && (
                   <Button
-                    onClick={() => handleRedeemReward(selectedCard.id)}
+                    onClick={() => handleRedeemReward(selectedCard)}
                     className="flex-1"
                   >
                     <Gift className="mr-1 size-4" />
                     Canjear Premio
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  onClick={() => openEditDialog(selectedCard)}
+                  className="flex-1"
+                >
+                  <PencilSimple className="mr-1 size-4" />
+                  Editar
+                </Button>
                 {(deviceType === "ios" || deviceType === "other") && (
                   <Button
                     variant="outline"
@@ -748,15 +1010,81 @@ export default function LoyaltyPage() {
                   </Button>
                 )}
               </div>
+
+              {/* Stamp / redeem history */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Historial</p>
+                <div className="max-h-56 overflow-y-auto rounded-lg border">
+                  {transactionsLoading ? (
+                    <p className="p-4 text-center text-sm text-muted-foreground">
+                      Cargando...
+                    </p>
+                  ) : transactions.length === 0 ? (
+                    <p className="p-4 text-center text-sm text-muted-foreground">
+                      Sin movimientos todavía
+                    </p>
+                  ) : (
+                    <ul className="divide-y">
+                      {transactions.map((tx) => (
+                        <li
+                          key={tx.id}
+                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                        >
+                          <div className="flex items-center gap-2">
+                            {tx.rewardRedeemed ? (
+                              <Gift className="size-4 text-primary" />
+                            ) : (
+                              <Stamp className="size-4 text-muted-foreground" />
+                            )}
+                            <div>
+                              <p>
+                                {tx.rewardRedeemed
+                                  ? "Premio canjeado"
+                                  : `+${tx.stampsAdded} sello${tx.stampsAdded === 1 ? "" : "s"}`}
+                              </p>
+                              {tx.orderNumber !== null && (
+                                <p className="text-xs text-muted-foreground">
+                                  Orden #{tx.orderNumber}
+                                  {tx.orderTotal && ` · $${Number(tx.orderTotal).toFixed(2)}`}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {format(new Date(tx.createdAt), "dd MMM yy, HH:mm", {
+                              locale: es,
+                            })}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+
+              {/* QR for this card's Wallet pass */}
+              <div className="flex flex-col items-center gap-2 rounded-lg border p-4">
+                <p className="text-xs font-medium text-muted-foreground">Escanea para Apple Wallet</p>
+                {origin && (
+                  <QRCodeSVG
+                    value={`${origin}/api/wallet/pass/${selectedCard.id}`}
+                    size={140}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                  />
+                )}
+              </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
       {/* QR Dialog (quick QR for a specific card) */}
       <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
         <DialogContent className="max-w-xs">
           <DialogHeader>
-            <DialogTitle className="text-center">{qrCard?.customerName}</DialogTitle>
+            <DialogTitle className="text-center">{qrCard && fullName(qrCard)}</DialogTitle>
             <DialogDescription className="text-center">
               Escanea para descargar Apple Wallet
             </DialogDescription>
@@ -784,7 +1112,7 @@ export default function LoyaltyPage() {
           <DialogHeader>
             <DialogTitle>Enviar Promoción</DialogTitle>
             <DialogDescription>
-              Envía un mensaje a las tarjetas de lealtad en Apple Wallet.
+              Llega como notificación a las tarjetas en Apple Wallet y Google Wallet.
             </DialogDescription>
           </DialogHeader>
 
@@ -799,13 +1127,14 @@ export default function LoyaltyPage() {
                 maxLength={140}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                {promoMessage.length}/140 caracteres
+                {promoMessage.length}/140 caracteres · Google solo notifica hasta 3
+                mensajes por tarjeta al día (los demás quedan en la tarjeta sin aviso).
               </p>
             </div>
 
             <div>
               <Label>Destinatarios</Label>
-              <div className="flex gap-2 mt-2">
+              <div className="flex flex-wrap gap-2 mt-2">
                 <Button
                   type="button"
                   variant={promoTarget === "all" ? "default" : "outline"}
@@ -813,6 +1142,15 @@ export default function LoyaltyPage() {
                   onClick={() => setPromoTarget("all")}
                 >
                   Todas las tarjetas
+                </Button>
+                <Button
+                  type="button"
+                  variant={promoTarget === "birthday" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPromoTarget("birthday")}
+                >
+                  <Cake className="mr-1 size-4" />
+                  Cumplen este mes ({birthdayCards.length})
                 </Button>
                 <Button
                   type="button"
@@ -824,6 +1162,12 @@ export default function LoyaltyPage() {
                 </Button>
               </div>
             </div>
+
+            {promoTarget === "birthday" && birthdayCards.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {birthdayCards.map(fullName).join(", ")}
+              </p>
+            )}
 
             {promoTarget === "specific" && (
               <div className="border rounded-md p-3 max-h-48 overflow-y-auto">
@@ -849,7 +1193,7 @@ export default function LoyaltyPage() {
                       }}
                     />
                     <span className="text-sm">
-                      {card.customerName} — {card.customerPhone}
+                      {fullName(card)} — {card.customerPhone}
                     </span>
                   </label>
                 ))}
@@ -870,6 +1214,7 @@ export default function LoyaltyPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
       {/* Refresh Wallet Cards Dialog */}
       <Dialog open={refreshDialogOpen} onOpenChange={setRefreshDialogOpen}>
         <DialogContent className="max-w-lg">
@@ -935,7 +1280,7 @@ export default function LoyaltyPage() {
                       const q = refreshSearch.trim().toLowerCase();
                       if (!q) return true;
                       return (
-                        card.customerName.toLowerCase().includes(q) ||
+                        fullName(card).toLowerCase().includes(q) ||
                         (card.customerPhone ?? "").includes(q)
                       );
                     })
@@ -958,7 +1303,7 @@ export default function LoyaltyPage() {
                           }}
                         />
                         <span className="text-sm">
-                          {card.customerName} — {card.customerPhone}
+                          {fullName(card)} — {card.customerPhone}
                         </span>
                       </label>
                     ))}

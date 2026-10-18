@@ -3,8 +3,20 @@ import { db, schema } from "../db";
 import { eq, and } from "drizzle-orm";
 import { generateApplePass } from "../lib/apple-pass";
 import { generateGoogleWalletSaveUrl, createOrUpdateGoogleWalletObject } from "../lib/google-wallet";
+import { getPassAssetResolver } from "../lib/pass-assets";
 
 const router = Router();
+
+// GET /api/wallet/assets/:file
+// Card art for the dashboard's pass preview, resolved through the active
+// season exactly like the real pass, so the preview shows what Wallet shows.
+const PREVIEW_ASSETS = new Set(["logo@2x.png", "sello@2x.png", "sello_vacio@2x.png"]);
+router.get("/wallet/assets/:file", async (req, res) => {
+  if (!PREVIEW_ASSETS.has(req.params.file)) return res.status(404).send();
+  const asset = await getPassAssetResolver();
+  res.setHeader("Cache-Control", "no-cache");
+  res.sendFile(asset(req.params.file));
+});
 
 // GET /api/wallet/v1/devices/:deviceLibraryId/registrations/:passTypeId
 // Apple Wallet calls this to check for updates
@@ -187,6 +199,24 @@ router.get("/wallet/v1/passes/:passTypeId/:serialNumber", async (req, res) => {
   } catch (error) {
     console.error("[API Wallet] Error generating pass:", error);
     res.status(500).send();
+  }
+});
+
+// GET /api/wallet/pass/:cardId
+// "Add to Apple Wallet" download (registration page, card page, dashboard QR).
+router.get("/wallet/pass/:cardId", async (req, res) => {
+  try {
+    const card = await db.query.loyaltyCards.findFirst({
+      where: eq(schema.loyaltyCards.id, req.params.cardId),
+    });
+    if (!card) return res.status(404).json({ error: "Tarjeta no encontrada" });
+    const buffer = await generateApplePass(card);
+    res.setHeader("Content-Type", "application/vnd.apple.pkpass");
+    res.setHeader("Content-Disposition", `attachment; filename="bruma-${card.id}.pkpass"`);
+    res.send(buffer);
+  } catch (error) {
+    console.error("[API Wallet] Error generating pass download:", error);
+    res.status(500).json({ error: "Error generando tarjeta" });
   }
 });
 

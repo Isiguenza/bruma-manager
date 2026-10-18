@@ -510,6 +510,27 @@ temporada, sube `updatedAt`, manda push a los dispositivos de esas tarjetas y
 regenera los objetos de Google en segundo plano (sin crear los que el cliente
 nunca guardó).
 
+El detalle de cliente en `/loyalty` dibuja una réplica del pass de Apple
+(`components/apple-pass-preview.tsx`, mismos campos y misma geometría de la
+franja) con imágenes de `GET /api/wallet/assets/:file` (api-server, resuelve la
+temporada activa). Si cambias el acomodo en `apple-pass.ts`, cambia la réplica.
+
+**El api-server es el ÚNICO que genera passes.** Next tenía copias completas
+(`app/api/wallet/pass/[id]`, `app/api/wallet/google-pass/[id]`,
+`lib/google-wallet.ts`) con sus propios assets: las tarjetas nuevas salían sin
+temporada y cada sello puesto desde una ruta Next re-renderizaba la de Android
+con los sellos originales. Ahora las dos rutas son redirect 307 al api-server
+(las siguen usando `/loyalty/register`, `/loyalty/card` y QRs ya impresos) y
+`lib/google-wallet.ts` solo llama `refresh-all` con ese `cardId`. No vuelvas a
+generar un pass del lado de Next.
+
+**Promociones a Android:** `sendGoogleWalletMessage` usa `addMessage` con
+`messageType: "TEXT_AND_NOTIFY"` (Google notifica máximo 3 por tarjeta cada 24h;
+los demás quedan en la tarjeta sin aviso). El PUT del objeto va ANTES del
+`addMessage`: un PUT sin `messages` borraría el mensaje recién agregado. En
+Apple la notificación sale del back field `latestMessage` con
+`changeMessage: "%@"` al recargar el pass.
+
 ## Stripe: test vs live
 
 `customer_stripe_accounts.stripe_customer_id` no es válido entre modo test y

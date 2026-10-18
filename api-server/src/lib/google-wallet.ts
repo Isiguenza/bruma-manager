@@ -501,3 +501,45 @@ export async function refreshAllGoogleWalletObjects(cards: any[]) {
   await Promise.all(Array.from({ length: 4 }, worker));
   console.log(`[API Google Wallet] Bulk refresh done: ${cards.length} cards`);
 }
+
+// Promotion message on an Android card. TEXT_AND_NOTIFY shows it on the card
+// AND pops a phone notification (Google caps notifications at 3 per card per
+// 24h; past that the message still lands on the card). The object PUT goes
+// first because a PUT without `messages` would wipe the one we add.
+export async function sendGoogleWalletMessage(
+  card: any,
+  message: string
+): Promise<"sent" | "not_installed" | "error"> {
+  try {
+    if (!process.env.GOOGLE_WALLET_ISSUER_ID || !process.env.GOOGLE_WALLET_CLASS_ID) return "error";
+    await createOrUpdateGoogleWalletObject(card, { skipClass: true, createIfMissing: false });
+
+    const accessToken = await getGoogleAccessToken();
+    const objectId = buildObjectId(card.id);
+    const res = await fetch(`${WALLET_API_BASE}/loyaltyObject/${objectId}/addMessage`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        message: {
+          id: `promo-${Date.now()}`,
+          header: "BRUMA",
+          body: message,
+          messageType: "TEXT_AND_NOTIFY",
+        },
+      }),
+    });
+
+    if (res.status === 404) return "not_installed";
+    if (!res.ok) {
+      console.error("[API Google Wallet] addMessage failed:", res.status, await res.text());
+      return "error";
+    }
+    return "sent";
+  } catch (error) {
+    console.error("[API Google Wallet] addMessage error:", error);
+    return "error";
+  }
+}

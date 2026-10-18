@@ -1,29 +1,45 @@
 import { Router } from "express";
+import { randomUUID } from "crypto";
 import { db, schema } from "../db";
 import { eq, desc, inArray, isNull, sql } from "drizzle-orm";
 import { sendAppleWalletPush, sendAppleWalletPushToAll } from "../lib/apple-push";
-import { createOrUpdateGoogleWalletObject, refreshAllGoogleWalletObjects } from "../lib/google-wallet";
+import { createOrUpdateGoogleWalletObject, refreshAllGoogleWalletObjects, sendGoogleWalletMessage } from "../lib/google-wallet";
 import { getActiveWalletSeason, listWalletSeasons, setActiveWalletSeason } from "../lib/pass-assets";
 
 const router = Router();
 
 // GET /api/loyalty-cards
+// Each card also carries `appleDevices` (iPhones with the pass installed, from
+// wallet_device_registrations) and `lastActivityAt` (last stamp/redeem).
 router.get("/loyalty-cards", async (req, res) => {
   try {
     const { phone } = req.query;
 
-    let whereConditions: any[] = [];
+    const [cards, registrations, activity] = await Promise.all([
+      db.query.loyaltyCards.findMany({
+        where: phone ? eq(schema.loyaltyCards.customerPhone, phone as string) : undefined,
+        orderBy: desc(schema.loyaltyCards.createdAt),
+      }),
+      db
+        .select({ serialNumber: schema.walletDeviceRegistrations.serialNumber, devices: sql<number>`count(*)::int` })
+        .from(schema.walletDeviceRegistrations)
+        .groupBy(schema.walletDeviceRegistrations.serialNumber),
+      db
+        .select({ cardId: schema.loyaltyTransactions.cardId, last: sql<string>`max(${schema.loyaltyTransactions.createdAt})` })
+        .from(schema.loyaltyTransactions)
+        .groupBy(schema.loyaltyTransactions.cardId),
+    ]);
 
-    if (phone) {
-      whereConditions.push(eq(schema.loyaltyCards.phone, phone as string));
-    }
+    const devicesByCard = new Map(registrations.map((r) => [r.serialNumber, r.devices]));
+    const lastByCard = new Map(activity.map((a) => [a.cardId, a.last]));
 
-    const cards = await db.query.loyaltyCards.findMany({
-      where: whereConditions.length > 0 ? whereConditions[0] : undefined,
-      orderBy: desc(schema.loyaltyCards.createdAt),
-    });
-
-    res.json(cards);
+    res.json(
+      cards.map(({ pinHash: _pin, ...card }) => ({
+        ...card,
+        appleDevices: devicesByCard.get(card.id) ?? 0,
+        lastActivityAt: lastByCard.get(card.id) ?? null,
+      }))
+    );
   } catch (error) {
     console.error("Error fetching loyalty cards:", error);
     res.status(500).json({ error: "Error al obtener tarjetas" });
@@ -51,27 +67,34 @@ router.get("/loyalty-cards/:id", async (req, res) => {
 });
 
 // POST /api/loyalty-cards
+// Card created by staff from the dashboard. Same barcode format as the public
+// registration (app/api/loyalty/route.ts). Email is optional here (the column
+// is NOT NULL, so it's stored as "").
 router.post("/loyalty-cards", async (req, res) => {
   try {
-    const { customerName, customerPhone, customerEmail, stampsPerReward } = req.body;
+    const { customerName, customerLastName, customerPhone, customerEmail, birthDate, stampsPerReward } = req.body;
 
-    if (!customerName || !customerPhone) {
-      return res.status(400).json({
-        error: "customerName y customerPhone son requeridos",
-      });
+    if (!customerName?.trim() || !customerLastName?.trim() || !customerPhone?.trim()) {
+      return res.status(400).json({ error: "Nombre, apellido y teléfono son requeridos" });
     }
+
+    const barcodeValue = `BRUMA-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`;
 
     const [newCard] = await db
       .insert(schema.loyaltyCards)
       .values({
-        customerName,
-        customerPhone,
-        customerEmail: customerEmail || null,
+        customerName: customerName.trim(),
+        customerLastName: customerLastName.trim(),
+        customerPhone: customerPhone.trim(),
+        customerEmail: customerEmail?.trim() || "",
+        birthDate: birthDate || null,
+        barcodeValue,
         stampsPerReward: stampsPerReward || 8,
       })
       .returning();
 
-    res.json(newCard);
+    const { pinHash: _pin, ...card } = newCard;
+    res.json(card);
   } catch (error) {
     console.error("Error creating loyalty card:", error);
     res.status(500).json({ error: "Error al crear tarjeta" });
@@ -79,14 +102,29 @@ router.post("/loyalty-cards", async (req, res) => {
 });
 
 // PATCH /api/loyalty-cards/:id
+// Only customer data is editable here; stamps/rewards go through their own
+// endpoints so they leave a loyalty_transactions row.
+const EDITABLE_CARD_FIELDS = ["customerName", "customerLastName", "customerPhone", "customerEmail", "birthDate"] as const;
 router.patch("/loyalty-cards/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
+    const updates: Record<string, any> = {};
+    for (const field of EDITABLE_CARD_FIELDS) {
+      if (field in (req.body || {})) {
+        const value = typeof req.body[field] === "string" ? req.body[field].trim() : req.body[field];
+        updates[field] = value;
+      }
+    }
+    if (updates.customerName === "" || updates.customerLastName === "") {
+      return res.status(400).json({ error: "Nombre y apellido no pueden ir vacíos" });
+    }
+    if ("customerEmail" in updates) updates.customerEmail = updates.customerEmail || "";
+    if ("customerPhone" in updates) updates.customerPhone = updates.customerPhone || null;
+    if ("birthDate" in updates) updates.birthDate = updates.birthDate || null;
 
     const [updatedCard] = await db
       .update(schema.loyaltyCards)
-      .set(updates)
+      .set({ ...updates, updatedAt: new Date() })
       .where(eq(schema.loyaltyCards.id, id))
       .returning();
 
@@ -94,10 +132,40 @@ router.patch("/loyalty-cards/:id", async (req, res) => {
       return res.status(404).json({ error: "Tarjeta no encontrada" });
     }
 
-    res.json(updatedCard);
+    sendAppleWalletPush(id).catch(console.error);
+    createOrUpdateGoogleWalletObject(updatedCard, { createIfMissing: false }).catch(console.error);
+
+    const { pinHash: _pin, ...card } = updatedCard;
+    res.json(card);
   } catch (error) {
     console.error("Error updating loyalty card:", error);
     res.status(500).json({ error: "Error al actualizar tarjeta" });
+  }
+});
+
+// GET /api/loyalty-cards/:id/transactions
+// Stamp/redeem history for the dashboard detail view.
+router.get("/loyalty-cards/:id/transactions", async (req, res) => {
+  try {
+    const rows = await db
+      .select({
+        id: schema.loyaltyTransactions.id,
+        stampsAdded: schema.loyaltyTransactions.stampsAdded,
+        rewardRedeemed: schema.loyaltyTransactions.rewardRedeemed,
+        createdAt: schema.loyaltyTransactions.createdAt,
+        orderId: schema.loyaltyTransactions.orderId,
+        orderNumber: schema.orders.orderNumber,
+        orderTotal: schema.orders.total,
+      })
+      .from(schema.loyaltyTransactions)
+      .leftJoin(schema.orders, eq(schema.orders.id, schema.loyaltyTransactions.orderId))
+      .where(eq(schema.loyaltyTransactions.cardId, req.params.id))
+      .orderBy(desc(schema.loyaltyTransactions.createdAt))
+      .limit(100);
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching loyalty transactions:", error);
+    res.status(500).json({ error: "Error al obtener historial" });
   }
 });
 
@@ -365,17 +433,36 @@ router.post("/loyalty-cards/promotions", async (req, res) => {
       return res.status(400).json({ error: "No hay tarjetas para enviar la promoción" });
     }
 
-    // Update latestMessage on each card
-    const now = new Date();
-    for (const card of cards) {
-      await db
-        .update(schema.loyaltyCards)
-        .set({ latestMessage: message, updatedAt: now })
-        .where(eq(schema.loyaltyCards.id, card.id));
+    // latestMessage drives both wallets: on Apple it's a back field with
+    // changeMessage "%@" (the lock-screen notification when the pass reloads);
+    // on Google it's the "Último mensaje" text module + addMessage below.
+    const cardIds = cards.map((c) => c.id);
+    const updatedCards = await db
+      .update(schema.loyaltyCards)
+      .set({ latestMessage: message, updatedAt: new Date() })
+      .where(inArray(schema.loyaltyCards.id, cardIds))
+      .returning();
 
-      // Send push notification (non-blocking)
-      sendAppleWalletPush(card.id).catch(console.error);
+    let apple: { devices: number; sent: number; failed: number } | null = null;
+    try {
+      apple = await sendAppleWalletPushToAll(cardIds);
+    } catch (error) {
+      console.error("[Promotion] Apple push error:", error);
     }
+
+    // Android in the background: one PUT + addMessage per card, 4 at a time.
+    (async () => {
+      const queue = [...updatedCards];
+      const counts = { sent: 0, not_installed: 0, error: 0 };
+      await Promise.all(
+        Array.from({ length: 4 }, async () => {
+          for (let card = queue.shift(); card; card = queue.shift()) {
+            counts[await sendGoogleWalletMessage(card, message)]++;
+          }
+        })
+      );
+      console.log("[Promotion] Google Wallet:", counts);
+    })().catch((error) => console.error("[Promotion] Google Wallet error:", error));
 
     // Save promotion record
     await db.insert(schema.walletPromotions).values({
@@ -388,6 +475,7 @@ router.post("/loyalty-cards/promotions", async (req, res) => {
     res.json({
       success: true,
       sentTo: cards.length,
+      apple,
       message,
     });
   } catch (error) {

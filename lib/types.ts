@@ -288,6 +288,7 @@ export interface CashRegister {
 export interface LoyaltyCard {
   id: string;
   customerName: string;
+  customerLastName?: string | null;
   customerPhone: string | null;
   customerEmail: string | null;
   barcodeValue: string;
@@ -296,9 +297,24 @@ export interface LoyaltyCard {
   rewardsAvailable: number;
   rewardsRedeemed: number;
   stampsPerReward: number;
+  birthDate?: string | null;
+  latestMessage?: string | null;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
+  // Only from GET /api/loyalty-cards (api-server)
+  appleDevices?: number;
+  lastActivityAt?: string | null;
+}
+
+export interface LoyaltyTransaction {
+  id: string;
+  stampsAdded: number;
+  rewardRedeemed: boolean;
+  createdAt: string;
+  orderId: string | null;
+  orderNumber: number | null;
+  orderTotal: string | null;
 }
 
 export interface UserProfile {
