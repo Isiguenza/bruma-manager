@@ -155,7 +155,7 @@ struct ComandasCartView: View {
     private var printButton: some View {
         Button {
             Haptics.tap()
-            Task { await vm.handlePrint() }
+            Task { await vm.handlePrint(includeSurvey: true) }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "printer.fill").font(.callout)

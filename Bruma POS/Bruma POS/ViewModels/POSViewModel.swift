@@ -1413,7 +1413,7 @@ class POSViewModel: ObservableObject {
                 var allItems: [CartItem] = []
                 for order in activeOrders {
                     if let items = order.items {
-                        for item in items where !(item.voided ?? false) {
+                        for item in Self.cartOrdered(items) where !(item.voided ?? false) {
                             var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
                             cartItem.orderStatus = order.status
                             allItems.append(cartItem)
@@ -1490,6 +1490,27 @@ class POSViewModel: ObservableObject {
         return try? decoder.decode(Order.self, from: data)
     }
 
+    /// Orden del carrito para items que vienen del servidor: como se agregaron
+    /// (`createdAt`, que el api-server escalona por renglón dentro de un mismo
+    /// envío y que un reemplazo hereda del original), con cada incluido justo
+    /// debajo de su paquete. `GET /orders` no ordena y Postgres regresa las filas
+    /// en otro orden cada vez que se actualiza una: sin esto el carrito "brincaba"
+    /// tras eliminar o reemplazar (mismo gotcha que el Pase).
+    static func cartOrdered(_ items: [OrderItem]) -> [OrderItem] {
+        func key(_ item: OrderItem) -> (String, String) { (item.createdAt ?? "", item.id) }
+        let sorted = items.sorted { key($0) < key($1) }
+        let ids = Set(items.map(\.id))
+        let childrenByParent = Dictionary(grouping: sorted.filter { item in
+            item.parentItemId.map { ids.contains($0) } ?? false
+        }, by: { $0.parentItemId! })
+        var result: [OrderItem] = []
+        for item in sorted where !(item.parentItemId.map { ids.contains($0) } ?? false) {
+            result.append(item)
+            result.append(contentsOf: childrenByParent[item.id] ?? [])
+        }
+        return result
+    }
+
     /// Reemplaza en `cart` solo los items de ESTA orden (por orderId), sin
     /// tocar los de otras órdenes activas de la misma mesa.
     @MainActor
@@ -1497,13 +1518,19 @@ class POSViewModel: ObservableObject {
         currentOrderId = order.id
         currentOrderNumber = order.orderNumber
         var items: [CartItem] = []
-        for item in order.items ?? [] where !(item.voided ?? false) {
+        for item in Self.cartOrdered(order.items ?? []) where !(item.voided ?? false) {
             var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
             cartItem.orderStatus = order.status
             items.append(cartItem)
         }
-        cart.removeAll { $0.orderId == order.id }
-        cart.append(contentsOf: items)
+        // En el mismo lugar donde estaban (antes de lo que aún no se envía), no
+        // al final: si no, cada order:updated movía los renglones.
+        let insertAt = cart.firstIndex { $0.orderId == order.id }
+            ?? cart.firstIndex { $0.orderId == nil }
+            ?? cart.count
+        let before = cart[..<insertAt].filter { $0.orderId != order.id }
+        let after = cart[insertAt...].filter { $0.orderId != order.id }
+        cart = Array(before) + items + Array(after)
         applyPromotions()
     }
 
@@ -1977,7 +2004,7 @@ class POSViewModel: ObservableObject {
                         for order in activeOrders {
                             if let items = order.items {
                                 print("  ➕ Agregando \(items.count) items de orden \(order.id)")
-                                for item in items where !(item.voided ?? false) {
+                                for item in Self.cartOrdered(items) where !(item.voided ?? false) {
                                     var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
                                     cartItem.orderStatus = order.status
                                     if let cm = item.customModifiers {
@@ -2037,7 +2064,7 @@ class POSViewModel: ObservableObject {
         currentOrderId = order.id
         currentOrderNumber = order.orderNumber
         currentOrderPaymentStatus = order.paymentStatus
-        cart = (order.items ?? [])
+        cart = Self.cartOrdered(order.items ?? [])
             .filter { !($0.voided ?? false) }
             .map { item -> CartItem in
                 var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
@@ -2140,7 +2167,7 @@ class POSViewModel: ObservableObject {
                     currentOrderNumber = existingOrder.orderNumber
                     var items: [CartItem] = []
                     if let orderItems = existingOrder.items {
-                        for item in orderItems where !(item.voided ?? false) {
+                        for item in Self.cartOrdered(orderItems) where !(item.voided ?? false) {
                             var cartItem = CartItem.fromOrderItem(item, orderId: existingOrder.id)
                             cartItem.orderStatus = existingOrder.status
                             items.append(cartItem)
@@ -2364,7 +2391,7 @@ class POSViewModel: ObservableObject {
         // Load items
         var items: [CartItem] = []
         if let orderItems = order.items {
-            for item in orderItems where !(item.voided ?? false) {
+            for item in Self.cartOrdered(orderItems) where !(item.voided ?? false) {
                 var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
                 cartItem.orderStatus = order.status
                 items.append(cartItem)
@@ -3253,7 +3280,7 @@ class POSViewModel: ObservableObject {
                 var allItems: [CartItem] = []
                 for order in activeOrders {
                     if let items = order.items {
-                        for item in items where !(item.voided ?? false) {
+                        for item in Self.cartOrdered(items) where !(item.voided ?? false) {
                             var cartItem = CartItem.fromOrderItem(item, orderId: order.id)
                             cartItem.orderStatus = order.status
                             allItems.append(cartItem)
@@ -4241,30 +4268,42 @@ class POSViewModel: ObservableObject {
     
     // MARK: - Print Ticket
     
-    func handlePrint(paymentMethod: String? = nil, openDrawer: Bool = false) async {
-        let sentItems = cart.filter { $0.sentToKitchen }
-        let itemsToPrint = sentItems.isEmpty ? cart : sentItems
-        print("🖨️ handlePrint called — sentItems=\(sentItems.count) totalCart=\(cart.count) itemsToPrint=\(itemsToPrint.count)")
-        guard !itemsToPrint.isEmpty else { return }
-        
-        // Group by seat then product
-        var seatGroups: [String: [String: TicketItem]] = [:]
-        for item in itemsToPrint {
-            let seat = item.seat.isEmpty ? "C" : item.seat
-            if seatGroups[seat] == nil { seatGroups[seat] = [:] }
+    /// Renglones del ticket de cuenta en el orden del carrito, con cada incluido
+    /// justo debajo de su paquete (`isPackageChild` + `parentName`: el
+    /// print-server lo dibuja con "»"). Junta iguales (3x 7up), pero un paquete
+    /// y sus incluidos nunca se juntan con otro: cada paquete es su bloque.
+    private func ticketLines(for items: [CartItem]) -> (lines: [[String: Any]], subtotal: Double, promotionDiscount: Double) {
+        let ids = Set(items.map(\.id))
+        let isChild: (CartItem) -> Bool = { item in item.parentLocalId.map { ids.contains($0) } ?? false }
+        var ordered: [(item: CartItem, parent: CartItem?)] = []
+        for item in items where !isChild(item) {
+            ordered.append((item, nil))
+            for child in items where child.parentLocalId == item.id {
+                ordered.append((child, item))
+            }
+        }
+
+        var keys: [String] = []
+        var lines: [String: TicketItem] = [:]
+        var parentNames: [String: String] = [:]
+        for (item, parent) in ordered {
+            let hasChildren = items.contains { $0.parentLocalId == item.id }
             // productName va en la llave porque trae la variante: sin él, dos
-            // variantes con el mismo precio se juntaban en una línea con el
-            // nombre de la primera y la otra desaparecía del ticket.
-            let key = "\(item.productId)-\(item.productName)-\(item.unitPrice)-\(item.promotionId ?? "none")-\(item.customModifiers ?? "")"
-            if var existing = seatGroups[seat]?[key] {
+            // variantes con el mismo precio se juntaban en una línea.
+            let key = parent != nil || hasChildren
+                ? item.id.uuidString
+                : "\(item.productId)-\(item.productName)-\(item.unitPrice)-\(item.promotionId ?? "none")-\(item.customModifiers ?? "")-\(item.isGuest)"
+            if var existing = lines[key] {
                 existing.qty += item.quantity
                 existing.total = Double(existing.qty) * (existing.originalPrice ?? existing.price)
                 if let pd = item.promotionDiscount {
                     existing.promotionDiscount = (existing.promotionDiscount ?? 0) + pd
                 }
-                seatGroups[seat]?[key] = existing
+                lines[key] = existing
             } else {
-                seatGroups[seat]?[key] = TicketItem(
+                keys.append(key)
+                if let parent { parentNames[key] = parent.productName }
+                lines[key] = TicketItem(
                     name: item.productName,
                     qty: item.quantity,
                     price: item.unitPrice,
@@ -4277,14 +4316,51 @@ class POSViewModel: ObservableObject {
                 )
             }
         }
+
+        let billable = lines.values.filter { !($0.isGuest ?? false) }
+        let subtotal = billable.reduce(0.0) { $0 + ($1.originalPrice ?? $1.price) * Double($1.qty) }
+        let promotionDiscount = billable.reduce(0.0) { $0 + ($1.promotionDiscount ?? 0) }
+
+        let dicts: [[String: Any]] = keys.compactMap { key in
+            guard let item = lines[key] else { return nil }
+            let isGuestItem = item.isGuest ?? false
+            let originalTotal = isGuestItem ? 0 : Int((item.originalPrice ?? item.price) * Double(item.qty))
+            let mods = parseModifiersForTicket(item.customModifiers)
+            let modsUnitTotal = mods.reduce(0.0) { $0 + (Double($1["price"] as? String ?? "0") ?? 0) }
+            let baseTotal = isGuestItem ? 0 : originalTotal - Int(modsUnitTotal * Double(item.qty))
+            var dict: [String: Any] = [
+                "name": item.name,
+                "qty": item.qty,
+                "total": baseTotal
+            ]
+            if let pn = item.promotionName { dict["promotionName"] = pn }
+            if let pd = item.promotionDiscount, pd > 0 { dict["promotionDiscount"] = pd }
+            if isGuestItem { dict["isGuest"] = true }
+            if !mods.isEmpty { dict["modifiers"] = mods }
+            if let parentName = parentNames[key] {
+                dict["isPackageChild"] = true
+                dict["parentName"] = parentName
+            }
+            return dict
+        }
+        return (dicts, subtotal, promotionDiscount)
+    }
+
+    /// Encuesta de satisfacción pública (web, repo bruma-nextjs). El QR lleva el
+    /// número de orden para ligar la respuesta; abajo se imprime la dirección limpia.
+    static let surveyURL = "https://cocinabruma.com.mx/encuesta"
+
+    /// `includeSurvey`: solo el botón de imprimir cuenta (iPad y Mobile). El
+    /// ticket que sale al cobrar, el pre-ticket y el PDF no llevan el QR.
+    func handlePrint(paymentMethod: String? = nil, openDrawer: Bool = false, includeSurvey: Bool = false) async {
+        let sentItems = cart.filter { $0.sentToKitchen }
+        let itemsToPrint = sentItems.isEmpty ? cart : sentItems
+        print("🖨️ handlePrint called — sentItems=\(sentItems.count) totalCart=\(cart.count) itemsToPrint=\(itemsToPrint.count)")
+        guard !itemsToPrint.isEmpty else { return }
         
-        // Calculate subtotal from original prices, promo discounts as global line
-        let subtotal = seatGroups.values.flatMap { $0.values }.filter { !($0.isGuest ?? false) }.reduce(0.0) { sum, item in
-            return sum + ((item.originalPrice ?? item.price) * Double(item.qty))
-        }
-        let totalPromoDiscount = seatGroups.values.flatMap { $0.values }.filter { !($0.isGuest ?? false) }.reduce(0.0) { sum, item in
-            return sum + (item.promotionDiscount ?? 0)
-        }
+        let ticket = ticketLines(for: itemsToPrint)
+        let subtotal = ticket.subtotal
+        let totalPromoDiscount = ticket.promotionDiscount
         
         let manualDiscountAmt = selectedDiscount != nil ? Int(flexibleDiscountAmount) : 0
         let discountData: [String: Any]? = manualDiscountAmt > 0 ? ["name": selectedDiscount?.name ?? "Descuento", "amount": manualDiscountAmt] : nil
@@ -4294,31 +4370,12 @@ class POSViewModel: ObservableObject {
         let tipPlusDelivery = tip + deliveryFeeAmount
         let total = subWithDiscount + tipPlusDelivery
         
-        var itemsBySeat: [String: [[String: Any]]] = [:]
-        for (seat, items) in seatGroups {
-            itemsBySeat[seat] = items.values.map { item in
-                let isGuestItem = item.isGuest ?? false
-                let originalTotal = isGuestItem ? 0 : Int((item.originalPrice ?? item.price) * Double(item.qty))
-                let mods = parseModifiersForTicket(item.customModifiers)
-                let modsUnitTotal = mods.reduce(0.0) { $0 + (Double($1["price"] as? String ?? "0") ?? 0) }
-                let baseTotal = isGuestItem ? 0 : originalTotal - Int(modsUnitTotal * Double(item.qty))
-                var dict: [String: Any] = [
-                    "name": item.name,
-                    "qty": item.qty,
-                    "total": baseTotal
-                ]
-                if let pn = item.promotionName { dict["promotionName"] = pn }
-                if let pd = item.promotionDiscount, pd > 0 { dict["promotionDiscount"] = pd }
-                if isGuestItem { dict["isGuest"] = true }
-                if !mods.isEmpty { dict["modifiers"] = mods }
-                return dict
-            }
-        }
-
         await PrintService.shared.printTicket(
             customerName: customerName,
             orderNumber: currentOrderNumber.map { String($0) } ?? "?",
-            items: itemsBySeat,
+            // Una sola lista: el print-server imprime todo junto, y las llaves de
+            // un diccionario por asiento llegaban en desorden.
+            items: ["C": ticket.lines],
             subtotal: Int(subtotal),
             tip: Int(tipPlusDelivery),
             total: Int(total),
@@ -4331,7 +4388,11 @@ class POSViewModel: ObservableObject {
             deliveryFee: Int(deliveryFeeAmount),
             openDrawer: openDrawer,
             customerPhone: currentOrderPhone,
-            deliveryAddress: currentOrderAddress
+            deliveryAddress: currentOrderAddress,
+            survey: includeSurvey ? [
+                "url": currentOrderNumber.map { "\(Self.surveyURL)?o=\($0)" } ?? Self.surveyURL,
+                "displayUrl": Self.surveyURL
+            ] : nil
         )
     }
 
@@ -4339,34 +4400,15 @@ class POSViewModel: ObservableObject {
         // Imprimir todos los items del carrito (incluso los no enviados a cocina)
         guard !cart.isEmpty else { return }
         
-        var itemsBySeat: [String: [[String: Any]]] = [:]
-        for item in cart {
-            let seat = item.seat.isEmpty ? "C" : item.seat
-            if itemsBySeat[seat] == nil { itemsBySeat[seat] = [] }
-            // Show original price, discount will be shown as a global line
-            let originalTotal = Int(Double(item.quantity) * (item.originalPrice ?? item.unitPrice))
-            var dict: [String: Any] = [
-                "name": item.productName,
-                "qty": item.quantity,
-                "total": originalTotal
-            ]
-            if let pn = item.promotionName { dict["promotionName"] = pn }
-            if let pd = item.promotionDiscount, pd > 0 { dict["promotionDiscount"] = pd }
-            itemsBySeat[seat]?.append(dict)
-        }
-        
-        let subtotal = cart.filter { !$0.isGuest }.reduce(0.0) { sum, item in
-            return sum + ((item.originalPrice ?? item.unitPrice) * Double(item.quantity))
-        }
-        let totalDiscount = cart.filter { !$0.isGuest }.reduce(0.0) { sum, item in
-            return sum + (item.promotionDiscount ?? 0)
-        }
+        let ticket = ticketLines(for: cart)
+        let subtotal = ticket.subtotal
+        let totalDiscount = ticket.promotionDiscount
         let preTicketTotal = subtotal - totalDiscount + deliveryFeeAmount
         
         await PrintService.shared.printTicket(
             customerName: customerName,
             orderNumber: "PRE-TICKET",
-            items: itemsBySeat,
+            items: ["C": ticket.lines],
             subtotal: Int(subtotal),
             tip: Int(deliveryFeeAmount),
             total: Int(preTicketTotal),

@@ -103,31 +103,9 @@ struct CartAdminBanner: View {
                     .font(.caption2)
                     .foregroundColor(Color(white: 0.55))
             } else if target.quantity > 1 {
-                HStack(spacing: 10) {
-                    Text("¿Cuántos?")
-                        .font(.caption)
-                        .foregroundColor(Color(white: 0.7))
-                    Spacer()
-                    Button {
-                        vm.replacementQuantity = max(1, vm.replacementQuantity - 1)
-                    } label: {
-                        Image(systemName: "minus").font(.system(size: 12, weight: .semibold)).frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.flatCircleNeutral)
-                    .disabled(vm.replacementQuantity <= 1)
-                    Text("\(vm.replacementQuantity) de \(target.quantity)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.white)
-                        .monospacedDigit()
-                        .frame(minWidth: 52)
-                    Button {
-                        vm.replacementQuantity = min(target.quantity, vm.replacementQuantity + 1)
-                    } label: {
-                        Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.flatCircleNeutral)
-                    .disabled(vm.replacementQuantity >= target.quantity)
-                }
+                Text("Cambiando \(vm.replacementQuantity) de \(target.quantity) — ajústalo en el renglón.")
+                    .font(.caption2)
+                    .foregroundColor(Color(white: 0.55))
             }
         }
         .padding(10)
@@ -324,7 +302,9 @@ struct CartAdminPinDialog: View {
         case .replace:
             guard let target = vm.replacementTarget, let first = vm.pendingReplacementItems?.first else { return nil }
             let extra = (vm.pendingReplacementItems?.count ?? 1) > 1 ? " (paquete)" : ""
-            return "\(target.productName) → \(first.productName)\(extra)"
+            let isWholeGroup = target.parentLocalId != nil || vm.cart.contains { $0.parentLocalId == target.id }
+            let count = isWholeGroup || target.quantity == 1 ? "" : "\(min(vm.replacementQuantity, target.quantity)) de \(target.quantity): "
+            return "\(count)\(target.productName) → \(first.productName)\(extra)"
         case .delete:
             let count = vm.cartAdminSelection.values.reduce(0, +)
             return "\(count) platillo(s) a eliminar"

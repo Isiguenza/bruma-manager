@@ -332,9 +332,12 @@ struct CartItemRow: View {
             }
         }
 
-        // Cuántas unidades eliminar de este renglón
+        // Cuántas unidades eliminar / cambiar de este renglón
         if adminAction == .delete, isAdminSelected, item.quantity > 1 {
             adminQuantityRow
+        }
+        if adminAction == .replace, isAdminSelected, item.quantity > 1, !isPackageChild, !isPackage {
+            replacementQuantityRow
         }
 
         // Quantity controls + price for unsent items
@@ -538,6 +541,40 @@ struct CartItemRow: View {
             }
             .modifier(StepperButton())
             .disabled(selected >= item.quantity)
+        }
+    }
+
+    private var replacementQuantityRow: some View {
+        let selected = vm.replacementQuantity
+        return HStack(spacing: 10) {
+            Text("¿Cuántos cambiar?")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.orange)
+            Spacer()
+            Button {
+                vm.replacementQuantity = max(1, selected - 1)
+            } label: {
+                Image(systemName: "minus").font(.system(size: 12, weight: .semibold)).foregroundColor(.white).frame(width: 28, height: 28)
+            }
+            .modifier(StepperButton())
+            .disabled(selected <= 1)
+            Text("\(selected) de \(item.quantity)")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.white)
+                .monospacedDigit()
+                .frame(minWidth: 52)
+            Button {
+                vm.replacementQuantity = min(item.quantity, selected + 1)
+            } label: {
+                Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).foregroundColor(.white).frame(width: 28, height: 28)
+            }
+            .modifier(StepperButton())
+            .disabled(selected >= item.quantity)
+            Button("Todos") { vm.replacementQuantity = item.quantity }
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.orange)
+                .buttonStyle(.plain)
+                .disabled(selected == item.quantity)
         }
     }
 

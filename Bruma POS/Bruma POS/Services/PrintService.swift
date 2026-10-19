@@ -65,7 +65,8 @@ class PrintService {
         deliveryFee: Int = 0,
         openDrawer: Bool = false,
         customerPhone: String? = nil,
-        deliveryAddress: String? = nil
+        deliveryAddress: String? = nil,
+        survey: [String: String]? = nil
     ) async {
         guard let url = URL(string: "\(printServerURL)/print") else {
             print("❌ PrintService: invalid print URL: \(printServerURL)")
@@ -90,6 +91,7 @@ class PrintService {
         if let pm = paymentMethod { body["paymentMethod"] = pm }
         if let tpm = tipPaymentMethod { body["tipPaymentMethod"] = tpm }
         if let sp = splitPayments { body["splitPayments"] = sp }
+        if let survey { body["survey"] = survey }
         if deliveryFee > 0 { body["deliveryFee"] = deliveryFee }
         if openDrawer { body["openDrawer"] = true }
         if let phone = customerPhone, !phone.isEmpty { body["customerPhone"] = phone }

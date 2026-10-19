@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const net = require('net');
 const sharp = require('sharp');
+const QRCode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
@@ -152,6 +153,41 @@ function solidLine(heightDots = 3) {
 }
 
 /**
+ * Pie del ticket de cuenta con la encuesta de satisfacción. El POS manda
+ * `survey: { url, displayUrl }` SOLO desde su botón de imprimir cuenta (no en
+ * el ticket de pago, ni en el pre-ticket ni en el PDF). El QR y el corazón van
+ * como imagen raster (GS v0, igual que el logo): la impresora está en WPC1252 y
+ * un emoji como texto saldría como basura.
+ */
+const HEART_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24">'
+  + '<path fill="#000" d="M12 21.2s-7.6-4.7-10.1-9.5C.2 8.3 2.1 4 6.2 4c2.3 0 3.7 1.3 5.8 3.6C14.1 5.3 15.5 4 17.8 4c4.1 0 6 4.3 4.3 7.7-2.5 4.8-10.1 9.5-10.1 9.5z"/></svg>';
+
+async function surveyFooter(survey) {
+  if (!survey || typeof survey.url !== "string" || !survey.url) return "";
+  let out = "";
+  out += commands.feedLine;
+  out += solidLine() + commands.feedLine;
+  out += commands.feedLine;
+  out += commands.alignCenter;
+  out += commands.bold + "Gracias por visitarnos" + commands.boldOff + "\n";
+  out += await imageToEscPosBitmap(Buffer.from(HEART_SVG), 48);
+  out += commands.feedLine;
+  out += "Tu opinión hace la diferencia.\n";
+  out += "Escanea el QR y dinos cómo te fue.\n";
+  out += commands.feedLine;
+  try {
+    const qrPng = await QRCode.toBuffer(survey.url, { type: "png", errorCorrectionLevel: "M", margin: 2, width: 320 });
+    out += await imageToEscPosBitmap(qrPng, 320);
+  } catch (error) {
+    console.error("Error generando QR de encuesta:", error);
+  }
+  out += commands.feedLine;
+  out += `${survey.displayUrl || survey.url}\n`;
+  out += commands.alignLeft;
+  return out;
+}
+
+/**
  * Package children are explicitly identified by the API print path. The POS
  * payment ticket predates that field, but package children are persisted and
  * billed at $0, so retain that narrow fallback for its existing payload.
@@ -166,9 +202,10 @@ function isPackageChild(item, { allowZeroPriceFallback = false } = {}) {
 
 function receiptItemLabel(item) {
   const child = isPackageChild(item, { allowZeroPriceFallback: true });
-  // ESC/POS printers commonly use a CP1252-style codepage; Unicode ↳ can
-  // render as a tiny "3". Keep the package hierarchy entirely ASCII.
-  const prefix = child ? "   -> " : "";
+  // The printer runs on codepage WPC1252 and content goes out as 'binary'
+  // (one byte per JS char), so only U+0000-U+00FF survive: "↳" (U+21B3) was
+  // truncated to 0xB3 and printed as "³". "»" (0xBB) and "·" (0xB7) are safe.
+  const prefix = child ? "  » " : "";
   return { child, label: `${prefix}${item.qty}x ${item.name}` };
 }
 
@@ -366,7 +403,8 @@ app.post('/print', async (req, res) => {
       discount,
       openDrawer,
       customerPhone,
-      deliveryAddress
+      deliveryAddress,
+      survey
     } = req.body;
 
     let content = "";
@@ -475,6 +513,7 @@ app.post('/print', async (req, res) => {
     }
     
     // Imprimir todos los items juntos
+    let lastParentName = "";
     for (const item of allItems) {
       const { child: isChild, label: qtyName } = receiptItemLabel(item);
       const price = item.isGuest ? "$0" : `$${item.total}`;
@@ -484,7 +523,7 @@ app.post('/print', async (req, res) => {
       // Modificadores con precio (extras, flujo, modificador personalizado)
       if (item.modifiers && item.modifiers.length > 0) {
         for (const mod of item.modifiers) {
-          const modLine = `  -> ${mod.name}`;
+          const modLine = `${isChild ? "      " : "    "}· ${mod.name}`;
           const modPrice = `+$${mod.price}`;
           const modSpaces = Math.max(1, 48 - modLine.length - modPrice.length);
           content += modLine + " ".repeat(modSpaces) + modPrice + "\n";
@@ -493,14 +532,16 @@ app.post('/print', async (req, res) => {
 
       // Agregar indicador de invitado si existe
       if (item.isGuest) {
-        content += `  \u21b3 Invitado\n`;
+        content += `    · Invitado\n`;
       }
 
       // The price of a package child is intentionally $0: its value belongs
-      // to the parent line. This keeps the hierarchy clear on the bill.
-      if (isChild && item.parentName) {
+      // to the parent line. Under its own parent the "»" already says so; the
+      // label is only for rows that arrive out of order (older POS builds).
+      if (isChild && item.parentName && !matchesPackageParent(lastParentName, item.parentName)) {
         content += `      Paquete: ${item.parentName}\n`;
       }
+      if (!isChild) lastParentName = item.name;
     }
     
     // Espacio antes del total
@@ -553,7 +594,7 @@ app.post('/print', async (req, res) => {
       content += "PROMOCIONES\n";
       content += commands.boldOff;
       content += commands.alignLeft;
-      content += "────────────────────────────────────────────────\n";
+      content += solidLine() + commands.feedLine;
       content += commands.feedLine;
       
       for (const [promoName, items] of Object.entries(byPromo)) {
@@ -566,7 +607,7 @@ app.post('/print', async (req, res) => {
         content += promoLine + " ".repeat(promoSpaces) + promoPrice + "\n";
       }
       
-      content += "────────────────────────────────────────────────\n";
+      content += solidLine() + commands.feedLine;
       content += commands.feedLine;
     }
     
@@ -593,7 +634,7 @@ app.post('/print', async (req, res) => {
     
     // Información de pago (solo si está pagado)
     if (paymentMethod) {
-      content += "────────────────────────────────────────────────\n";
+      content += solidLine() + commands.feedLine;
       content += commands.feedLine;
       content += commands.bold;
       content += "PAGADO\n";
@@ -636,13 +677,17 @@ app.post('/print', async (req, res) => {
       content += commands.feedLine;
     }
 
-    // Footer
+    // Footer: la encuesta ya da las gracias; sin ella, la línea de siempre.
     content += commands.feedLine;
     content += commands.feedLine;
-    content += commands.feedLine;
-    content += commands.feedLine;
-    content += commands.alignCenter;
-    content += "Gracias por su preferencia\n";
+    if (survey) {
+      content += await surveyFooter(survey);
+    } else {
+      content += commands.feedLine;
+      content += commands.feedLine;
+      content += commands.alignCenter;
+      content += "Gracias por su preferencia\n";
+    }
 
     // Espacio final antes de cortar
     content += commands.feedLine;
@@ -911,6 +956,7 @@ app.post('/print-seat-bill', async (req, res) => {
     content += commands.feedLine;
 
     // Items
+    let lastParentName = "";
     for (const item of items) {
       const { child: isChild, label: qtyName } = receiptItemLabel(item);
       const price = `$${item.total}`;
@@ -919,16 +965,17 @@ app.post('/print-seat-bill', async (req, res) => {
 
       if (item.modifiers && item.modifiers.length > 0) {
         for (const mod of item.modifiers) {
-          const modLine = `  -> ${mod.name}`;
+          const modLine = `${isChild ? "      " : "    "}· ${mod.name}`;
           const modPrice = `+$${mod.price}`;
           const modSpaces = Math.max(1, 48 - modLine.length - modPrice.length);
           content += modLine + " ".repeat(modSpaces) + modPrice + "\n";
         }
       }
 
-      if (isChild && item.parentName) {
+      if (isChild && item.parentName && !matchesPackageParent(lastParentName, item.parentName)) {
         content += `      Paquete: ${item.parentName}\n`;
       }
+      if (!isChild) lastParentName = item.name;
     }
 
     content += commands.feedLine;
@@ -973,7 +1020,7 @@ app.post('/print-seat-bill', async (req, res) => {
 
     // Sección de pago (solo si ya pagó)
     if (paymentMethod) {
-      content += "────────────────────────────────────────────────\n";
+      content += solidLine() + commands.feedLine;
       content += commands.feedLine;
       content += commands.bold;
       content += "PAGADO\n";

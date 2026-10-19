@@ -82,6 +82,7 @@ import customerAddressesRouter from "./routes/customer-addresses";
 import paymentMethodsRouter from "./routes/payment-methods";
 import internalRouter from "./routes/internal";
 import expensesRouter from "./routes/expenses";
+import surveysRouter from "./routes/surveys";
 
 app.use("/api", authRouter);
 app.use("/api", onlineOrdersRouter);
@@ -104,6 +105,7 @@ app.use("/api", whatsappRouter);
 app.use("/api", quickNotesRouter);
 app.use("/api", mapFixturesRouter);
 app.use("/api", expensesRouter);
+app.use("/api", surveysRouter);
 app.use("/internal", internalRouter);
 
 // Open cash drawer — proxy to print server

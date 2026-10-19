@@ -97,6 +97,10 @@ async function prepareOrderItemWrites(orderId: string, items: any[]): Promise<Pr
 
   let orderSubtotal = 0;
   const parentRows: any[] = [];
+  // One ms apart per row, in request order: rows inserted together otherwise
+  // share created_at (now() = transaction start) and the POS can't rebuild the
+  // order in which they were added (it sorts the cart by created_at).
+  const batchStart = Date.now();
   const childRows: any[] = [];
   const childBeverageByItemId = new Map<string, boolean>();
 
@@ -114,6 +118,7 @@ async function prepareOrderItemWrites(orderId: string, items: any[]): Promise<Pr
     const row = {
       id,
       orderId,
+      createdAt: new Date(batchStart + record.index),
       parentItemId: isChild ? records[parentIndex].id : null,
       packageLabel: isChild ? null : (item.packageLabel || null),
       productId: item.productId,
@@ -2176,8 +2181,13 @@ router.post("/orders/:id/items/:itemId/replace", async (req, res) => {
     const isPartial = replaceQty < target.quantity;
 
     const prepared = await prepareOrderItemWrites(orderId, items);
+    // created_at is inherited too, so the replacement keeps the original's place
+    // in the cart (sorted by created_at) — right after it when only some units change.
+    const anchor = new Date(target.createdAt).getTime() + (isPartial ? 1 : 0);
+    let rowOffset = 0;
     const inherit = (row: any) => ({
       ...row,
+      createdAt: new Date(anchor + rowOffset++),
       seat: target.seat,
       course: target.course,
       deliveredToTable: target.deliveredToTable,

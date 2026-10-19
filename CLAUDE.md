@@ -531,6 +531,20 @@ los demás quedan en la tarjeta sin aviso). El PUT del objeto va ANTES del
 Apple la notificación sale del back field `latestMessage` con
 `changeMessage: "%@"` al recargar el pass.
 
+## Encuesta de satisfacción (QR en el ticket de cuenta)
+
+Página pública `cocinabruma.com.mx/encuesta` en el repo de la web
+(`bruma-nextjs/src/app/encuesta/`, estático: el `?o=<orderNumber>` del QR se
+lee en el cliente). Guarda con `POST /api/surveys` (api-server,
+`routes/surveys.ts`, público, rate-limit en memoria por IP) en
+`survey_responses` (`drizzle/manual_survey_responses.sql`, en las dos copias
+del schema). El QR va SOLO en el ticket del botón de imprimir cuenta (iPad
+`CartView`, Mobile "Imprimir Cuenta"): `handlePrint(includeSurvey: true)` →
+`survey: {url, displayUrl}` → `surveyFooter` en `print-server` (`/print`). El
+ticket al cobrar (`handlePrint(paymentMethod:)`), el pre-ticket y el PDF no lo
+llevan. QR y corazón se imprimen como imagen raster (lib `qrcode` + el mismo
+`imageToEscPosBitmap` del logo): un emoji como texto no sale en WPC1252.
+
 ## Stripe: test vs live
 
 `customer_stripe_accounts.stripe_customer_id` no es válido entre modo test y
@@ -668,6 +682,23 @@ motor no se tocó. El hijo queda a $0 colgado del mismo padre; la diferencia de
 `priceDelta` (opción vieja + su subflujo vs. nueva) se suma al PADRE, y la fila
 de `order_item_selections` del padre se re-apunta al hijo nuevo
 (`hostSelection` en el endpoint; `applyLocalHostSelection` si no se ha enviado).
+
+**Orden del carrito y del ticket = orden en que se agregó.** `order_items`
+de un mismo envío compartían `created_at` (now() = inicio de la transacción)
+y `GET /orders` no ordena, así que el carrito "brincaba" en cada
+`order:updated`. Ahora `prepareOrderItemWrites` escalona `created_at` 1 ms
+por renglón, un reemplazo hereda el del original, y el POS SIEMPRE arma el
+carrito con `POSViewModel.cartOrdered` (por `createdAt`, cada hijo bajo su
+padre); `applyDecodedOrderToCart` reinserta en el mismo lugar, no al final. Si
+agregas otro lugar que construya el carrito desde `order.items`, pásalo por
+`cartOrdered`. El ticket de cuenta y el pre-ticket salen de `ticketLines(for:)`
+en ese orden (antes era un diccionario por asiento: orden al azar, hijos antes
+que padres), mandados en una sola lista.
+
+**Impresora: solo caracteres U+0000–U+00FF.** El print-server selecciona
+WPC1252 y escribe `'binary'` (un byte por carácter JS): un símbolo fuera de
+Latin-1 se trunca (`↳` U+21B3 → 0xB3 → "³"). En los recibos el incluido va con
+`»` y los modificadores con `·`; no uses flechas/box-drawing Unicode.
 
 ## Caja: el corte se calcula EN VIVO desde `orders`
 

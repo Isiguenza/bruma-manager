@@ -544,7 +544,7 @@ struct CartView: View {
                 // Print button with context menu
                 Menu {
                     Button {
-                        Task { await vm.handlePrint() }
+                        Task { await vm.handlePrint(includeSurvey: true) }
                     } label: {
                         Label("Ticket Cuenta", systemImage: "doc.text")
                     }
@@ -566,7 +566,7 @@ struct CartView: View {
                         .foregroundStyle(.white)
                         .frame(width: 52, height: 52)
                 } primaryAction: {
-                    Task { await vm.handlePrint() }
+                    Task { await vm.handlePrint(includeSurvey: true) }
                 }
                 .disabled(vm.cart.isEmpty)
                 .buttonStyle(.flatCircleNeutral)

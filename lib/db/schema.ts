@@ -1338,6 +1338,24 @@ export const expenses = pgTable("expenses", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Encuesta de satisfacción pública (cocinabruma.com.mx/encuesta). El QR del
+// ticket de cuenta trae ?o=<orderNumber>; order_id se resuelve en el servidor
+// y queda null si la encuesta llega sin número o con uno que no existe.
+export const surveyResponses = pgTable("survey_responses", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderId: uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+  orderNumber: integer("order_number"),
+  overallRating: integer("overall_rating").notNull(), // 1–5
+  bestAspects: jsonb("best_aspects").$type<string[]>().notNull().default([]), // comida | servicio | ambiente | rapidez | precio
+  improvement: text("improvement"),
+  staffRating: integer("staff_rating"), // 1–5
+  orderAsExpected: varchar("order_as_expected", { length: 16 }), // si | parcialmente | no
+  nps: integer("nps"), // 0–10
+  wouldReturn: varchar("would_return", { length: 16 }), // si | no | tal_vez
+  dish: text("dish"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Aliases for backward compatibility with api-server route code
 export const employees = userProfiles;
 export const inventory = inventoryProducts;
