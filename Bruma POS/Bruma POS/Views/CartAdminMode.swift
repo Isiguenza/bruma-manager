@@ -41,8 +41,10 @@ struct CartAdminBanner: View {
         case .guest: return "Toca los platillos a invitar."
         case .customModifier: return "Toca un platillo, o no elijas ninguno para cobrarlo aparte en la cuenta."
         case .replace:
-            if vm.replacementTarget == nil { return "Toca el platillo (o el incluido de un paquete) que vas a cambiar." }
-            return "Ahora elige en el menú el producto nuevo."
+            guard let target = vm.replacementTarget else { return "Toca el platillo (o el incluido de un paquete) que vas a cambiar." }
+            return target.parentLocalId != nil
+                ? "Elige el nuevo incluido en el paso del paquete."
+                : "Ahora elige en el menú el producto nuevo."
         }
     }
 
@@ -93,7 +95,7 @@ struct CartAdminBanner: View {
                     .lineLimit(2)
             }
             if isChild {
-                Text("Incluido del paquete: el nuevo también va incluido ($0).")
+                Text("Elige el nuevo en el paso del paquete. Va incluido; si la opción trae extra, se suma al paquete.")
                     .font(.caption2)
                     .foregroundColor(Color(white: 0.55))
             } else if isPackage {
@@ -156,7 +158,9 @@ struct CartAdminFooter: View {
             case .replace:
                 Text(vm.replacementTarget == nil
                      ? "Elige primero el platillo a cambiar."
-                     : "Al terminar el platillo nuevo se pide el PIN.")
+                     : vm.cartAdminNeedsPin
+                        ? "Al terminar el platillo nuevo se pide el PIN."
+                        : "Sin enviar a cocina: se cambia sin PIN.")
                     .font(.caption)
                     .foregroundColor(Color(white: 0.55))
                     .frame(maxWidth: .infinity, alignment: .leading)

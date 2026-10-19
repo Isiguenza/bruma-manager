@@ -73,15 +73,26 @@ struct ProductGridView: View {
             if let node = vm.activeFlowNode {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        stepBackButton(action: vm.handleBackInFlow)
+                        if vm.canGoBackInFlow {
+                            stepBackButton(action: vm.handleBackInFlow)
+                        }
                         VStack(alignment: .leading, spacing: 3) {
                             Text(node.title).font(.title2.weight(.bold)).foregroundColor(.white)
-                            if let subtitle = node.subtitle {
+                            if vm.isLockedReplacementStep(node), let target = vm.replacementTarget {
+                                Text("Cambiando \(target.productName) — elige uno de este paso")
+                                    .font(.subheadline).foregroundColor(.orange)
+                            } else if let subtitle = node.subtitle {
                                 Text(subtitle).font(.subheadline).foregroundColor(.gray)
                             }
                         }
                         Spacer()
-                        Text(vm.formatCurrency(vm.flowLiveTotal())).font(.headline.weight(.bold)).foregroundColor(.green)
+                        if vm.isReplacingPackageChild {
+                            // El incluido va en $0; un extra de la opción se suma al paquete.
+                            Label("Incluido", systemImage: "shippingbox.fill")
+                                .font(.subheadline.weight(.semibold)).foregroundColor(.orange)
+                        } else {
+                            Text(vm.formatCurrency(vm.flowLiveTotal())).font(.headline.weight(.bold)).foregroundColor(.green)
+                        }
                     }
                 }
                 .padding(16)
@@ -151,7 +162,7 @@ struct ProductGridView: View {
         VStack(spacing: 0) {
             ScrollView(showsIndicators: false) {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
-                    if node.includeNoneOption {
+                    if node.includeNoneOption && !vm.isLockedReplacementStep(node) {
                         FlowOptionCard(label: node.noneLabel ?? "Sin \(node.title.lowercased())", priceLabel: nil, selected: vm.activeFlowSelectedOptionIds.isEmpty) {
                             Haptics.tap(); vm.handleStepSelection(nil)
                         }
@@ -165,7 +176,7 @@ struct ProductGridView: View {
                 }
                 .padding(20)
             }
-            if node.selectMode == "multi" {
+            if node.selectMode == "multi" && !vm.isLockedReplacementStep(node) {
                 Button { Haptics.tap(); vm.advanceToNextStep() } label: {
                     Text("Siguiente (\(vm.activeFlowSelectedOptionIds.count)/\(node.maxSelections.map(String.init) ?? "∞"))")
                         .font(.callout.weight(.semibold)).foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 10)

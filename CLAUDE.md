@@ -652,10 +652,22 @@ forma de meter platillos al carrito, que pase por `addToCart` o el reemplazo
 se la salta. Un item ya guardado se cambia con
 `POST /api/orders/:id/items/:itemId/replace` (anula el viejo o solo N unidades
 e inserta los nuevos en un batch); **no imprime comanda a propósito** — no
-reusar `POST /orders/:id/items`, que sí imprime. Un incluido de paquete se
-cambia por un solo platillo y queda colgado del mismo padre a $0 (los hijos
-nunca cobran); un paquete se cambia completo. Lo nuevo hereda asiento, tiempo,
-entregado e invitado del viejo.
+reusar `POST /orders/:id/items`, que sí imprime. Un paquete se cambia completo.
+Lo nuevo hereda asiento, tiempo, entregado e invitado del viejo. Sin enviar a
+cocina no pide PIN (eliminar/reemplazar); invitar y modificador siempre.
+
+**Cambiar un incluido = el flujo del paquete abierto en SU paso, no el menú.**
+`startPackageChildReplacement` busca el paso que lo generó (la selección del
+padre si el carrito la trae; si vino del servidor, que no trae selecciones, el
+nodo con una opción `emitsChildItem` del mismo `refProductId`) y fija ahí el
+flujo (`packageChildReplacement`): sin "Atrás", sin "Sin …", una sola opción
+aunque el paso sea múltiple, y no se puede cambiar de categoría. Se recorren
+solo los nodos con `childOwnerOptionId` = opción elegida (variante/subflujo del
+hijo) y `FlowEngine.buildItems` arma el hijo desde ese camino parcial — el
+motor no se tocó. El hijo queda a $0 colgado del mismo padre; la diferencia de
+`priceDelta` (opción vieja + su subflujo vs. nueva) se suma al PADRE, y la fila
+de `order_item_selections` del padre se re-apunta al hijo nuevo
+(`hostSelection` en el endpoint; `applyLocalHostSelection` si no se ha enviado).
 
 ## Caja: el corte se calcula EN VIVO desde `orders`
 

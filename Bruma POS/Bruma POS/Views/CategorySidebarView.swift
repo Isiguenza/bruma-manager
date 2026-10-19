@@ -43,6 +43,10 @@ struct CategorySidebarView: View {
                             category: category,
                             isSelected: vm.selectedCategory == category.id
                         ) {
+                            guard !vm.isReplacingPackageChild else {
+                                vm.showToast("Termina de elegir el incluido o cancela el reemplazo", isError: true)
+                                return
+                            }
                             vm.cancelItemComposition()
                             vm.selectedCategory = category.id
                             vm.searchQuery = ""

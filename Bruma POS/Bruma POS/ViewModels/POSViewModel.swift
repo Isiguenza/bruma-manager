@@ -481,6 +481,10 @@ class POSViewModel: ObservableObject {
     @Published var pendingReplacementItems: [CartItem]?
     @Published var showCartAdminPin = false
     @Published var cartAdminProcessing = false
+    /// Cambio de un incluido: el flujo del paquete abierto y fijo en el paso que lo eligió.
+    @Published var packageChildReplacement: PackageChildReplacement?
+    /// Opción elegida en ese paso: re-apunta la selección del padre y ajusta su precio.
+    var pendingReplacementHostSelection: BuiltSelection?
     
     // MARK: - Timers
     private var tablePollingTimer: Timer?
@@ -2381,8 +2385,12 @@ class POSViewModel: ObservableObject {
                 showToast("Termina o cancela \"\(action.title)\" en el carrito", isError: true)
                 return
             }
-            guard replacementTargetId != nil else {
+            guard let target = replacementTarget else {
                 showToast("Primero toca en el carrito el platillo a reemplazar", isError: true)
+                return
+            }
+            guard target.parentLocalId == nil else {
+                showToast("Un incluido se cambia en el paso de su paquete", isError: true)
                 return
             }
         }
@@ -2560,6 +2568,17 @@ class POSViewModel: ObservableObject {
 
     func handleStepSelection(_ option: FlowNodeOption?) {
         guard let node = activeFlowNode, !flowPath.isEmpty else { return }
+        if isLockedReplacementStep(node) {
+            // Se cambia UN incluido: una opción que genere platillo, aunque el
+            // paso sea múltiple o permita "Sin …".
+            guard let option, option.emitsChildItem else {
+                showToast("Elige el platillo que va en lugar de este", isError: true)
+                return
+            }
+            flowPath[flowPath.count - 1] = FlowPathVisit(nodeId: node.id, selectedOptionIds: [option.id])
+            advanceToNextStep()
+            return
+        }
         let selectedIds = option.map {
             node.selectMode == "multi"
                 ? toggled($0.id, in: flowPath[flowPath.count - 1].selectedOptionIds)
@@ -2577,9 +2596,24 @@ class POSViewModel: ObservableObject {
 
     func advanceToNextStep() {
         guard let graph = flowGraph, let node = activeFlowNode, let context = currentFlowContext,
-              let visit = flowPath.last, FlowEngine.canAdvance(node: node, selectedOptionIds: visit.selectedOptionIds) else { return }
+              let visit = flowPath.last else { return }
+        let canAdvance = isLockedReplacementStep(node)
+            ? !visit.selectedOptionIds.isEmpty
+            : FlowEngine.canAdvance(node: node, selectedOptionIds: visit.selectedOptionIds)
+        guard canAdvance else { return }
         do {
-            if let next = try FlowEngine.nextNode(in: graph, currentNodeId: node.id, selectedOptionIds: visit.selectedOptionIds, context: context) {
+            let next = try FlowEngine.nextNode(in: graph, currentNodeId: node.id, selectedOptionIds: visit.selectedOptionIds, context: context)
+            if packageChildReplacement != nil {
+                // Solo se recorre lo que pertenece al incluido nuevo (su variante y
+                // su subflujo); el resto del paquete no se vuelve a preguntar.
+                let hostOptionId = flowPath.first?.selectedOptionIds.first
+                if let next, hostOptionId != nil,
+                   graph.nodes.first(where: { $0.id == next })?.childOwnerOptionId == hostOptionId {
+                    flowPath.append(FlowPathVisit(nodeId: next, selectedOptionIds: []))
+                } else {
+                    finishPackageChildReplacement()
+                }
+            } else if let next {
                 flowPath.append(FlowPathVisit(nodeId: next, selectedOptionIds: []))
             } else {
                 prepareFlowItemAndShowNotes()
@@ -2593,6 +2627,9 @@ class POSViewModel: ObservableObject {
     func handleBackInFlow() {
         guard !flowPath.isEmpty else { return }
         if flowPath.count == 1 {
+            // Al cambiar un incluido no se sale del paso del paquete (se cancela
+            // desde el carrito).
+            guard packageChildReplacement == nil else { return }
             resetFlow()
         } else {
             flowPath.removeLast()
@@ -2602,6 +2639,7 @@ class POSViewModel: ObservableObject {
     func resetFlow() {
         flowGraph = nil
         flowPath = []
+        packageChildReplacement = nil
         selectedProduct = nil
         selectedFlowVariant = nil
         pendingFlowItems = []
@@ -5270,6 +5308,7 @@ extension POSViewModel {
         replacementTargetId = nil
         replacementQuantity = 1
         pendingReplacementItems = nil
+        pendingReplacementHostSelection = nil
         showCartAdminPin = false
     }
 
@@ -5296,6 +5335,9 @@ extension POSViewModel {
             } else {
                 replacementTargetId = item.id
                 replacementQuantity = 1
+                if isChild {
+                    Task { await startPackageChildReplacement(item) }
+                }
             }
         case .delete:
             guard !isChild else {
@@ -5355,9 +5397,23 @@ extension POSViewModel {
         Double(cartAdminModifierAmount.replacingOccurrences(of: ",", with: ".")) ?? 0
     }
 
+    /// Lo que todavía no se manda a cocina se cambia sin PIN (igual que el bote
+    /// de basura del carrito); invitar y cobrar extra siempre lo piden.
+    var cartAdminNeedsPin: Bool {
+        switch cartAdminAction {
+        case .delete: return cartAdminSelectionHasSentItems
+        case .replace: return replacementTarget?.itemId != nil
+        case .guest, .customModifier, nil: return true
+        }
+    }
+
     func requestCartAdminConfirm() {
         guard canConfirmCartAdmin else { return }
-        showCartAdminPin = true
+        if cartAdminNeedsPin {
+            showCartAdminPin = true
+        } else {
+            Task { await confirmCartAdminAction() }
+        }
     }
 
     func cancelCartAdminPin() {
@@ -5371,7 +5427,7 @@ extension POSViewModel {
     fileprivate func captureReplacement(_ items: [CartItem]) -> Bool {
         guard cartAdminAction == .replace, replacementTargetId != nil, !items.isEmpty else { return false }
         pendingReplacementItems = items
-        showCartAdminPin = true
+        requestCartAdminConfirm()
         return true
     }
 
@@ -5470,11 +5526,13 @@ extension POSViewModel {
             newItems[0].quantity = quantity
         }
         let summary = "\(target.productName) → \(newItems[0].productName)"
+        let hostSelection = isChildTarget ? pendingReplacementHostSelection : nil
 
         guard let itemId = target.itemId, let orderId = target.orderId else {
             guard let index = cart.firstIndex(where: { $0.id == target.id }) else { return }
             if isChildTarget {
                 cart.replaceSubrange(index...index, with: newItems)
+                applyLocalHostSelection(hostSelection, replacing: target, with: newItems[0])
             } else if quantity < target.quantity {
                 cart[index].quantity -= quantity
                 cart.insert(contentsOf: newItems, at: index + 1)
@@ -5498,7 +5556,8 @@ extension POSViewModel {
                 items: itemDicts(for: newItems),
                 quantity: quantity,
                 reason: "Reemplazado por \(newItems[0].productName)",
-                employeeId: employeeId
+                employeeId: employeeId,
+                hostSelection: hostSelection.map(selectionPayload)
             )
             applyDecodedOrderToCart(order)
             emitCustomerDisplayState()
@@ -5506,5 +5565,173 @@ extension POSViewModel {
         } catch {
             showToast("No se pudo reemplazar \(target.productName): \(error.localizedDescription)", isError: true)
         }
+    }
+
+    // MARK: Cambiar un incluido de paquete
+
+    var isReplacingPackageChild: Bool { packageChildReplacement != nil }
+
+    func isLockedReplacementStep(_ node: FlowNode) -> Bool {
+        packageChildReplacement?.hostNodeId == node.id
+    }
+
+    /// En el paso fijo del paquete no hay "Atrás"; dentro del subflujo del incluido sí.
+    var canGoBackInFlow: Bool {
+        !(packageChildReplacement != nil && flowPath.count <= 1)
+    }
+
+    /// Abre el flujo del paquete directo en el paso donde se eligió este incluido,
+    /// así solo se puede escoger entre lo que el paquete permite.
+    func startPackageChildReplacement(_ child: CartItem) async {
+        guard let parentId = child.parentLocalId,
+              let parent = cart.first(where: { $0.id == parentId }) else { return }
+        guard let product = products.first(where: { $0.id == parent.productId }),
+              let graph = await graphForProduct(product) else {
+            showToast("No se pudo abrir el flujo del paquete", isError: true)
+            replacementTargetId = nil
+            return
+        }
+        // Mientras llegaba el grafo pudieron elegir otro renglón o cancelar.
+        guard cartAdminAction == .replace, replacementTargetId == child.id else { return }
+
+        let position = cart.filter { $0.parentLocalId == parentId }.firstIndex { $0.id == child.id } ?? 0
+        let savedSelection = parent.flowSelections?.first { $0.childItemIndex == position }
+        guard let host = packageHostNode(in: graph, for: child, savedSelection: savedSelection) else {
+            showToast("No encontré en el flujo del paquete el paso de \(child.productName)", isError: true)
+            replacementTargetId = nil
+            return
+        }
+
+        selectedProduct = product
+        selectedFlowVariant = parent.variantName.map { FlowVariant(name: $0, price: parent.unitPrice) }
+        flowGraph = graph
+        flowPath = [FlowPathVisit(nodeId: host.id, selectedOptionIds: [])]
+        packageChildReplacement = PackageChildReplacement(hostNodeId: host.id, childPosition: position)
+    }
+
+    /// El paso que generó al incluido: el de su selección guardada si el carrito la
+    /// tiene (recién comandado), si no el que ofrece ese mismo producto (cargado
+    /// del servidor, que no trae selecciones).
+    private func packageHostNode(in graph: FlowGraph, for child: CartItem, savedSelection: BuiltSelection?) -> FlowNode? {
+        let hosts = graph.nodes.filter { node in
+            node.childOwnerOptionId == nil && node.options.contains { $0.emitsChildItem }
+        }
+        if let saved = savedSelection,
+           let node = hosts.first(where: { ($0.sourceNodeId ?? $0.id) == saved.nodeId }) {
+            return node
+        }
+        if let node = hosts.first(where: { node in
+            node.options.contains { $0.emitsChildItem && $0.refProductId == child.productId }
+        }) {
+            return node
+        }
+        return hosts.count == 1 ? hosts.first : nil
+    }
+
+    /// Arma el incluido nuevo con el camino parcial (paso del paquete + lo suyo)
+    /// y lo manda a confirmar como cualquier reemplazo.
+    private func finishPackageChildReplacement() {
+        guard let lock = packageChildReplacement, let graph = flowGraph, let product = selectedProduct,
+              let context = currentFlowContext, let target = replacementTarget else { return }
+        let flowProduct = FlowProduct(id: product.id, name: product.name, price: 0, seat: target.seat, course: target.course)
+        guard let built = try? FlowEngine.buildItems(in: graph, path: flowPath, product: flowProduct, variant: nil, context: context),
+              let builtChild = built.children.first else {
+            showToast("No se pudo armar el incluido", isError: true)
+            resetFlow()
+            return
+        }
+        let position = lock.childPosition
+        let childSelections = built.selections
+            .filter { $0.ownerChildItemIndex == 0 }
+            .map { $0.reindexed(childItemIndex: nil, ownerChildItemIndex: position) }
+        var child = CartItem(
+            productId: builtChild.productId,
+            productName: builtChild.productName,
+            unitPrice: 0,
+            quantity: target.quantity,
+            notes: "",
+            seat: target.seat,
+            course: target.course,
+            sentToKitchen: false,
+            isBeverage: builtChild.isBeverage,
+            deliveredToTable: target.deliveredToTable,
+            variantName: builtChild.refVariantName,
+            isGuest: target.isGuest,
+            parentLocalId: target.parentLocalId
+        )
+        child.flowSelections = childSelections.isEmpty ? nil : childSelections
+        child.customModifiers = customModifiersForFlowSelections(childSelections, in: graph)
+        pendingReplacementHostSelection = built.selections
+            .first { $0.childItemIndex == 0 }
+            .map { $0.reindexed(childItemIndex: position, ownerChildItemIndex: nil) }
+        resetFlow()
+        _ = captureReplacement([child])
+    }
+
+    /// Sin enviar: el padre lleva sus selecciones en el carrito. La del paso
+    /// cambia a la opción nueva y la diferencia de precio va al padre, igual que
+    /// si se hubiera elegido así al comandar.
+    private func applyLocalHostSelection(_ hostSelection: BuiltSelection?, replacing oldChild: CartItem, with newChild: CartItem) {
+        guard let parentId = oldChild.parentLocalId,
+              let parentIndex = cart.firstIndex(where: { $0.id == parentId }) else { return }
+        var parent = cart[parentIndex]
+        var selections = parent.flowSelections ?? []
+        let position = hostSelection?.childItemIndex
+        let oldHost = position.flatMap { index in selections.firstIndex { $0.childItemIndex == index } }
+        let oldDelta = (oldHost.map { selections[$0].priceDelta } ?? 0)
+            + (oldChild.flowSelections ?? []).reduce(0) { $0 + $1.priceDelta }
+        let newDelta = (hostSelection?.priceDelta ?? 0)
+            + (newChild.flowSelections ?? []).reduce(0) { $0 + $1.priceDelta }
+        if let hostSelection {
+            if let oldHost {
+                selections[oldHost] = hostSelection
+            } else {
+                selections.append(hostSelection)
+            }
+            parent.flowSelections = selections
+        }
+        parent.unitPrice = max(0, parent.unitPrice + newDelta - oldDelta)
+        cart[parentIndex] = parent
+    }
+
+    private func selectionPayload(_ selection: BuiltSelection) -> [String: Any] {
+        var payload: [String: Any] = [
+            "flowId": selection.flowId,
+            "nodeId": selection.nodeId,
+            "optionId": selection.optionId,
+            "nodeTitle": selection.nodeTitle,
+            "optionLabel": selection.optionLabel,
+            "priceDelta": selection.priceDelta,
+        ]
+        if let productId = selection.refProductId { payload["refProductId"] = productId }
+        if let variant = selection.refVariantName { payload["refVariantName"] = variant }
+        if let price = selection.refListPrice { payload["refListPrice"] = price }
+        return payload
+    }
+}
+
+struct PackageChildReplacement: Equatable {
+    /// Paso del paquete donde se eligió el incluido; el flujo no sale de ahí.
+    let hostNodeId: String
+    /// Lugar del incluido entre los hijos de su paquete (= `childItemIndex`).
+    let childPosition: Int
+}
+
+private extension BuiltSelection {
+    func reindexed(childItemIndex: Int?, ownerChildItemIndex: Int?) -> BuiltSelection {
+        BuiltSelection(
+            flowId: flowId,
+            nodeId: nodeId,
+            optionId: optionId,
+            nodeTitle: nodeTitle,
+            optionLabel: optionLabel,
+            priceDelta: priceDelta,
+            refProductId: refProductId,
+            refVariantName: refVariantName,
+            refListPrice: refListPrice,
+            childItemIndex: childItemIndex,
+            ownerChildItemIndex: ownerChildItemIndex,
+            sortOrder: sortOrder
+        )
     }
 }

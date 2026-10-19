@@ -2134,13 +2134,17 @@ router.patch("/orders/:id/items/:itemId/void", async (req, res) => {
 // new rows and recalculates the subtotal. Deliberately does NOT print a
 // comanda (unlike POST /orders/:id/items) — it's a correction, not a new round.
 //  - Package child (entrada/bebida inside a package): exactly one top-level
-//    item, re-hung under the same parent at $0 (children never charge).
+//    item, re-hung under the same parent at $0 (children never charge). The
+//    POS picks it in the package's own flow step and sends that step's choice
+//    as `hostSelection`: the parent's selection row is re-pointed to the new
+//    child, and the price difference of the options (e.g. a +$15 premium
+//    drink) is applied to the parent, where package deltas always live.
 //  - Package parent: always replaced whole, its children are voided with it.
 //  - New rows inherit seat, course, delivered and guest state from the old one.
 router.post("/orders/:id/items/:itemId/replace", async (req, res) => {
   try {
     const { id: orderId, itemId } = req.params;
-    const { items, quantity, reason, employeeId } = req.body || {};
+    const { items, quantity, reason, employeeId, hostSelection } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "items es requerido" });
@@ -2217,6 +2221,66 @@ router.post("/orders/:id/items/:itemId/replace", async (req, res) => {
     if (childRows.length > 0) statements.push(db.insert(schema.orderItems).values(childRows));
     if (prepared.selectionRows.length > 0) {
       statements.push(db.insert(schema.orderItemSelections).values(prepared.selectionRows));
+    }
+
+    if (isChildTarget && target.parentItemId) {
+      const parentId = target.parentItemId;
+      const newChildId = childRows[0].id;
+      const sumDeltas = (rows: { priceDelta: string | null }[]) =>
+        rows.reduce((sum, row) => sum + (parseFloat(row.priceDelta ?? "0") || 0), 0);
+
+      // Old delta: the parent's choice that emitted this child + the child's own subflow.
+      const [hostRows, ownRows] = await Promise.all([
+        db.select({ id: schema.orderItemSelections.id, priceDelta: schema.orderItemSelections.priceDelta })
+          .from(schema.orderItemSelections)
+          .where(and(eq(schema.orderItemSelections.orderItemId, parentId), eq(schema.orderItemSelections.childItemId, itemId))),
+        db.select({ priceDelta: schema.orderItemSelections.priceDelta })
+          .from(schema.orderItemSelections)
+          .where(eq(schema.orderItemSelections.orderItemId, itemId)),
+      ]);
+      const oldDelta = sumDeltas(hostRows) + sumDeltas(ownRows);
+      const newDelta = (parseFloat(hostSelection?.priceDelta) || 0)
+        + (items[0].selections || []).reduce((sum: number, sel: any) => sum + (parseFloat(sel.priceDelta) || 0), 0);
+      const diff = newDelta - oldDelta;
+
+      if (Math.abs(diff) > 0.001) {
+        const parent = await db.query.orderItems.findFirst({ where: eq(schema.orderItems.id, parentId) });
+        if (parent) {
+          const unitPrice = Math.max(0, parseFloat(parent.unitPrice) + diff);
+          statements.push(
+            db.update(schema.orderItems)
+              .set({
+                unitPrice: unitPrice.toFixed(2),
+                subtotal: parent.isGuest ? "0" : (unitPrice * parent.quantity).toFixed(2),
+              })
+              .where(eq(schema.orderItems.id, parentId))
+          );
+        }
+      }
+
+      if (hostSelection?.nodeTitle && hostSelection?.optionLabel) {
+        const fields = {
+          flowId: selectionUuid(hostSelection.flowId, "flowId"),
+          nodeId: selectionUuid(hostSelection.nodeId, "nodeId"),
+          optionId: selectionUuid(hostSelection.optionId, "optionId", true),
+          nodeTitle: hostSelection.nodeTitle,
+          optionLabel: hostSelection.optionLabel,
+          priceDelta: String(parseFloat(hostSelection.priceDelta) || 0),
+          refProductId: selectionUuid(hostSelection.refProductId, "refProductId"),
+          refVariantName: hostSelection.refVariantName || null,
+          refListPrice: hostSelection.refListPrice != null ? String(hostSelection.refListPrice) : null,
+          childItemId: newChildId,
+        };
+        if (hostRows.length > 0) {
+          statements.push(
+            db.update(schema.orderItemSelections).set(fields).where(eq(schema.orderItemSelections.id, hostRows[0].id))
+          );
+        } else {
+          statements.push(
+            db.insert(schema.orderItemSelections).values({ id: randomUUID(), orderItemId: parentId, sortOrder: 0, ...fields })
+          );
+        }
+      }
     }
     await db.batch(statements as any);
 
