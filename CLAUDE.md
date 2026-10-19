@@ -637,6 +637,26 @@ cada evento de socket. `TableCardView` en `TableSelectionView.swift` (la
 vista de lista/grid, no el mapa) ya seguía este patrón — es la referencia a
 copiar para cualquier chip/celda nueva del mapa.
 
+## Menú Admin del carrito (Bruma POS iPad)
+
+`AdminMenuDialog` solo elige la acción; eliminar, invitar, reemplazar y
+modificador se hacen **sobre el carrito real** (`Views/CartAdminMode.swift`,
+estado `cartAdminAction` y compañía en `POSViewModel`). El PIN de admin/manager
+se pide al final, no al entrar.
+
+**Reemplazar usa el menú normal con su flujo:** con un renglón elegido
+(`replacementTargetId`), los dos `addToCart` llaman a `captureReplacement`, que
+desvía lo que armó el flujo (variante, selecciones, paquete) a
+`pendingReplacementItems` y abre el PIN en vez de agregarlo. Si agregas otra
+forma de meter platillos al carrito, que pase por `addToCart` o el reemplazo
+se la salta. Un item ya guardado se cambia con
+`POST /api/orders/:id/items/:itemId/replace` (anula el viejo o solo N unidades
+e inserta los nuevos en un batch); **no imprime comanda a propósito** — no
+reusar `POST /orders/:id/items`, que sí imprime. Un incluido de paquete se
+cambia por un solo platillo y queda colgado del mismo padre a $0 (los hijos
+nunca cobran); un paquete se cambia completo. Lo nuevo hereda asiento, tiempo,
+entregado e invitado del viejo.
+
 ## Caja: el corte se calcula EN VIVO desde `orders`
 
 `GET /api/cash-register/:id/corte` (y `/report`) recalculan ventas por método,

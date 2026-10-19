@@ -29,6 +29,9 @@ struct ProductGridView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if vm.cartAdminAction == .replace {
+                ReplacementProductBanner(vm: vm)
+            }
             if let step = visibleStep {
                 stepHeader(for: step)
                     .transaction { $0.animation = nil }

@@ -190,8 +190,18 @@ struct CartView: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
             
+            // Modo admin: el aviso toma el lugar de los selectores de asiento/tiempo,
+            // que solo sirven para lo que se va agregando.
+            if let action = vm.cartAdminAction {
+                CartAdminBanner(vm: vm, action: action)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                    .transition(.opacity)
+            }
+
             // Seat selector (pill grid)
-            if vm.selectedTable != nil && vm.guestCount > 0 {
+            if vm.cartAdminAction == nil && vm.selectedTable != nil && vm.guestCount > 0 {
                 let seats = (1...vm.guestCount).map { "A\($0)" } + ["C"]
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
                     ForEach(seats, id: \.self) { seat in
@@ -221,7 +231,7 @@ struct CartView: View {
             }
 
             // Course selector (native segmented)
-            if !vm.cart.isEmpty {
+            if vm.cartAdminAction == nil && !vm.cart.isEmpty {
                 NativeSegmentedPicker(
                     segments: (1...4).map { ("T\($0)", $0) },
                     selection: $vm.activeCourse,
@@ -379,9 +389,16 @@ struct CartView: View {
             
             Rectangle().fill(Color(white: 0.12)).frame(height: 1)
 
-            cartFooter
-                .padding(16)
+            Group {
+                if let action = vm.cartAdminAction {
+                    CartAdminFooter(vm: vm, action: action)
+                } else {
+                    cartFooter
+                }
+            }
+            .padding(16)
         }
+        .animation(.easeInOut(duration: 0.18), value: vm.cartAdminAction)
     }
     
     /// Botón para disparar a cocina solo ese Tiempo (coursing). Aparece únicamente

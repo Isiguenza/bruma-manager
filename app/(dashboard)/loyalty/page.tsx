@@ -39,13 +39,15 @@ import {
   MagnifyingGlass,
   Stamp,
   Gift,
-  Eye,
-  Barcode,
   ArrowsClockwise,
   Trash,
   PaperPlaneTilt,
   PencilSimple,
   Cake,
+  Phone,
+  EnvelopeSimple,
+  Barcode,
+  ChatCircleText,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
@@ -129,8 +131,6 @@ export default function LoyaltyPage() {
   const [stampDialogOpen, setStampDialogOpen] = useState(false);
   const [stampCard, setStampCard] = useState<LoyaltyCard | null>(null);
   const [stampsToAdd, setStampsToAdd] = useState(1);
-  const [qrDialogOpen, setQrDialogOpen] = useState(false);
-  const [qrCard, setQrCard] = useState<LoyaltyCard | null>(null);
 
   // Promotion dialog
   const [promoDialogOpen, setPromoDialogOpen] = useState(false);
@@ -148,14 +148,9 @@ export default function LoyaltyPage() {
   const [activeWalletSeason, setActiveWalletSeason] = useState("");
   const [refreshSeason, setRefreshSeason] = useState("");
   const [origin, setOrigin] = useState("");
-  const [deviceType, setDeviceType] = useState<string>("other");
 
   useEffect(() => {
     setOrigin(window.location.origin);
-    const ua = navigator.userAgent.toLowerCase();
-    if (/iphone|ipad|ipod/.test(ua)) setDeviceType("ios");
-    else if (/android/.test(ua)) setDeviceType("android");
-    else setDeviceType("other");
   }, []);
 
   const registerUrl = `${origin}/loyalty/register`;
@@ -287,7 +282,12 @@ export default function LoyaltyPage() {
       toast.success(`${stampsToAdd} sello(s) agregado(s)`);
       setStampDialogOpen(false);
       setStampsToAdd(1);
-      fetchCards();
+      if (selectedCard?.id === stampCard.id) {
+        await reloadCards(stampCard.id);
+        loadTransactions(stampCard.id);
+      } else {
+        fetchCards();
+      }
     } catch {
       toast.error("Error agregando sellos");
     } finally {
@@ -626,17 +626,19 @@ export default function LoyaltyPage() {
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
+      {/* contain:inline-size: la tabla no empuja el ancho de la página; el
+          scroll (horizontal y vertical) se queda dentro de esta tarjeta. */}
+      <Card className="overflow-hidden py-0 [contain:inline-size]">
+        <CardContent className="p-0 [&_[data-slot=table-container]]:max-h-[65vh] [&_[data-slot=table-container]]:overflow-auto">
+          <Table className="whitespace-nowrap">
+            <TableHeader className="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_var(--border)]">
+              <TableRow className="hover:bg-transparent">
                 <TableHead>Cliente</TableHead>
                 <TableHead className="text-center">Sellos</TableHead>
                 <TableHead className="text-center">Premios</TableHead>
                 <TableHead>Última visita</TableHead>
                 <TableHead>Creada</TableHead>
-                <TableHead className="w-32" />
+                <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -659,7 +661,11 @@ export default function LoyaltyPage() {
                 </TableRow>
               ) : (
                 filtered.map((card) => (
-                  <TableRow key={card.id}>
+                  <TableRow
+                    key={card.id}
+                    className="cursor-pointer"
+                    onClick={() => openDetail(card)}
+                  >
                     <TableCell>
                       <div>
                         <p className="flex items-center gap-1.5 font-medium">
@@ -712,7 +718,8 @@ export default function LoyaltyPage() {
                       })}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
+                      {/* Los botones no abren el detalle del renglón. */}
+                      <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -727,29 +734,10 @@ export default function LoyaltyPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => openDetail(card)}
-                          title="Ver detalle"
-                        >
-                          <Eye className="size-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
                           onClick={() => openEditDialog(card)}
                           title="Editar cliente"
                         >
                           <PencilSimple className="size-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setQrCard(card);
-                            setQrDialogOpen(true);
-                          }}
-                          title="QR Apple Wallet"
-                        >
-                          <Barcode className="size-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -932,83 +920,131 @@ export default function LoyaltyPage() {
 
       {/* Card Detail Dialog */}
       <Dialog open={!!selectedCard} onOpenChange={() => setSelectedCard(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{selectedCard && fullName(selectedCard)}</DialogTitle>
+            {selectedCard && (
+              <DialogDescription>
+                Cliente desde {format(new Date(selectedCard.createdAt), "d 'de' MMMM yyyy", { locale: es })}
+                {selectedCard.lastActivityAt &&
+                  ` · última visita ${formatDistanceToNow(new Date(selectedCard.lastActivityAt), { locale: es, addSuffix: true })}`}
+              </DialogDescription>
+            )}
           </DialogHeader>
           {selectedCard && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <ApplePassPreview card={selectedCard} />
 
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <span className="text-muted-foreground">Teléfono</span>
-                <span>{selectedCard.customerPhone || "—"}</span>
-                <span className="text-muted-foreground">Email</span>
-                <span className="break-all">{selectedCard.customerEmail || "—"}</span>
-                <span className="text-muted-foreground">Cumpleaños</span>
-                <span>
-                  {selectedCard.birthDate ? formatBirthDate(selectedCard.birthDate) : "—"}
-                </span>
-                <span className="text-muted-foreground">Código</span>
-                <code className="text-xs">{selectedCard.barcodeValue}</code>
-                <span className="text-muted-foreground">Total sellos</span>
-                <span>{selectedCard.totalStamps}</span>
-                <span className="text-muted-foreground">
-                  Premios canjeados
-                </span>
-                <span>{selectedCard.rewardsRedeemed}</span>
-                <span className="text-muted-foreground">Apple Wallet</span>
-                <span>
-                  {(selectedCard.appleDevices ?? 0) > 0
-                    ? `Instalada (${selectedCard.appleDevices} dispositivo${selectedCard.appleDevices === 1 ? "" : "s"})`
-                    : "No instalada"}
-                </span>
-                {selectedCard.latestMessage && (
-                  <>
-                    <span className="text-muted-foreground">Último mensaje</span>
-                    <span>{selectedCard.latestMessage}</span>
-                  </>
-                )}
+              {/* Números clave */}
+              <div className="grid grid-cols-3 gap-2">
+                <DetailStat
+                  label="Sellos"
+                  value={`${selectedCard.stamps}/${selectedCard.stampsPerReward}`}
+                  hint={
+                    selectedCard.stampsPerReward - selectedCard.stamps > 0
+                      ? `faltan ${selectedCard.stampsPerReward - selectedCard.stamps}`
+                      : "completa"
+                  }
+                />
+                <DetailStat
+                  label="Premios"
+                  value={String(selectedCard.rewardsAvailable)}
+                  hint="por canjear"
+                  highlight={selectedCard.rewardsAvailable > 0}
+                />
+                <DetailStat
+                  label="Histórico"
+                  value={String(selectedCard.totalStamps)}
+                  hint={`${selectedCard.rewardsRedeemed} canjeado${selectedCard.rewardsRedeemed === 1 ? "" : "s"}`}
+                />
               </div>
 
+              {/* Acciones */}
               <div className="flex flex-wrap gap-2">
                 {selectedCard.rewardsAvailable > 0 && (
-                  <Button
-                    onClick={() => handleRedeemReward(selectedCard)}
-                    className="flex-1"
-                  >
+                  <Button onClick={() => handleRedeemReward(selectedCard)} className="flex-1">
                     <Gift className="mr-1 size-4" />
                     Canjear Premio
                   </Button>
                 )}
                 <Button
                   variant="outline"
-                  onClick={() => openEditDialog(selectedCard)}
+                  onClick={() => {
+                    setStampCard(selectedCard);
+                    setStampDialogOpen(true);
+                  }}
                   className="flex-1"
                 >
+                  <Stamp className="mr-1 size-4" />
+                  Agregar Sellos
+                </Button>
+                <Button variant="outline" onClick={() => openEditDialog(selectedCard)} className="flex-1">
                   <PencilSimple className="mr-1 size-4" />
                   Editar
                 </Button>
-                {(deviceType === "ios" || deviceType === "other") && (
-                  <Button
-                    variant="outline"
-                    onClick={() => downloadPass(selectedCard.id)}
-                    className="flex-1"
-                  >
-                    <FaApple className="mr-1 size-4" />
-                    Apple Wallet
-                  </Button>
-                )}
-                {(deviceType === "android" || deviceType === "other") && (
-                  <Button
-                    variant="outline"
-                    onClick={() => addToGoogleWallet(selectedCard.id)}
-                    className="flex-1"
-                  >
-                    <FaGoogle className="mr-1 size-4" />
-                    Google Wallet
-                  </Button>
-                )}
+              </div>
+
+              {/* Datos del cliente */}
+              <div className="divide-y rounded-lg border">
+                <DetailRow icon={<Phone className="size-4" />} label="Teléfono">
+                  {selectedCard.customerPhone || "—"}
+                </DetailRow>
+                <DetailRow icon={<EnvelopeSimple className="size-4" />} label="Email">
+                  <span className="break-all">{selectedCard.customerEmail || "—"}</span>
+                </DetailRow>
+                <DetailRow icon={<Cake className="size-4" />} label="Cumpleaños">
+                  {selectedCard.birthDate ? (
+                    <span className="flex items-center justify-end gap-2">
+                      {formatBirthDate(selectedCard.birthDate)}
+                      {birthdayIsThisMonth(selectedCard) && (
+                        <Badge className="bg-pink-500 hover:bg-pink-500">Este mes</Badge>
+                      )}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </DetailRow>
+                <DetailRow icon={<Barcode className="size-4" />} label="Código">
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{selectedCard.barcodeValue}</code>
+                </DetailRow>
+              </div>
+
+              {selectedCard.latestMessage && (
+                <div className="flex gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                  <ChatCircleText className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-medium text-muted-foreground">Último mensaje enviado</p>
+                    <p className="text-sm">{selectedCard.latestMessage}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Agregar a Wallet */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Agregar a Wallet</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <WalletQrTile
+                    icon={<FaApple className="size-4" />}
+                    title="Apple Wallet"
+                    status={
+                      (selectedCard.appleDevices ?? 0) > 0
+                        ? `Instalada · ${selectedCard.appleDevices} disp.`
+                        : "No instalada"
+                    }
+                    installed={(selectedCard.appleDevices ?? 0) > 0}
+                    qrValue={origin ? `${origin}/api/wallet/pass/${selectedCard.id}` : ""}
+                    onOpen={() => downloadPass(selectedCard.id)}
+                    openLabel="Descargar"
+                  />
+                  <WalletQrTile
+                    icon={<FaGoogle className="size-4" />}
+                    title="Google Wallet"
+                    status="Escanéalo desde Android"
+                    qrValue={origin ? `${origin}/api/wallet/google-pass/${selectedCard.id}` : ""}
+                    onOpen={() => addToGoogleWallet(selectedCard.id)}
+                    openLabel="Abrir"
+                  />
+                </div>
               </div>
 
               {/* Stamp / redeem history */}
@@ -1062,47 +1098,8 @@ export default function LoyaltyPage() {
                 </div>
               </div>
 
-              {/* QR for this card's Wallet pass */}
-              <div className="flex flex-col items-center gap-2 rounded-lg border p-4">
-                <p className="text-xs font-medium text-muted-foreground">Escanea para Apple Wallet</p>
-                {origin && (
-                  <QRCodeSVG
-                    value={`${origin}/api/wallet/pass/${selectedCard.id}`}
-                    size={140}
-                    level="M"
-                    bgColor="#ffffff"
-                    fgColor="#000000"
-                  />
-                )}
-              </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* QR Dialog (quick QR for a specific card) */}
-      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
-        <DialogContent className="max-w-xs">
-          <DialogHeader>
-            <DialogTitle className="text-center">{qrCard && fullName(qrCard)}</DialogTitle>
-            <DialogDescription className="text-center">
-              Escanea para descargar Apple Wallet
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col items-center gap-3 py-4">
-            {qrCard && origin && (
-              <QRCodeSVG
-                value={`${origin}/api/wallet/pass/${qrCard.id}`}
-                size={200}
-                level="M"
-                bgColor="#ffffff"
-                fgColor="#000000"
-              />
-            )}
-            <code className="text-xs text-muted-foreground">
-              {qrCard?.barcodeValue}
-            </code>
-          </div>
         </DialogContent>
       </Dialog>
 
@@ -1332,6 +1329,88 @@ export default function LoyaltyPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function DetailStat({
+  label,
+  value,
+  hint,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-lg border p-3 text-center ${
+        highlight ? "border-primary/40 bg-primary/5" : "bg-muted/30"
+      }`}
+    >
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={`text-xl font-bold tabular-nums ${highlight ? "text-primary" : ""}`}>{value}</p>
+      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+function DetailRow({
+  icon,
+  label,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">
+      <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
+        {icon}
+        {label}
+      </span>
+      <span className="min-w-0 text-right">{children}</span>
+    </div>
+  );
+}
+
+function WalletQrTile({
+  icon,
+  title,
+  status,
+  installed = false,
+  qrValue,
+  onOpen,
+  openLabel,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  status: string;
+  installed?: boolean;
+  qrValue: string;
+  onOpen: () => void;
+  openLabel: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-lg border p-3">
+      <div className="flex items-center gap-1.5 text-sm font-medium">
+        {icon}
+        {title}
+      </div>
+      <span
+        className={`text-[11px] ${installed ? "font-medium text-green-600" : "text-muted-foreground"}`}
+      >
+        {status}
+      </span>
+      <div className="rounded-md bg-white p-2">
+        {qrValue && <QRCodeSVG value={qrValue} size={112} level="M" bgColor="#ffffff" fgColor="#000000" />}
+      </div>
+      <Button variant="outline" size="sm" className="w-full" onClick={onOpen}>
+        {openLabel}
+      </Button>
     </div>
   );
 }

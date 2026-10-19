@@ -457,6 +457,15 @@ class APIService {
         return try await request(url, method: "POST", body: body)
     }
     
+    /// Reemplazo admin de un item ya guardado: anula el viejo (o `quantity`
+    /// unidades) e inserta `items` en un solo batch, SIN imprimir comanda.
+    func replaceOrderItem(orderId: String, itemId: String, items: [[String: Any]], quantity: Int, reason: String, employeeId: String?) async throws -> Order {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/items/\(itemId)/replace")!
+        var body: [String: Any] = ["items": items, "quantity": quantity, "reason": reason]
+        if let employeeId { body["employeeId"] = employeeId }
+        return try await request(url, method: "POST", body: body)
+    }
+
     func addItemsToOrder(orderId: String, items: [[String: Any]]) async throws -> Order {
         let url = URL(string: "\(baseURL)/api/orders/\(orderId)/items")!
         return try await request(url, method: "POST", body: ["items": items])

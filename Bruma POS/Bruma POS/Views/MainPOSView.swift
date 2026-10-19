@@ -141,6 +141,12 @@ struct MainPOSView: View {
                 }
             }
             
+            if vm.showCartAdminPin {
+                dialogOverlay(onDismiss: { vm.cancelCartAdminPin() }) {
+                    CartAdminPinDialog(vm: vm)
+                }
+            }
+
             if vm.showTransferTableDialog {
                 dialogOverlay { TransferTableDialog(vm: vm) }
             }

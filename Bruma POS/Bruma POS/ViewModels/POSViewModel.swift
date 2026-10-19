@@ -344,6 +344,7 @@ class POSViewModel: ObservableObject {
     /// para no perderlo al salir a comandar otra mesa.
     func handleBackToTables() {
         cancelItemComposition()
+        resetCartAdminState()
         isPracticeMode = false
         parkCurrentPaymentIfNeeded()
         showingPayment = false
@@ -463,6 +464,23 @@ class POSViewModel: ObservableObject {
     @Published var showAdminMenu = false
     @Published var showGuestItemsDialog = false
     @Published var guestItemsSelection: [Int] = []
+
+    // MARK: - Modo admin en el carrito (solo iPad)
+    // El Menú Admin ya no edita dentro de un modal: arranca un modo y todo se
+    // elige en el carrito real (y, al reemplazar, en el menú de productos, con
+    // su flujo). El PIN se pide al final. La UI vive en Views/CartAdminMode.swift.
+    @Published var cartAdminAction: CartAdminAction?
+    /// Eliminar / invitar / modificador: id local del renglón → cantidad.
+    @Published var cartAdminSelection: [UUID: Int] = [:]
+    @Published var cartAdminReason = ""
+    @Published var cartAdminModifierLabel = ""
+    @Published var cartAdminModifierAmount = ""
+    @Published var replacementTargetId: UUID?
+    @Published var replacementQuantity = 1
+    /// Lo que armó el flujo para el reemplazo; espera el PIN en vez de entrar al carrito.
+    @Published var pendingReplacementItems: [CartItem]?
+    @Published var showCartAdminPin = false
+    @Published var cartAdminProcessing = false
     
     // MARK: - Timers
     private var tablePollingTimer: Timer?
@@ -2358,6 +2376,16 @@ class POSViewModel: ObservableObject {
     
     func handleProductClick(_ product: Product) {
         lastActivity = Date()
+        if let action = cartAdminAction {
+            guard action == .replace else {
+                showToast("Termina o cancela \"\(action.title)\" en el carrito", isError: true)
+                return
+            }
+            guard replacementTargetId != nil else {
+                showToast("Primero toca en el carrito el platillo a reemplazar", isError: true)
+                return
+            }
+        }
         
         if product.hasVariants && product.variants != nil {
             selectedProductForVariant = product
@@ -2754,6 +2782,7 @@ class POSViewModel: ObservableObject {
     // MARK: - Cart Operations
     
     private func addToCart(_ item: CartItem) {
+        if captureReplacement([item]) { return }
         // Try to combine with existing identical item
         if let idx = cart.firstIndex(where: {
             !$0.sentToKitchen &&
@@ -2815,6 +2844,7 @@ class POSViewModel: ObservableObject {
     /// Appends a package parent and all of its children as one unmergeable cart group.
     private func addToCart(_ items: [CartItem]) {
         guard !items.isEmpty else { return }
+        if captureReplacement(items) { return }
         cart.append(contentsOf: items)
         applyPromotions()
         emitCustomerDisplayState()
@@ -5199,5 +5229,282 @@ enum CartDraftStore {
         Set(loadAll().keys.compactMap { key in
             key.hasPrefix(tableKeyPrefix) ? String(key.dropFirst(tableKeyPrefix.count)) : nil
         })
+    }
+}
+
+
+// MARK: - Modo admin en el carrito
+
+enum CartAdminAction: Equatable {
+    case delete, guest, replace, customModifier
+
+    var title: String {
+        switch self {
+        case .delete: return "Eliminar items"
+        case .guest: return "Invitar productos"
+        case .replace: return "Reemplazar item"
+        case .customModifier: return "Modificador personalizado"
+        }
+    }
+}
+
+extension POSViewModel {
+    func beginCartAdmin(_ action: CartAdminAction) {
+        cancelItemComposition()
+        resetCartAdminState()
+        cartAdminAction = action
+        showAdminMenu = false
+    }
+
+    func exitCartAdmin() {
+        cancelItemComposition()
+        resetCartAdminState()
+    }
+
+    func resetCartAdminState() {
+        cartAdminAction = nil
+        cartAdminSelection = [:]
+        cartAdminReason = ""
+        cartAdminModifierLabel = ""
+        cartAdminModifierAmount = ""
+        replacementTargetId = nil
+        replacementQuantity = 1
+        pendingReplacementItems = nil
+        showCartAdminPin = false
+    }
+
+    var replacementTarget: CartItem? {
+        guard let id = replacementTargetId else { return nil }
+        return cart.first { $0.id == id }
+    }
+
+    func isCartAdminSelected(_ item: CartItem) -> Bool {
+        cartAdminAction == .replace ? replacementTargetId == item.id : cartAdminSelection[item.id] != nil
+    }
+
+    /// Un toque sobre un renglón del carrito (o sobre un incluido de un paquete).
+    func cartAdminTap(_ item: CartItem) {
+        guard let action = cartAdminAction, !cartAdminProcessing else { return }
+        let isChild = item.parentLocalId != nil
+        switch action {
+        case .replace:
+            guard pendingReplacementItems == nil else { return }
+            // Si ya se estaba armando el platillo nuevo para otro renglón, se descarta.
+            cancelItemComposition()
+            if replacementTargetId == item.id {
+                replacementTargetId = nil
+            } else {
+                replacementTargetId = item.id
+                replacementQuantity = 1
+            }
+        case .delete:
+            guard !isChild else {
+                showToast("Los componentes de un paquete se eliminan junto con el platillo", isError: true)
+                return
+            }
+            toggleCartAdminSelection(item)
+        case .guest:
+            guard !isChild else {
+                showToast("Los incluidos de un paquete ya van sin costo", isError: true)
+                return
+            }
+            toggleCartAdminSelection(item)
+        case .customModifier:
+            guard !isChild else {
+                showToast("Aplica el modificador al platillo del paquete", isError: true)
+                return
+            }
+            // Uno solo: sin selección se cobra como cargo aparte en la cuenta.
+            cartAdminSelection = cartAdminSelection[item.id] != nil ? [:] : [item.id: 1]
+        }
+    }
+
+    private func toggleCartAdminSelection(_ item: CartItem) {
+        if cartAdminSelection[item.id] != nil {
+            cartAdminSelection.removeValue(forKey: item.id)
+        } else {
+            cartAdminSelection[item.id] = 1
+        }
+    }
+
+    func setCartAdminQuantity(for item: CartItem, to quantity: Int) {
+        guard cartAdminSelection[item.id] != nil else { return }
+        cartAdminSelection[item.id] = min(max(quantity, 1), item.quantity)
+    }
+
+    /// ¿Hay renglones ya mandados a cocina en la selección? (piden razón al eliminar)
+    var cartAdminSelectionHasSentItems: Bool {
+        cart.contains { cartAdminSelection[$0.id] != nil && $0.sentToKitchen }
+    }
+
+    var canConfirmCartAdmin: Bool {
+        switch cartAdminAction {
+        case .delete, .guest:
+            return !cartAdminSelection.isEmpty
+        case .customModifier:
+            return !cartAdminModifierLabel.trimmingCharacters(in: .whitespaces).isEmpty
+                && cartAdminModifierAmountValue > 0
+        case .replace:
+            return pendingReplacementItems != nil && replacementTarget != nil
+        case nil:
+            return false
+        }
+    }
+
+    var cartAdminModifierAmountValue: Double {
+        Double(cartAdminModifierAmount.replacingOccurrences(of: ",", with: ".")) ?? 0
+    }
+
+    func requestCartAdminConfirm() {
+        guard canConfirmCartAdmin else { return }
+        showCartAdminPin = true
+    }
+
+    func cancelCartAdminPin() {
+        showCartAdminPin = false
+        // El platillo armado se descarta; el renglón a reemplazar sigue elegido.
+        if cartAdminAction == .replace { pendingReplacementItems = nil }
+    }
+
+    /// addToCart lo consulta antes de agregar: en modo reemplazo, lo que armó el
+    /// menú (con variante, flujo y paquete) no entra al carrito, espera el PIN.
+    fileprivate func captureReplacement(_ items: [CartItem]) -> Bool {
+        guard cartAdminAction == .replace, replacementTargetId != nil, !items.isEmpty else { return false }
+        pendingReplacementItems = items
+        showCartAdminPin = true
+        return true
+    }
+
+    /// Lo llama el diálogo de PIN ya validado como admin/manager.
+    func confirmCartAdminAction() async {
+        showCartAdminPin = false
+        cartAdminProcessing = true
+        switch cartAdminAction {
+        case .delete: await performCartAdminDelete()
+        case .guest: performCartAdminGuest()
+        case .customModifier: performCartAdminModifier()
+        case .replace: await performReplacement()
+        case nil: break
+        }
+        cartAdminProcessing = false
+        resetCartAdminState()
+    }
+
+    private func performCartAdminDelete() async {
+        let typedReason = cartAdminReason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reason = typedReason.isEmpty ? "Eliminado desde admin" : typedReason
+        var anyFailed = false
+
+        for (id, qtyToRemove) in cartAdminSelection {
+            guard let item = cart.first(where: { $0.id == id }) else { continue }
+            if item.sentToKitchen, let itemId = item.itemId, let orderId = item.orderId {
+                do {
+                    if qtyToRemove >= item.quantity {
+                        try await APIService.shared.voidItem(orderId: orderId, itemId: itemId, reason: reason, voidedBy: employeeId)
+                        if let index = cart.firstIndex(where: { $0.id == id }) { _ = removeCartGroup(at: index) }
+                    } else {
+                        let newQty = item.quantity - qtyToRemove
+                        _ = try await APIService.shared.updateOrderItemQuantity(itemId: itemId, quantity: newQty, unitPrice: item.unitPrice)
+                        if let index = cart.firstIndex(where: { $0.id == id }) { cart[index].quantity = newQty }
+                    }
+                } catch {
+                    showToast("Error al eliminar \"\(item.productName)\": \(error.localizedDescription)", isError: true)
+                    anyFailed = true
+                }
+            } else if let index = cart.firstIndex(where: { $0.id == id }) {
+                if qtyToRemove >= item.quantity {
+                    _ = removeCartGroup(at: index)
+                } else {
+                    cart[index].quantity -= qtyToRemove
+                }
+            }
+        }
+
+        applyPromotions()
+        emitCustomerDisplayState()
+        if !anyFailed { showToast("Items eliminados") }
+    }
+
+    private func performCartAdminGuest() {
+        guestItemsSelection = cart.indices.filter { cartAdminSelection[cart[$0].id] != nil }
+        markItemsAsGuest()
+    }
+
+    private func performCartAdminModifier() {
+        let label = cartAdminModifierLabel.trimmingCharacters(in: .whitespaces)
+        let amount = cartAdminModifierAmountValue
+        if let id = cartAdminSelection.keys.first, let index = cart.firstIndex(where: { $0.id == id }) {
+            applyCustomModifierToItem(at: index, label: label, amount: amount)
+        } else {
+            addStandaloneCharge(label: label, amount: amount)
+        }
+    }
+
+    /// Cambia el renglón elegido por lo que armó el menú. Sin enviar: es solo el
+    /// carrito local. Ya guardado: un solo POST que anula y agrega sin imprimir.
+    private func performReplacement() async {
+        guard let target = replacementTarget, var newItems = pendingReplacementItems, !newItems.isEmpty else { return }
+        let isChildTarget = target.parentLocalId != nil
+        if isChildTarget && newItems.count > 1 {
+            showToast("Un incluido del paquete solo se cambia por un platillo sin paquete", isError: true)
+            return
+        }
+        let targetIsPackage = !isChildTarget && cart.contains { $0.parentLocalId == target.id }
+        let quantity = (isChildTarget || targetIsPackage)
+            ? target.quantity
+            : min(max(replacementQuantity, 1), target.quantity)
+
+        // El nuevo ocupa el lugar del viejo: mismo asiento, tiempo y estado.
+        for index in newItems.indices {
+            newItems[index].seat = target.seat
+            newItems[index].course = target.course
+            newItems[index].isGuest = target.isGuest
+            newItems[index].deliveredToTable = target.deliveredToTable
+        }
+        if isChildTarget {
+            newItems[0].parentLocalId = target.parentLocalId
+            newItems[0].unitPrice = 0
+            newItems[0].quantity = target.quantity
+            newItems[0].packageLabel = nil
+        } else {
+            newItems[0].quantity = quantity
+        }
+        let summary = "\(target.productName) → \(newItems[0].productName)"
+
+        guard let itemId = target.itemId, let orderId = target.orderId else {
+            guard let index = cart.firstIndex(where: { $0.id == target.id }) else { return }
+            if isChildTarget {
+                cart.replaceSubrange(index...index, with: newItems)
+            } else if quantity < target.quantity {
+                cart[index].quantity -= quantity
+                cart.insert(contentsOf: newItems, at: index + 1)
+            } else {
+                cart.removeAll { $0.id == target.id || $0.parentLocalId == target.id }
+                cart.insert(contentsOf: newItems, at: min(index, cart.count))
+            }
+            applyPromotions()
+            emitCustomerDisplayState()
+            showToast(summary)
+            return
+        }
+
+        // Nuestro propio order:updated llega antes que la respuesta; la respuesta manda.
+        isSyncingCartToServer = true
+        defer { isSyncingCartToServer = false }
+        do {
+            let order = try await APIService.shared.replaceOrderItem(
+                orderId: orderId,
+                itemId: itemId,
+                items: itemDicts(for: newItems),
+                quantity: quantity,
+                reason: "Reemplazado por \(newItems[0].productName)",
+                employeeId: employeeId
+            )
+            applyDecodedOrderToCart(order)
+            emitCustomerDisplayState()
+            showToast(summary)
+        } catch {
+            showToast("No se pudo reemplazar \(target.productName): \(error.localizedDescription)", isError: true)
+        }
     }
 }

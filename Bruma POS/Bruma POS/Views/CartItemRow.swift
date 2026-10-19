@@ -40,6 +40,11 @@ struct CartItemRow: View {
     }
     private var isPackage: Bool { !isPackageChild && (item.packageLabel != nil || !packageChildren.isEmpty) }
 
+    /// Modo admin del carrito (Views/CartAdminMode.swift): el renglón se elige
+    /// con un toque y sus controles normales (+/−, menú contextual) se apagan.
+    private var adminAction: CartAdminAction? { vm.cartAdminAction }
+    private var isAdminSelected: Bool { vm.isCartAdminSelected(item) }
+
     // When inside a promotion group, show original price (discount is shown at group level)
     private var itemTotal: Double {
         isInsidePromotionGroup
@@ -64,8 +69,25 @@ struct CartItemRow: View {
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(borderColor, lineWidth: 1))
             }
         }
+        .overlay {
+            if let adminAction, isAdminSelected {
+                RoundedRectangle(cornerRadius: isPackage ? 13 : 10, style: .continuous)
+                    .strokeBorder(adminAction.color, lineWidth: 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: isPackage ? 13 : 10, style: .continuous)
+                            .fill(adminAction.color.opacity(0.08))
+                    )
+                    .allowsHitTesting(false)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if adminAction != nil { vm.cartAdminTap(item) }
+        }
         .contextMenu {
-            if isPackageChild {
+            if adminAction != nil {
+                EmptyView()
+            } else if isPackageChild {
                 Text("Componente del paquete")
                     .foregroundColor(.gray)
             } else if item.sentToKitchen {
@@ -152,6 +174,11 @@ struct CartItemRow: View {
     private var titleRow: some View {
         // Row 1: Product name + badges + price + trash
         HStack(alignment: .top, spacing: 8) {
+            if let adminAction, adminAction.usesCheckboxes, !isPackageChild {
+                Image(systemName: isAdminSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundColor(isAdminSelected ? adminAction.color : Color(white: 0.4))
+            }
             if !isPackageChild {
                 Text("\(item.quantity)×")
                     .font(.subheadline.weight(.semibold))
@@ -170,6 +197,12 @@ struct CartItemRow: View {
                         .foregroundColor(.gray)
                 }
                 
+                if adminAction == .replace && isAdminSelected {
+                    Label("Cambiando", systemImage: "arrow.2.circlepath")
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(.orange)
+                }
+
                 // Promotion badge
                 if let promoName = item.promotionName {
                     HStack(spacing: 4) {
@@ -262,10 +295,15 @@ struct CartItemRow: View {
 
     @ViewBuilder
     private var footerRow: some View {
-        // Status + price for sent items
-        if item.sentToKitchen && !isPackageChild {
+        // Status + price for sent items (and every item while in admin mode,
+        // where the +/− steppers would compete with the selection tap)
+        if (item.sentToKitchen || adminAction != nil) && !isPackageChild {
             HStack(spacing: 8) {
-                if item.deliveredToTable {
+                if !item.sentToKitchen {
+                    Label("Sin enviar", systemImage: "circle.dashed")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundColor(.gray)
+                } else if item.deliveredToTable {
                     Label("Entregado", systemImage: "checkmark.circle.fill")
                         .font(.caption2.weight(.semibold))
                         .foregroundColor(.blue)
@@ -294,8 +332,13 @@ struct CartItemRow: View {
             }
         }
 
+        // Cuántas unidades eliminar de este renglón
+        if adminAction == .delete, isAdminSelected, item.quantity > 1 {
+            adminQuantityRow
+        }
+
         // Quantity controls + price for unsent items
-        if !item.sentToKitchen && !isPackageChild {
+        if !item.sentToKitchen && !isPackageChild && adminAction == nil {
             HStack(spacing: 8) {
                 Button {
                     vm.updateCartQuantity(at: index, delta: -1)
@@ -469,7 +512,59 @@ struct CartItemRow: View {
         )
     }
 
+    private var adminQuantityRow: some View {
+        let selected = vm.cartAdminSelection[item.id] ?? 1
+        return HStack(spacing: 10) {
+            Text("Eliminar")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.red)
+            Spacer()
+            Button {
+                vm.setCartAdminQuantity(for: item, to: selected - 1)
+            } label: {
+                Image(systemName: "minus").font(.system(size: 12, weight: .semibold)).foregroundColor(.white).frame(width: 28, height: 28)
+            }
+            .modifier(StepperButton())
+            .disabled(selected <= 1)
+            Text("\(selected) de \(item.quantity)")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.white)
+                .monospacedDigit()
+                .frame(minWidth: 52)
+            Button {
+                vm.setCartAdminQuantity(for: item, to: selected + 1)
+            } label: {
+                Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).foregroundColor(.white).frame(width: 28, height: 28)
+            }
+            .modifier(StepperButton())
+            .disabled(selected >= item.quantity)
+        }
+    }
+
+    @ViewBuilder
     private func includedRow(_ child: CartItem) -> some View {
+        // Al reemplazar, cada incluido se puede elegir solo; en los demás modos
+        // el toque cae a la tarjeta completa del paquete.
+        if adminAction == .replace {
+            let selected = vm.isCartAdminSelected(child)
+            includedRowContent(child)
+                .padding(.horizontal, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(selected ? Color.orange.opacity(0.18) : Color.clear)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(selected ? Color.orange : Color.clear, lineWidth: 1.5)
+                        )
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { vm.cartAdminTap(child) }
+        } else {
+            includedRowContent(child)
+        }
+    }
+
+    private func includedRowContent(_ child: CartItem) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: child.isBeverage ? "cup.and.saucer.fill" : "fork.knife")
                 .font(.system(size: 11, weight: .semibold))

@@ -2125,6 +2125,148 @@ router.patch("/orders/:id/items/:itemId/void", async (req, res) => {
   }
 });
 
+// POST /api/orders/:id/items/:itemId/replace
+// Admin "Reemplazar item" from the POS cart, for an item already in the DB.
+// Body: { items, quantity?, reason?, employeeId? } — `items` has the exact shape
+// of POST /orders/:id/items (flow selections, package children with
+// parentIndex), so the replacement goes through the same flow the waiter used.
+// In ONE batch: voids the old item (or just `quantity` units of it), inserts the
+// new rows and recalculates the subtotal. Deliberately does NOT print a
+// comanda (unlike POST /orders/:id/items) — it's a correction, not a new round.
+//  - Package child (entrada/bebida inside a package): exactly one top-level
+//    item, re-hung under the same parent at $0 (children never charge).
+//  - Package parent: always replaced whole, its children are voided with it.
+//  - New rows inherit seat, course, delivered and guest state from the old one.
+router.post("/orders/:id/items/:itemId/replace", async (req, res) => {
+  try {
+    const { id: orderId, itemId } = req.params;
+    const { items, quantity, reason, employeeId } = req.body || {};
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "items es requerido" });
+    }
+
+    const target = await db.query.orderItems.findFirst({
+      where: and(eq(schema.orderItems.id, itemId), eq(schema.orderItems.orderId, orderId)),
+    });
+    if (!target || target.voided) {
+      return res.status(404).json({ error: "Item no encontrado" });
+    }
+
+    const isChildTarget = target.parentItemId !== null;
+    if (isChildTarget && (items.length !== 1 || items[0].parentIndex != null)) {
+      return res.status(400).json({ error: "Un incluido del paquete solo se puede cambiar por un platillo sin paquete" });
+    }
+
+    const hasChildren = !isChildTarget && (
+      await db.select({ id: schema.orderItems.id })
+        .from(schema.orderItems)
+        .where(and(eq(schema.orderItems.parentItemId, itemId), eq(schema.orderItems.voided, false)))
+        .limit(1)
+    ).length > 0;
+
+    const requested = parseInt(quantity, 10);
+    const replaceQty = isChildTarget || hasChildren || !Number.isInteger(requested)
+      ? target.quantity
+      : Math.min(Math.max(requested, 1), target.quantity);
+    const isPartial = replaceQty < target.quantity;
+
+    const prepared = await prepareOrderItemWrites(orderId, items);
+    const inherit = (row: any) => ({
+      ...row,
+      seat: target.seat,
+      course: target.course,
+      deliveredToTable: target.deliveredToTable,
+      isGuest: target.isGuest,
+      subtotal: target.isGuest ? "0" : row.subtotal,
+    });
+    let parentRows = prepared.parentRows.map(inherit);
+    let childRows = prepared.childRows.map(inherit);
+    if (isChildTarget) {
+      childRows = parentRows.map((row) => ({
+        ...row,
+        parentItemId: target.parentItemId,
+        packageLabel: null,
+        quantity: target.quantity,
+        unitPrice: "0",
+        subtotal: "0",
+        promotionId: null,
+        promotionName: null,
+        originalPrice: null,
+        promotionDiscount: null,
+      }));
+      parentRows = [];
+    }
+
+    const newName = items[0].productName || "otro producto";
+    const voidReason = reason || `Reemplazado por ${newName}`;
+    const statements: any[] = [];
+    if (isPartial) {
+      const remaining = target.quantity - replaceQty;
+      statements.push(
+        db.update(schema.orderItems)
+          .set({ quantity: remaining, subtotal: (parseFloat(target.unitPrice) * remaining).toFixed(2) })
+          .where(eq(schema.orderItems.id, itemId))
+      );
+    } else {
+      const voidFields = { voided: true, voidReason, voidedBy: employeeId || null };
+      statements.push(db.update(schema.orderItems).set(voidFields).where(eq(schema.orderItems.id, itemId)));
+      statements.push(db.update(schema.orderItems).set(voidFields).where(eq(schema.orderItems.parentItemId, itemId)));
+    }
+    if (parentRows.length > 0) statements.push(db.insert(schema.orderItems).values(parentRows));
+    if (childRows.length > 0) statements.push(db.insert(schema.orderItems).values(childRows));
+    if (prepared.selectionRows.length > 0) {
+      statements.push(db.insert(schema.orderItemSelections).values(prepared.selectionRows));
+    }
+    await db.batch(statements as any);
+
+    // Same recalculation as POST /orders/:id/items (voided and guest excluded).
+    const allItems = await db
+      .select({ subtotal: schema.orderItems.subtotal, voided: schema.orderItems.voided, isGuest: schema.orderItems.isGuest })
+      .from(schema.orderItems)
+      .where(eq(schema.orderItems.orderId, orderId));
+    const newSubtotal = allItems
+      .filter((i) => !i.voided && !i.isGuest)
+      .reduce((sum, i) => sum + (parseFloat(i.subtotal ?? "0") || 0), 0);
+    await db
+      .update(schema.orders)
+      .set({ subtotal: newSubtotal.toString(), total: newSubtotal.toString(), updatedAt: new Date() })
+      .where(eq(schema.orders.id, orderId));
+
+    const updatedOrder = await db.query.orders.findFirst({
+      where: eq(schema.orders.id, orderId),
+      with: { items: true },
+    });
+    const orderWithFlags = addServerChildBeverageFlags(updatedOrder, prepared.childBeverageByItemId);
+    emitOrderUpdated(orderWithFlags);
+    res.json(orderWithFlags);
+
+    if (employeeId) {
+      db.insert(schema.auditLog)
+        .values({
+          userId: employeeId,
+          action: "order.item_replaced",
+          entityType: "order",
+          entityId: orderId,
+          details: JSON.stringify({
+            orderNumber: updatedOrder?.orderNumber,
+            from: target.productName,
+            to: items.map((item: any) => item.productName),
+            quantity: replaceQty,
+            packageChild: isChildTarget,
+          }),
+        })
+        .catch((e: unknown) => console.error("[order.item_replaced] audit log falló:", e));
+    }
+  } catch (error) {
+    if (error instanceof FlowItemPayloadError) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error("[POST /orders/:id/items/:itemId/replace] error:", error);
+    res.status(500).json({ error: "Error al reemplazar item" });
+  }
+});
+
 // PATCH /api/order-items/:id  (update quantity, unitPrice, and/or product)
 router.patch("/order-items/:id", async (req, res) => {
   try {
