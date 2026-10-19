@@ -28,6 +28,7 @@ import {
   ChatText,
   GitBranch,
   Receipt,
+  Smiley,
 } from "@phosphor-icons/react";
 import { BrumaLogo } from "@/components/bruma-logo";
 import {
@@ -144,6 +145,11 @@ const loyaltyNavItems = [
     title: "Clientes Frecuentes",
     url: "/loyalty",
     icon: CreditCard,
+  },
+  {
+    title: "Encuestas",
+    url: "/surveys",
+    icon: Smiley,
   },
 ];
 

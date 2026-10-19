@@ -155,13 +155,10 @@ function solidLine(heightDots = 3) {
 /**
  * Pie del ticket de cuenta con la encuesta de satisfacción. El POS manda
  * `survey: { url, displayUrl }` SOLO desde su botón de imprimir cuenta (no en
- * el ticket de pago, ni en el pre-ticket ni en el PDF). El QR y el corazón van
- * como imagen raster (GS v0, igual que el logo): la impresora está en WPC1252 y
- * un emoji como texto saldría como basura.
+ * el ticket de pago, ni en el pre-ticket ni en el PDF). El QR va como imagen
+ * raster (GS v0, igual que el logo). Sin corazón: ni como texto (WPC1252 no
+ * tiene emojis) ni como imagen (a 48 px la térmica lo imprimía como un cuadro negro).
  */
-const HEART_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24">'
-  + '<path fill="#000" d="M12 21.2s-7.6-4.7-10.1-9.5C.2 8.3 2.1 4 6.2 4c2.3 0 3.7 1.3 5.8 3.6C14.1 5.3 15.5 4 17.8 4c4.1 0 6 4.3 4.3 7.7-2.5 4.8-10.1 9.5-10.1 9.5z"/></svg>';
-
 async function surveyFooter(survey) {
   if (!survey || typeof survey.url !== "string" || !survey.url) return "";
   let out = "";
@@ -170,7 +167,6 @@ async function surveyFooter(survey) {
   out += commands.feedLine;
   out += commands.alignCenter;
   out += commands.bold + "Gracias por visitarnos" + commands.boldOff + "\n";
-  out += await imageToEscPosBitmap(Buffer.from(HEART_SVG), 48);
   out += commands.feedLine;
   out += "Tu opinión hace la diferencia.\n";
   out += "Escanea el QR y dinos cómo te fue.\n";

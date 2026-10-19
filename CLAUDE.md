@@ -542,8 +542,15 @@ del schema). El QR va SOLO en el ticket del botón de imprimir cuenta (iPad
 `CartView`, Mobile "Imprimir Cuenta"): `handlePrint(includeSurvey: true)` →
 `survey: {url, displayUrl}` → `surveyFooter` en `print-server` (`/print`). El
 ticket al cobrar (`handlePrint(paymentMethod:)`), el pre-ticket y el PDF no lo
-llevan. QR y corazón se imprimen como imagen raster (lib `qrcode` + el mismo
-`imageToEscPosBitmap` del logo): un emoji como texto no sale en WPC1252.
+llevan. El QR se imprime como imagen raster (lib `qrcode` + el mismo
+`imageToEscPosBitmap` del logo). Sin corazón 💛: como texto no existe en
+WPC1252 y como imagen chica la térmica lo imprimía como un cuadro negro.
+
+Resultados en el dashboard: `/surveys` (`app/(dashboard)/surveys/page.tsx`,
+lee `GET /api/surveys` de Next). La tendencia es promedio móvil de 7 días: el
+promedio de un solo día con pocas respuestas brinca demasiado. La barra del NPS
+usa una paleta divergente propia (naranja/gris/azul, validada claro y oscuro);
+no la cambies por el rojo `--destructive`, que es de estados.
 
 ## Stripe: test vs live
 
