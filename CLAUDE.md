@@ -72,6 +72,14 @@ deja de aplicar, corregirlo o borrarlo en vez de apilar notas viejas.
   título en la UI).
 - **`print-server/`** — servidor Node para impresión de comandas/tickets
   (Docker + túnel ngrok).
+- **Servidor de producción** (`ssh bruma`): Docker Compose con
+  `bruma-manager-{api-server,nextjs,print-server}-1`. **Gotcha:** el DNS de
+  los contenedores reenvía a Tailscale MagicDNS (`100.100.100.100`) porque así
+  estaba el host al crearlos. Si Tailscale se desloguea (key vencida), los
+  contenedores no resuelven nada y TODA query a Neon falla con
+  `NeonDbError: Error connecting to database: AbortError` — parece caída de
+  Neon pero no lo es. Revisar `tailscale status` primero; re-loguear lo
+  arregla sin reiniciar (o `docker restart` para que tomen el DNS actual).
 - Varios `.md` en la raíz (`WALLET_SETUP.md`, `WHATSAPP_BUSINESS_SETUP.md`,
   `RESERVATIONS_SETUP.md`, `FLUJOS_PERSONALIZADOS.md`, etc.) son notas de
   features específicas, mayormente históricas — no son la fuente de verdad
@@ -706,6 +714,15 @@ que padres), mandados en una sola lista.
 WPC1252 y escribe `'binary'` (un byte por carácter JS): un símbolo fuera de
 Latin-1 se trunca (`↳` U+21B3 → 0xB3 → "³"). En los recibos el incluido va con
 `»` y los modificadores con `·`; no uses flechas/box-drawing Unicode.
+
+**Ticket de cuenta = tabla Producto | Cant | Precio** (`receiptItemsBlock` en
+`print-server/server.js`, usado por `/print` y `/print-seat-bill`). Un incluido
+de paquete se imprime SIN precio: el POS manda su `total` como
+`0 - modificadores` (una bebida con extra de $5 llegaba como `-$5` justo encima
+de `+$5`), y su valor ya va en el padre. Los totales de `/print` usan
+`totalRow` para caer en la misma columna de Precio; si agregas un renglón de
+totales, úsalo en vez de calcular espacios a mano. `waiterName`/`guestCount`
+son opcionales en el body (el POS los manda desde `handlePrint`).
 
 ## Caja: el corte se calcula EN VIVO desde `orders`
 

@@ -77,6 +77,9 @@ const commands = {
   textSizeTall: GS + "!" + "\x01",
   textSizeDouble: GS + "!" + "\x11",
   textSizeLarge: GS + "!" + "\x22",
+  // Font B (más chica, 64 columnas) para leyendas al pie.
+  fontSmall: ESC + "M" + "\x01",
+  fontNormal: ESC + "M" + "\x00",
   drawerPulse: ESC + "p" + "\x00" + "\x19" + "\xFA",
 };
 
@@ -214,6 +217,123 @@ function matchesPackageParent(printedName, parentName) {
     .toLocaleLowerCase()
     .split(" - ")
     .every((part) => candidate.includes(part));
+}
+
+// Columnas del ticket de cuenta (48 caracteres en fuente normal):
+// Producto (con salto de línea) | Cant | Precio.
+const RECEIPT_NAME_W = 33;
+const RECEIPT_QTY_W = 5;
+const RECEIPT_PRICE_W = 48 - RECEIPT_NAME_W - RECEIPT_QTY_W;
+// Media línea extra entre platillos (ESC J n = avanzar n puntos).
+const RECEIPT_ITEM_GAP = ESC + "J" + String.fromCharCode(14);
+
+function wrapText(text, width) {
+  const lines = [];
+  let line = "";
+  for (const word of String(text).split(/\s+/).filter(Boolean)) {
+    if (!line) line = word;
+    else if (line.length + 1 + word.length <= width) line += " " + word;
+    else { lines.push(line); line = word; }
+    while (line.length > width) { lines.push(line.slice(0, width)); line = line.slice(width); }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+/** Renglón(es) de la tabla: el nombre se parte dentro de su columna y la
+ * cantidad/precio van solo en el primer renglón, como el ticket de Tim Hortons. */
+function receiptRow(indent, text, qty = "", price = "") {
+  const nameW = RECEIPT_NAME_W - indent.length;
+  return wrapText(text, nameW).map((part, i) => {
+    const name = (i === 0 ? indent : " ".repeat(indent.length)) + part;
+    if (i > 0) return name + "\n";
+    return name.padEnd(RECEIPT_NAME_W) +
+      String(qty).padStart(Math.ceil((RECEIPT_QTY_W + String(qty).length) / 2)).padEnd(RECEIPT_QTY_W) +
+      String(price).padStart(RECEIPT_PRICE_W) + "\n";
+  }).join("");
+}
+
+function receiptHeader() {
+  return commands.bold + "Producto".padEnd(RECEIPT_NAME_W) + "Cant".padEnd(RECEIPT_QTY_W) +
+    "Precio".padStart(RECEIPT_PRICE_W) + commands.boldOff + "\n";
+}
+
+/** Lista de platillos del ticket de cuenta (/print y /print-seat-bill). */
+function receiptItemsBlock(items) {
+  let out = receiptHeader();
+  out += solidLine(2) + commands.feedLine;
+  let lastParentName = "";
+  items.forEach((item, index) => {
+    const isChild = isPackageChild(item, { allowZeroPriceFallback: true });
+    // El paquete se queda junto: sin espacio entre el padre y sus incluidos.
+    if (index > 0 && !isChild) out += RECEIPT_ITEM_GAP;
+    // Un incluido de paquete no lleva precio propio: su valor ya va en el
+    // padre. El POS manda su total como (0 - modificadores), o sea "-$5"
+    // cuando la bebida del paquete trae un extra de $5, y eso confundía.
+    const price = isChild ? "" : item.isGuest ? "$0" : `$${item.total}`;
+    out += receiptRow(isChild ? "  » " : "", item.name, item.qty, price);
+
+    for (const mod of item.modifiers || []) {
+      const modPrice = Number(mod.price) ? `+$${mod.price}` : "";
+      out += receiptRow(isChild ? "      · " : "    · ", mod.name, "", modPrice);
+    }
+    if (item.isGuest) out += receiptRow("    · ", "Invitado");
+
+    // Solo para renglones que llegan fuera de orden (builds viejos del POS).
+    if (isChild && item.parentName && !matchesPackageParent(lastParentName, item.parentName)) {
+      out += receiptRow("      ", `Paquete: ${item.parentName}`);
+    }
+    if (!isChild) lastParentName = item.name;
+  });
+  return out;
+}
+
+/** "MESA 5" en doble tamaño a la izquierda y "Orden #123" en letra normal a
+ * la derecha del mismo renglón. Un carácter doble ocupa 2 columnas normales.
+ * Un "número" que no es número (el pre-ticket manda "PRE-TICKET") va tal cual. */
+function tableOrderHeader(label, orderNumber) {
+  const orderText = /^\d+$/.test(String(orderNumber)) ? `Orden #${orderNumber}` : String(orderNumber);
+  const spaces = Math.max(1, 48 - label.length * 2 - orderText.length);
+  return commands.alignLeft +
+    commands.textSizeDouble + commands.bold + label + commands.boldOff + commands.textSizeNormal +
+    " ".repeat(spaces) + orderText + "\n";
+}
+
+// Grosor (en puntos) de las líneas que abren y cierran la lista de platillos.
+const THICK_LINE = 5;
+
+/** Fecha con formato fijo "01/11/2026 13:18" (toLocaleDateString daba "1/11/2026"). */
+function ticketDateTime(date = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("es-MX", {
+    timeZone: "America/Mexico_City", day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(date).map((p) => [p.type, p.value]));
+  return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
+}
+
+/** Renglón de totales: etiqueta alineada a la derecha y el monto en la
+ * columna de Precio, para que todo el ticket se lea como una sola tabla. */
+function totalRow(label, value, bold = false) {
+  const labelW = RECEIPT_NAME_W + RECEIPT_QTY_W;
+  let text = String(label);
+  if (text.length > labelW - 1) text = text.slice(0, labelW - 1);
+  const row = text.padStart(labelW) + String(value).padStart(RECEIPT_PRICE_W);
+  return (bold ? commands.bold + row + commands.boldOff : row) + "\n";
+}
+
+function paymentMethodLabel(method) {
+  return {
+    cash: "Efectivo",
+    card: "Tarjeta",
+    transfer: "Transferencia",
+    terminal_mercadopago: "Terminal",
+  }[method] || method;
+}
+
+/** Leyenda legal en letra chica (font B) al pie del ticket de cuenta. */
+function receiptLegalFooter() {
+  return commands.feedLine + commands.alignCenter + commands.fontSmall +
+    "Este ticket no es un comprobante fiscal\n" + commands.fontNormal + commands.alignLeft;
 }
 
 function keepPackageItemsTogether(items) {
@@ -400,294 +520,143 @@ app.post('/print', async (req, res) => {
       openDrawer,
       customerPhone,
       deliveryAddress,
-      survey
+      survey,
+      waiterName,
+      guestCount
     } = req.body;
 
     let content = "";
-    
+
     // Inicializar impresora
     content += commands.init;
-    
+
     // Abrir cajón primero si se solicita (mismo socket = sin delay extra)
     if (openDrawer) {
       content += commands.drawerPulse;
     }
-    
-    // Logo centrado sin espacio arriba
+
+    // Logo + dirección, centrados y compactos
     content += commands.alignCenter;
-    
-    // Imprimir logo desde archivo
     const logoPath = path.join(__dirname, "public", "logo.jpg");
     if (fs.existsSync(logoPath)) {
-      const logoBitmap = await imageToEscPosBitmap(logoPath, 400);
-      content += logoBitmap;
-      content += commands.feedLine;
+      content += await imageToEscPosBitmap(logoPath, 400);
       content += commands.feedLine;
     } else {
-      content += commands.textSizeLarge;
-      content += commands.bold;
-      content += "BRUMA\n";
-      content += commands.boldOff;
-      content += commands.textSizeNormal;
+      content += commands.textSizeLarge + commands.bold + "BRUMA\n" + commands.boldOff + commands.textSizeNormal;
     }
     content += commands.feedLine;
-    
-    // Dirección centrada
     content += "Av. Panamericana Casa B14\n";
     content += "Col. Pedregal de Carrasco, CDMX\n";
     content += commands.feedLine;
+
+    // Datos de la orden: fecha fija dd/mm/aaaa hh:mm y quién atendió
+    content += `${ticketDateTime()}\n`;
+    const serviceInfo = [
+      waiterName ? `Atendió: ${waiterName}` : "",
+      !isDelivery && guestCount > 0 ? `${guestCount} ${guestCount === 1 ? "persona" : "personas"}` : "",
+    ].filter(Boolean).join(" · ");
+    if (serviceInfo) content += `${serviceInfo}\n`;
     content += commands.feedLine;
-    content += commands.feedLine;
-    
-    // Fecha y hora centrada
-    const now = new Date();
-    const dateStr = now.toLocaleDateString("es-MX", { timeZone: "America/Mexico_City" });
-    const timeStr = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", timeZone: "America/Mexico_City" });
-    content += `${dateStr} ${timeStr}\n`;
-    content += commands.feedLine;
-    content += commands.feedLine;
-    content += commands.feedLine;
-    
-    // Mesa/Para Llevar y # de Orden con espacio justificado y más grandes
-    content += commands.alignLeft;
-    content += commands.textSizeDouble;
-    content += commands.bold;
+
+    // Mesa/Para Llevar grande y # de Orden chico, en el mismo renglón
     const label = isDelivery ? "PARA LLEVAR" : `MESA ${tableNumber}`;
-    content += label;
-    content += commands.boldOff;
-    const orderText = `#${orderNumber}`;
-    const spaces = Math.max(1, 24 - label.length - orderText.length);
-    content += " ".repeat(spaces);
-    content += commands.bold;
-    content += orderText + "\n";
-    content += commands.boldOff;
-    content += commands.textSizeNormal;
-    content += commands.feedLine;
-    
+    content += tableOrderHeader(label, orderNumber);
+
     // Si es delivery de plataforma (Uber/Rappi/Didi), mostrar logo + num pedido
-    console.log("[TICKET] isDelivery:", isDelivery, "customerName:", JSON.stringify(customerName));
     if (isDelivery && customerName) {
       const platformMatch = customerName.match(/^(Uber|Rappi|Didi)\s*#([A-Za-z0-9]{4})/i);
-      console.log("[TICKET] platformMatch:", platformMatch);
       if (platformMatch) {
         const platform = platformMatch[1].toLowerCase();
         const orderDigits = platformMatch[2];
-        
-        // Intentar imprimir logo de la plataforma
+
+        content += commands.feedLine;
+        content += commands.alignCenter;
         const platformLogoPath = path.join(__dirname, "public", `${platform}.jpg`);
         if (fs.existsSync(platformLogoPath)) {
-          content += commands.alignCenter;
-          const platformBitmap = await imageToEscPosBitmap(platformLogoPath, 200);
-          content += platformBitmap;
+          content += await imageToEscPosBitmap(platformLogoPath, 200);
           content += commands.feedLine;
         }
-        
-        // Número de pedido grande debajo del logo
-        content += commands.alignCenter;
-        content += commands.textSizeLarge;
-        content += commands.bold;
-        content += `#${orderDigits}\n`;
-        content += commands.boldOff;
-        content += commands.textSizeNormal;
+        // Número de pedido grande debajo del logo (se lo dicen al repartidor)
+        content += commands.textSizeLarge + commands.bold + `#${orderDigits}\n` + commands.boldOff + commands.textSizeNormal;
         content += commands.alignLeft;
-        content += commands.feedLine;
       }
     }
-    
     content += commands.feedLine;
-    content += commands.feedLine;
-    
-    // Línea separadora continua (80mm)
-    content += commands.alignLeft;
-    content += solidLine() + commands.feedLine;
-    content += commands.feedLine;
-    
-    // Items todos juntos (más compacto, sin separar por asientos)
+
+    // Platillos entre dos líneas gruesas
     const allItems = [];
     for (const seat of Object.keys(items)) {
       allItems.push(...items[seat]);
     }
-    
-    // Imprimir todos los items juntos
-    let lastParentName = "";
-    for (const item of allItems) {
-      const { child: isChild, label: qtyName } = receiptItemLabel(item);
-      const price = item.isGuest ? "$0" : `$${item.total}`;
-      const itemSpaces = Math.max(1, 48 - qtyName.length - price.length);
-      content += qtyName + " ".repeat(itemSpaces) + price + "\n";
+    content += commands.alignLeft;
+    content += solidLine(THICK_LINE) + commands.feedLine;
+    content += receiptItemsBlock(allItems);
+    content += commands.feedLine;
+    content += solidLine(THICK_LINE) + commands.feedLine;
 
-      // Modificadores con precio (extras, flujo, modificador personalizado)
-      if (item.modifiers && item.modifiers.length > 0) {
-        for (const mod of item.modifiers) {
-          const modLine = `${isChild ? "      " : "    "}· ${mod.name}`;
-          const modPrice = `+$${mod.price}`;
-          const modSpaces = Math.max(1, 48 - modLine.length - modPrice.length);
-          content += modLine + " ".repeat(modSpaces) + modPrice + "\n";
-        }
-      }
+    // Totales alineados con la columna de Precio
+    content += totalRow("Subtotal", `$${subtotal}`);
 
-      // Agregar indicador de invitado si existe
-      if (item.isGuest) {
-        content += `    · Invitado\n`;
-      }
-
-      // The price of a package child is intentionally $0: its value belongs
-      // to the parent line. Under its own parent the "»" already says so; the
-      // label is only for rows that arrive out of order (older POS builds).
-      if (isChild && item.parentName && !matchesPackageParent(lastParentName, item.parentName)) {
-        content += `      Paquete: ${item.parentName}\n`;
-      }
-      if (!isChild) lastParentName = item.name;
-    }
-    
-    // Espacio antes del total
-    content += commands.feedLine;
-    content += commands.feedLine;
-    
-    // Línea separadora continua (80mm)
-    content += solidLine() + commands.feedLine;
-    content += commands.feedLine;
-    
-    // Subtotal
-    content += "Subtotal:";
-    const subtotalStr = `$${subtotal}`;
-    content += " ".repeat(48 - 9 - subtotalStr.length) + subtotalStr + "\n";
-    content += commands.feedLine;
-    
-    // Envío a domicilio (si hay)
     const deliveryFee = req.body.deliveryFee || 0;
-    if (deliveryFee > 0) {
-      content += "Envio a domicilio:";
-      const deliveryStr = `$${deliveryFee}`;
-      content += " ".repeat(48 - 18 - deliveryStr.length) + deliveryStr + "\n";
-      content += commands.feedLine;
+    if (deliveryFee > 0) content += totalRow("Envío a domicilio", `$${deliveryFee}`);
+
+    // Promociones agrupadas por nombre. Sin prefijo de cantidad: el nombre
+    // (p. ej. "2x1 Orden Pescaditos") ya lo dice y "2x 2x1" se leía raro.
+    const byPromo = {};
+    for (const item of allItems) {
+      if (!item.promotionName || !(item.promotionDiscount > 0)) continue;
+      byPromo[item.promotionName] = (byPromo[item.promotionName] || 0) + Math.round(item.promotionDiscount);
     }
-    
+    for (const [promoName, amount] of Object.entries(byPromo)) {
+      content += totalRow(promoName, `-$${amount}`);
+    }
+
+    if (discount && discount.amount > 0) content += totalRow(discount.name || "Descuento", `-$${discount.amount}`);
+
     // Propina (si hay, excluyendo delivery fee)
     const actualTip = deliveryFee > 0 ? tip - deliveryFee : tip;
-    if (actualTip > 0) {
-      content += "Propina:";
-      const tipStr = `$${actualTip}`;
-      content += " ".repeat(48 - 8 - tipStr.length) + tipStr + "\n";
-      content += commands.feedLine;
-    }
-    
-    // PROMOCIONES - grouped by promotion name
-    const promoItems = allItems.filter(item => item.promotionName && item.promotionDiscount > 0);
-    if (promoItems.length > 0) {
-      // Group by promotion name
-      const byPromo = {};
-      for (const item of promoItems) {
-        if (!byPromo[item.promotionName]) {
-          byPromo[item.promotionName] = [];
-        }
-        byPromo[item.promotionName].push(item);
-      }
-      
-      content += commands.feedLine;
-      content += commands.alignCenter;
-      content += commands.bold;
-      content += "PROMOCIONES\n";
-      content += commands.boldOff;
-      content += commands.alignLeft;
-      content += solidLine() + commands.feedLine;
-      content += commands.feedLine;
-      
-      for (const [promoName, items] of Object.entries(byPromo)) {
-        const totalDiscount = items.reduce((sum, item) => sum + Math.round(item.promotionDiscount || 0), 0);
-        // No quantity prefix — the promo name (e.g. "2x1 Orden Pescaditos")
-        // already conveys it; a leading "2x" just reads as "2x 2x1".
-        const promoLine = promoName;
-        const promoPrice = `-$${totalDiscount}`;
-        const promoSpaces = Math.max(1, 48 - promoLine.length - promoPrice.length);
-        content += promoLine + " ".repeat(promoSpaces) + promoPrice + "\n";
-      }
-      
-      content += solidLine() + commands.feedLine;
-      content += commands.feedLine;
-    }
-    
-    // Descuento manual (si hay)
-    if (discount && discount.amount > 0) {
-      const discountLabel = `${discount.name}:`;
-      const discountStr = `-$${discount.amount}`;
-      content += discountLabel;
-      content += " ".repeat(48 - discountLabel.length - discountStr.length) + discountStr + "\n";
-      content += commands.feedLine;
-    }
-    
-    // Total en negritas y más grande
-    content += commands.feedLine;
-    content += commands.bold;
-    content += commands.textSizeDouble;
-    content += "TOTAL:";
-    const totalStr = `$${total}`;
-    content += " ".repeat(Math.max(1, 24 - 6 - totalStr.length)) + totalStr + "\n";
-    content += commands.textSizeNormal;
-    content += commands.boldOff;
-    content += commands.feedLine;
-    content += commands.feedLine;
-    
+    if (actualTip > 0) content += totalRow("Propina", `$${actualTip}`);
+
+    // TOTAL grande, cerrando en la misma columna que los precios
+    content += solidLine(1) + commands.feedLine;
+    content += commands.bold + commands.textSizeDouble;
+    content += `TOTAL  $${total}`.padStart(24) + "\n";
+    content += commands.textSizeNormal + commands.boldOff;
+
     // Información de pago (solo si está pagado)
     if (paymentMethod) {
-      content += solidLine() + commands.feedLine;
       content += commands.feedLine;
-      content += commands.bold;
-      content += "PAGADO\n";
-      content += commands.boldOff;
-      content += commands.feedLine;
-      
-      const methodLabel = paymentMethod === 'cash' ? 'Efectivo' : 
-                         paymentMethod === 'card' ? 'Tarjeta' : 
-                         paymentMethod === 'transfer' ? 'Transferencia' : 
-                         paymentMethod === 'terminal_mercadopago' ? 'Terminal' : paymentMethod;
-      content += `Metodo: ${methodLabel}\n`;
-      content += commands.feedLine;
-      
-      // Propina si hay
-      if (tip > 0) {
-        const tipMethod = req.body.tipPaymentMethod || paymentMethod;
-        const tipMethodLabel = tipMethod === 'cash' ? 'efectivo' : 
-                               tipMethod === 'card' ? 'tarjeta' : 
-                               tipMethod === 'transfer' ? 'transferencia' : 
-                               tipMethod === 'terminal_mercadopago' ? 'terminal' : tipMethod;
-        if (tipMethod !== paymentMethod) {
-          content += `Propina: $${tip} (en ${tipMethodLabel})\n`;
-        } else {
-          content += `Propina: $${tip}\n`;
-        }
-        content += commands.feedLine;
+      content += totalRow("Pagado con", paymentMethodLabel(paymentMethod), true);
+      const tipMethod = req.body.tipPaymentMethod || paymentMethod;
+      if (tip > 0 && tipMethod !== paymentMethod) {
+        content += totalRow("Propina pagada con", paymentMethodLabel(tipMethod));
       }
     }
-    
+
     // Datos de contacto (pedidos en línea) — nombre, teléfono y, si es a
     // domicilio, la dirección de entrega, hasta el fondo del ticket.
     if (customerPhone || deliveryAddress) {
       content += commands.feedLine;
-      content += solidLine() + commands.feedLine;
+      content += solidLine(1) + commands.feedLine;
       content += commands.feedLine;
       content += commands.alignLeft;
       if (customerName) content += `Cliente: ${customerName}\n`;
       if (customerPhone) content += `Tel: ${customerPhone}\n`;
       if (deliveryAddress) content += `Direccion: ${deliveryAddress}\n`;
-      content += commands.feedLine;
     }
 
     // Footer: la encuesta ya da las gracias; sin ella, la línea de siempre.
-    content += commands.feedLine;
     content += commands.feedLine;
     if (survey) {
       content += await surveyFooter(survey);
     } else {
       content += commands.feedLine;
-      content += commands.feedLine;
       content += commands.alignCenter;
       content += "Gracias por su preferencia\n";
     }
+    content += receiptLegalFooter();
 
     // Espacio final antes de cortar
-    content += commands.feedLine;
-    content += commands.feedLine;
     content += commands.feedLine;
 
     // Cortar papel
@@ -924,15 +893,8 @@ app.post('/print-seat-bill', async (req, res) => {
     content += commands.feedLine;
 
     // Mesa y orden
-    content += commands.alignLeft;
-    content += commands.textSizeDouble;
-    content += commands.bold;
     const tableLabel = tableNumber ? `MESA ${tableNumber}` : "PARA LLEVAR";
-    const orderText = `#${orderNumber}`;
-    const labelSpaces = Math.max(1, 24 - tableLabel.length - orderText.length);
-    content += tableLabel + " ".repeat(labelSpaces) + orderText + "\n";
-    content += commands.boldOff;
-    content += commands.textSizeNormal;
+    content += tableOrderHeader(tableLabel, orderNumber);
     content += commands.feedLine;
 
     // Encabezado de cuenta dividida
@@ -951,28 +913,8 @@ app.post('/print-seat-bill', async (req, res) => {
     content += solidLine() + commands.feedLine;
     content += commands.feedLine;
 
-    // Items
-    let lastParentName = "";
-    for (const item of items) {
-      const { child: isChild, label: qtyName } = receiptItemLabel(item);
-      const price = `$${item.total}`;
-      const itemSpaces = Math.max(1, 48 - qtyName.length - price.length);
-      content += qtyName + " ".repeat(itemSpaces) + price + "\n";
-
-      if (item.modifiers && item.modifiers.length > 0) {
-        for (const mod of item.modifiers) {
-          const modLine = `${isChild ? "      " : "    "}· ${mod.name}`;
-          const modPrice = `+$${mod.price}`;
-          const modSpaces = Math.max(1, 48 - modLine.length - modPrice.length);
-          content += modLine + " ".repeat(modSpaces) + modPrice + "\n";
-        }
-      }
-
-      if (isChild && item.parentName && !matchesPackageParent(lastParentName, item.parentName)) {
-        content += `      Paquete: ${item.parentName}\n`;
-      }
-      if (!isChild) lastParentName = item.name;
-    }
+    // Items (tabla Producto | Cant | Precio)
+    content += receiptItemsBlock(items);
 
     content += commands.feedLine;
     content += commands.feedLine;

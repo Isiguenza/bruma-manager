@@ -66,7 +66,9 @@ class PrintService {
         openDrawer: Bool = false,
         customerPhone: String? = nil,
         deliveryAddress: String? = nil,
-        survey: [String: String]? = nil
+        survey: [String: String]? = nil,
+        waiterName: String? = nil,
+        guestCount: Int? = nil
     ) async {
         guard let url = URL(string: "\(printServerURL)/print") else {
             print("❌ PrintService: invalid print URL: \(printServerURL)")
@@ -96,6 +98,8 @@ class PrintService {
         if openDrawer { body["openDrawer"] = true }
         if let phone = customerPhone, !phone.isEmpty { body["customerPhone"] = phone }
         if let addr = deliveryAddress, !addr.isEmpty { body["deliveryAddress"] = addr }
+        if let waiterName, !waiterName.isEmpty { body["waiterName"] = waiterName }
+        if let guestCount, guestCount > 0 { body["guestCount"] = guestCount }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         do {

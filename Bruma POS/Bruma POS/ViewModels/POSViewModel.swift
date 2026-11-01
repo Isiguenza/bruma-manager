@@ -4392,7 +4392,9 @@ class POSViewModel: ObservableObject {
             survey: includeSurvey ? [
                 "url": currentOrderNumber.map { "\(Self.surveyURL)?o=\($0)" } ?? Self.surveyURL,
                 "displayUrl": Self.surveyURL
-            ] : nil
+            ] : nil,
+            waiterName: employeeName,
+            guestCount: selectedTable == nil ? nil : guestCount
         )
     }
 
@@ -4418,7 +4420,9 @@ class POSViewModel: ObservableObject {
             paymentMethod: nil,
             deliveryFee: Int(deliveryFeeAmount),
             customerPhone: currentOrderPhone,
-            deliveryAddress: currentOrderAddress
+            deliveryAddress: currentOrderAddress,
+            waiterName: employeeName,
+            guestCount: selectedTable == nil ? nil : guestCount
         )
     }
 
