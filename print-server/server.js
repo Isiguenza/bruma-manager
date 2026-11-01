@@ -165,9 +165,7 @@ function solidLine(heightDots = 3) {
 async function surveyFooter(survey) {
   if (!survey || typeof survey.url !== "string" || !survey.url) return "";
   let out = "";
-  out += commands.feedLine;
-  out += solidLine() + commands.feedLine;
-  out += commands.feedLine;
+  out += hairLine() + vgap(GAP_SECTION);
   out += commands.alignCenter;
   out += commands.bold + "Gracias por visitarnos" + commands.boldOff + "\n";
   out += commands.feedLine;
@@ -224,8 +222,23 @@ function matchesPackageParent(printedName, parentName) {
 const RECEIPT_NAME_W = 33;
 const RECEIPT_QTY_W = 5;
 const RECEIPT_PRICE_W = 48 - RECEIPT_NAME_W - RECEIPT_QTY_W;
-// Media línea extra entre platillos (ESC J n = avanzar n puntos).
-const RECEIPT_ITEM_GAP = ESC + "J" + String.fromCharCode(14);
+// Espaciado vertical del ticket de cuenta. Esta impresora IGNORA "ESC J n"
+// (avanzar n puntos): se probó y los platillos salían pegados. Lo que sí
+// respeta es "ESC 3 n" (alto de renglón), así que un hueco es un salto de
+// línea vacío con el alto que queramos y luego se regresa al alto normal.
+const LINE_BODY = 34;      // alto normal de renglón (default de fábrica ≈ 30)
+const GAP_ITEM = 26;       // aire entre platillos
+const GAP_SECTION = 44;    // aire entre secciones (encabezado, totales, pie)
+function lineSpacing(dots) {
+  return ESC + "3" + String.fromCharCode(Math.min(255, dots));
+}
+function vgap(dots) {
+  return lineSpacing(dots) + "\n" + lineSpacing(LINE_BODY);
+}
+/** Línea divisoria de 1 punto: sutil, en vez de las barras gruesas. */
+function hairLine() {
+  return solidLine(1) + "\n";
+}
 
 function wrapText(text, width) {
   const lines = [];
@@ -254,19 +267,19 @@ function receiptRow(indent, text, qty = "", price = "") {
 }
 
 function receiptHeader() {
-  return commands.bold + "Producto".padEnd(RECEIPT_NAME_W) + "Cant".padEnd(RECEIPT_QTY_W) +
-    "Precio".padStart(RECEIPT_PRICE_W) + commands.boldOff + "\n";
+  return "Producto".padEnd(RECEIPT_NAME_W) + "Cant".padEnd(RECEIPT_QTY_W) +
+    "Precio".padStart(RECEIPT_PRICE_W) + "\n";
 }
 
 /** Lista de platillos del ticket de cuenta (/print y /print-seat-bill). */
 function receiptItemsBlock(items) {
-  let out = receiptHeader();
-  out += solidLine(2) + commands.feedLine;
+  let out = lineSpacing(LINE_BODY) + receiptHeader();
+  out += hairLine() + vgap(GAP_ITEM);
   let lastParentName = "";
   items.forEach((item, index) => {
     const isChild = isPackageChild(item, { allowZeroPriceFallback: true });
     // El paquete se queda junto: sin espacio entre el padre y sus incluidos.
-    if (index > 0 && !isChild) out += RECEIPT_ITEM_GAP;
+    if (index > 0 && !isChild) out += vgap(GAP_ITEM);
     // Un incluido de paquete no lleva precio propio: su valor ya va en el
     // padre. El POS manda su total como (0 - modificadores), o sea "-$5"
     // cuando la bebida del paquete trae un extra de $5, y eso confundía.
@@ -299,9 +312,6 @@ function tableOrderHeader(label, orderNumber) {
     " ".repeat(spaces) + orderText + "\n";
 }
 
-// Grosor (en puntos) de las líneas que abren y cierran la lista de platillos.
-const THICK_LINE = 5;
-
 /** Fecha con formato fijo "01/11/2026 13:18" (toLocaleDateString daba "1/11/2026"). */
 function ticketDateTime(date = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("es-MX", {
@@ -332,7 +342,7 @@ function paymentMethodLabel(method) {
 
 /** Leyenda legal en letra chica (font B) al pie del ticket de cuenta. */
 function receiptLegalFooter() {
-  return commands.feedLine + commands.alignCenter + commands.fontSmall +
+  return vgap(GAP_SECTION) + commands.alignCenter + commands.fontSmall +
     "Este ticket no es un comprobante fiscal\n" + commands.fontNormal + commands.alignLeft;
 }
 
@@ -536,27 +546,28 @@ app.post('/print', async (req, res) => {
     }
 
     // Logo + dirección, centrados y compactos
+    content += lineSpacing(LINE_BODY);
     content += commands.alignCenter;
     const logoPath = path.join(__dirname, "public", "logo.jpg");
     if (fs.existsSync(logoPath)) {
       content += await imageToEscPosBitmap(logoPath, 400);
-      content += commands.feedLine;
     } else {
       content += commands.textSizeLarge + commands.bold + "BRUMA\n" + commands.boldOff + commands.textSizeNormal;
     }
-    content += commands.feedLine;
+    content += vgap(GAP_SECTION);
     content += "Av. Panamericana Casa B14\n";
     content += "Col. Pedregal de Carrasco, CDMX\n";
-    content += commands.feedLine;
+    content += vgap(GAP_SECTION);
 
     // Datos de la orden: fecha fija dd/mm/aaaa hh:mm y quién atendió
     content += `${ticketDateTime()}\n`;
+    content += vgap(GAP_ITEM);
     const serviceInfo = [
       waiterName ? `Atendió: ${waiterName}` : "",
       !isDelivery && guestCount > 0 ? `${guestCount} ${guestCount === 1 ? "persona" : "personas"}` : "",
     ].filter(Boolean).join(" · ");
     if (serviceInfo) content += `${serviceInfo}\n`;
-    content += commands.feedLine;
+    content += vgap(GAP_SECTION);
 
     // Mesa/Para Llevar grande y # de Orden chico, en el mismo renglón
     const label = isDelivery ? "PARA LLEVAR" : `MESA ${tableNumber}`;
@@ -581,24 +592,24 @@ app.post('/print', async (req, res) => {
         content += commands.alignLeft;
       }
     }
-    content += commands.feedLine;
+    content += vgap(GAP_ITEM);
 
-    // Platillos entre dos líneas gruesas
+    // Platillos: encabezado con línea fina debajo y otra al cierre
     const allItems = [];
     for (const seat of Object.keys(items)) {
       allItems.push(...items[seat]);
     }
     content += commands.alignLeft;
-    content += solidLine(THICK_LINE) + commands.feedLine;
+    content += vgap(GAP_ITEM);
     content += receiptItemsBlock(allItems);
-    content += commands.feedLine;
-    content += solidLine(THICK_LINE) + commands.feedLine;
+    content += vgap(GAP_SECTION);
+    content += hairLine() + vgap(GAP_SECTION);
 
     // Totales alineados con la columna de Precio
-    content += totalRow("Subtotal", `$${subtotal}`);
+    content += totalRow("Subtotal", `$${subtotal}`) + vgap(GAP_ITEM);
 
     const deliveryFee = req.body.deliveryFee || 0;
-    if (deliveryFee > 0) content += totalRow("Envío a domicilio", `$${deliveryFee}`);
+    if (deliveryFee > 0) content += totalRow("Envío a domicilio", `$${deliveryFee}`) + vgap(GAP_ITEM);
 
     // Promociones agrupadas por nombre. Sin prefijo de cantidad: el nombre
     // (p. ej. "2x1 Orden Pescaditos") ya lo dice y "2x 2x1" se leía raro.
@@ -608,24 +619,24 @@ app.post('/print', async (req, res) => {
       byPromo[item.promotionName] = (byPromo[item.promotionName] || 0) + Math.round(item.promotionDiscount);
     }
     for (const [promoName, amount] of Object.entries(byPromo)) {
-      content += totalRow(promoName, `-$${amount}`);
+      content += totalRow(promoName, `-$${amount}`) + vgap(GAP_ITEM);
     }
 
-    if (discount && discount.amount > 0) content += totalRow(discount.name || "Descuento", `-$${discount.amount}`);
+    if (discount && discount.amount > 0) content += totalRow(discount.name || "Descuento", `-$${discount.amount}`) + vgap(GAP_ITEM);
 
     // Propina (si hay, excluyendo delivery fee)
     const actualTip = deliveryFee > 0 ? tip - deliveryFee : tip;
-    if (actualTip > 0) content += totalRow("Propina", `$${actualTip}`);
+    if (actualTip > 0) content += totalRow("Propina", `$${actualTip}`) + vgap(GAP_ITEM);
 
-    // TOTAL grande, cerrando en la misma columna que los precios
-    content += solidLine(1) + commands.feedLine;
+    // TOTAL grande, separado del subtotal y cerrando en la columna de precios
+    content += vgap(GAP_ITEM);
     content += commands.bold + commands.textSizeDouble;
     content += `TOTAL  $${total}`.padStart(24) + "\n";
     content += commands.textSizeNormal + commands.boldOff;
+    content += vgap(GAP_SECTION);
 
     // Información de pago (solo si está pagado)
     if (paymentMethod) {
-      content += commands.feedLine;
       content += totalRow("Pagado con", paymentMethodLabel(paymentMethod), true);
       const tipMethod = req.body.tipPaymentMethod || paymentMethod;
       if (tip > 0 && tipMethod !== paymentMethod) {
@@ -636,9 +647,7 @@ app.post('/print', async (req, res) => {
     // Datos de contacto (pedidos en línea) — nombre, teléfono y, si es a
     // domicilio, la dirección de entrega, hasta el fondo del ticket.
     if (customerPhone || deliveryAddress) {
-      content += commands.feedLine;
-      content += solidLine(1) + commands.feedLine;
-      content += commands.feedLine;
+      content += hairLine() + vgap(GAP_SECTION);
       content += commands.alignLeft;
       if (customerName) content += `Cliente: ${customerName}\n`;
       if (customerPhone) content += `Tel: ${customerPhone}\n`;
@@ -646,11 +655,11 @@ app.post('/print', async (req, res) => {
     }
 
     // Footer: la encuesta ya da las gracias; sin ella, la línea de siempre.
-    content += commands.feedLine;
+    content += vgap(GAP_SECTION);
     if (survey) {
       content += await surveyFooter(survey);
     } else {
-      content += commands.feedLine;
+      content += hairLine() + vgap(GAP_SECTION);
       content += commands.alignCenter;
       content += "Gracias por su preferencia\n";
     }

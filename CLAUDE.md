@@ -723,6 +723,10 @@ de `+$5`), y su valor ya va en el padre. Los totales de `/print` usan
 `totalRow` para caer en la misma columna de Precio; si agregas un renglón de
 totales, úsalo en vez de calcular espacios a mano. `waiterName`/`guestCount`
 son opcionales en el body (el POS los manda desde `handlePrint`).
+**La impresora de tickets ignora `ESC J n`** (avanzar n puntos): se probó en
+papel y los platillos salían pegados. Los huecos verticales van con
+`vgap(dots)` (`ESC 3 n` + salto vacío + regreso a `LINE_BODY`), y las
+divisiones con `hairLine()` (1 punto), no con `solidLine` gruesa.
 
 ## Caja: el corte se calcula EN VIVO desde `orders`
 
