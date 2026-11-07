@@ -70,8 +70,20 @@ class CorteViewModel: ObservableObject {
     
     // MARK: - Print
     
-    func printCorte() async {
+    /// `employeeNames` (id → nombre) resuelve quién abrió la caja: el corte solo
+    /// trae el id. `printedBy` es el empleado activo en el POS.
+    func printCorte(employeeNames: [String: String] = [:], printedBy: String? = nil) async {
         guard let data = corteData else { return }
+        let movementItems: (CorteMovement) -> [[String: Any]] = { movement in
+            movement.items.map { ["amount": $0.amount, "description": $0.description ?? "", "createdAt": $0.createdAt] }
+        }
+        var register: [String: Any] = [
+            "openedAt": data.register.openedAt,
+            "initialCash": data.register.initialCash
+        ]
+        if let openedBy = data.register.openedBy, let name = employeeNames[openedBy] {
+            register["openedByName"] = name
+        }
         
         guard let url = URL(string: "\(APIService.shared.printServerURL)/print-corte") else { return }
         var request = URLRequest(url: url)
@@ -79,7 +91,8 @@ class CorteViewModel: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 5
         
-        let body: [String: Any] = [
+        var body: [String: Any] = [
+            "register": register,
             "sales": [
                 "total": data.sales.total,
                 "cash": data.sales.cash,
@@ -110,11 +123,13 @@ class CorteViewModel: ObservableObject {
             "movements": [
                 "deposits": [
                     "total": data.movements.deposits.total,
-                    "count": data.movements.deposits.count
+                    "count": data.movements.deposits.count,
+                    "items": movementItems(data.movements.deposits)
                 ],
                 "withdrawals": [
                     "total": data.movements.withdrawals.total,
-                    "count": data.movements.withdrawals.count
+                    "count": data.movements.withdrawals.count,
+                    "items": movementItems(data.movements.withdrawals)
                 ]
             ],
             "summary": [
@@ -124,6 +139,7 @@ class CorteViewModel: ObservableObject {
                 "finalCash": data.summary.finalCash ?? 0
             ]
         ]
+        if let printedBy, !printedBy.isEmpty { body["printedBy"] = printedBy }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         _ = try? await URLSession.shared.data(for: request)

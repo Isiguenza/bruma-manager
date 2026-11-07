@@ -728,6 +728,24 @@ papel y los platillos salían pegados. Los huecos verticales van con
 `vgap(dots)` (`ESC 3 n` + salto vacío + regreso a `LINE_BODY`), y las
 divisiones con `hairLine()` (1 punto), no con `solidLine` gruesa.
 
+**Ticket de corte** (`buildCorteTicket` en `print-server/server.js`): "Ventas
+netas" y "Total con propinas" usan las MISMAS fórmulas que `CorteViewModel`
+(`totalNetSales`/`totalNetTips`, el número grande de la vista de Caja) — si
+cambias una, cambia la otra. `register`/`printedBy`/`movements.*.items` son
+opcionales (iPads con build viejo no los mandan).
+
+**Resumen del turno** (`buildSummaryTicket`, `/print-summary`): el cliente
+manda cada renglón (`items: [{productId, name, qty, category, categorySort,
+kind}]`, `kind` = `sold`/`package`/`guest`, SIN anulados) y el print-server
+agrupa categoría → producto → variante (separa la variante por el último
+`" - "`). La regla de qué cuenta vive dos veces: `CashRegisterViewModel.summaryItems`
+(iPad) y `handlePrintSummary` en `app/(dashboard)/cash-register/page.tsx`.
+El payload viejo (`products` ya sumado) sigue funcionando como una sola categoría.
+
+Pruebas sin tocar la caja, desde `print-server/`: `npm run test:corte [url]`
+y `npm run test:resumen [url]` (`scripts/test-print.js` → `POST
+/print-corte/test` / `/print-summary/test` con datos dummy).
+
 ## Caja: el corte se calcula EN VIVO desde `orders`
 
 `GET /api/cash-register/:id/corte` (y `/report`) recalculan ventas por método,

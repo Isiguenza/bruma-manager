@@ -239,7 +239,11 @@ struct CashRegisterView: View {
             await corteVM.loadCorte(registerId: register.id)
         }
         .sheet(isPresented: $vm.showResumen) {
-            ResumenView(vm: vm)
+            ResumenView(
+                vm: vm,
+                categoryByProduct: resumenCategories,
+                printedBy: posVM.employeeName
+            )
         }
         .sheet(isPresented: $showVentasDetalle) {
             ventasDetalleSheet(register)
@@ -268,7 +272,12 @@ struct CashRegisterView: View {
             quickCashCountSheet(register: register)
         }
         .sheet(isPresented: $vm.showCorte) {
-            CorteView(registerId: register.id, register: register)
+            CorteView(
+                registerId: register.id,
+                register: register,
+                employeeNames: Dictionary(posVM.employees.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }),
+                printedBy: posVM.employeeName
+            )
         }
         .alert("Reembolsar Orden", isPresented: $showDeleteConfirm) {
             TextField("Motivo", text: $deleteReason)
@@ -412,6 +421,17 @@ struct CashRegisterView: View {
         .buttonStyle(.plain)
     }
     
+    /// productId → categoría (nombre y orden del menú) para el resumen impreso.
+    private var resumenCategories: [String: (name: String, sort: Int)] {
+        let categories = Dictionary(posVM.categories.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var result: [String: (name: String, sort: Int)] = [:]
+        for product in posVM.products {
+            guard let categoryId = product.categoryId, let category = categories[categoryId] else { continue }
+            result[product.id] = (category.name, category.sortOrder)
+        }
+        return result
+    }
+
     // MARK: - Hero (Ventas Netas del Corte)
 
     private var heroCard: some View {

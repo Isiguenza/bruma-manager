@@ -181,14 +181,26 @@ class CashRegisterViewModel: ObservableObject {
         paidOrders.filter { $0.tableId != nil }.count
     }
 
-    /// Productos vendidos agrupados por nombre (incluye variantes), de mayor a
-    /// menor cantidad. Mismo patrón que usaba `printSummary`.
+    /// Qué fue cada renglón para el resumen: vendido suelto, incluido de un
+    /// paquete (hijo a $0) o cortesía. Los anulados no cuentan para nada.
+    enum SummaryKind: String { case sold, package, guest }
+
+    /// Items de las órdenes pagadas, sin anulados, con su tipo.
+    var summaryItems: [(item: OrderItem, kind: SummaryKind)] {
+        paidOrders.flatMap { $0.items ?? [] }
+            .filter { $0.voided != true }
+            .map { item in
+                let kind: SummaryKind = item.parentItemId != nil ? .package : (item.isGuest == true ? .guest : .sold)
+                return (item, kind)
+            }
+    }
+
+    /// Productos VENDIDOS (sin anulados, incluidos de paquete ni cortesías)
+    /// agrupados por nombre (incluye variantes), de mayor a menor cantidad.
     var productsSold: [(name: String, qty: Int)] {
         var counts: [String: Int] = [:]
-        for order in paidOrders {
-            for item in order.items ?? [] {
-                counts[item.productName, default: 0] += item.quantity
-            }
+        for (item, kind) in summaryItems where kind == .sold {
+            counts[item.productName, default: 0] += item.quantity
         }
         return counts
             .map { (name: $0.key, qty: $0.value) }

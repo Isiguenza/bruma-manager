@@ -683,177 +683,217 @@ app.post('/print', async (req, res) => {
 });
 
 // Endpoint para imprimir resumen de ventas
+// ── Resumen del turno (productos vendidos, SIN dinero) ─────────────────────
+// Mismo lenguaje visual que el ticket de cuenta y el corte.
+//
+// Payload nuevo (iPad ResumenView y dashboard /cash-register):
+//   items: [{ productId, name, qty, category, categorySort, kind, hasPromo }]
+//   kind: "sold" | "package" (incluido de un paquete) | "guest" (cortesía)
+// Los anulados ya NO vienen (el cliente los filtra). El payload viejo
+// (`products: [{ name, qty, hasPromo }]`, ya sumado y sin categoría) se sigue
+// aceptando: sale como una sola categoría.
+
+/** Nombre a la izquierda (se parte en renglones si no cabe) y cantidad en la
+ * columna derecha del primer renglón. */
+function summaryRow(indent, name, qty, { bold = false } = {}) {
+  const qtyW = 6;
+  const nameW = 48 - qtyW - indent.length;
+  const rows = wrapText(name, nameW).map((part, i) => {
+    const text = (i === 0 ? indent : " ".repeat(indent.length)) + part;
+    return i === 0 ? text.padEnd(48 - qtyW) + String(qty).padStart(qtyW) : text;
+  });
+  rows[0] = bold ? commands.bold + rows[0] + commands.boldOff : rows[0];
+  return rows.join("\n") + "\n";
+}
+
+/** "Espresso - Doble" → { base: "Espresso", variant: "Doble" }.
+ * order_items.productName de una variante es "<producto> - <variante>". */
+function splitVariant(name) {
+  const i = String(name).lastIndexOf(" - ");
+  return i > 0 ? { base: name.slice(0, i), variant: name.slice(i + 3) } : { base: name, variant: null };
+}
+
+/** Agrupa por categoría → producto → variante. */
+function groupSummaryItems(items) {
+  const categories = new Map();
+  for (const item of items) {
+    const catName = item.category || "Otros";
+    if (!categories.has(catName)) {
+      categories.set(catName, { name: catName, sort: item.category ? Number(item.categorySort ?? 9999) : 99999, qty: 0, products: new Map() });
+    }
+    const cat = categories.get(catName);
+    const key = item.productId || splitVariant(item.name).base;
+    if (!cat.products.has(key)) cat.products.set(key, { qty: 0, names: new Map(), hasPromo: false });
+    const product = cat.products.get(key);
+    const qty = Number(item.qty) || 0;
+    cat.qty += qty;
+    product.qty += qty;
+    product.hasPromo = product.hasPromo || !!item.hasPromo;
+    product.names.set(item.name, (product.names.get(item.name) || 0) + qty);
+  }
+
+  return [...categories.values()]
+    .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
+    .map((cat) => ({
+      name: cat.name,
+      qty: cat.qty,
+      products: [...cat.products.values()].map((p) => {
+        const names = [...p.names.entries()];
+        // Un solo nombre: se imprime completo ("Boing Sabores - Mango").
+        if (names.length === 1) return { name: names[0][0], qty: p.qty, hasPromo: p.hasPromo, variants: [] };
+        const base = splitVariant(names[0][0]).base;
+        return {
+          name: base,
+          qty: p.qty,
+          hasPromo: p.hasPromo,
+          variants: names
+            .map(([n, q]) => ({ name: splitVariant(n).base === base ? (splitVariant(n).variant || n) : n, qty: q }))
+            .sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name)),
+        };
+      }).sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name)),
+    }));
+}
+
+function sumByName(items) {
+  const totals = new Map();
+  for (const item of items) totals.set(item.name, (totals.get(item.name) || 0) + (Number(item.qty) || 0));
+  return [...totals.entries()].map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name));
+}
+
+async function buildSummaryTicket(data) {
+  const items = Array.isArray(data.items)
+    ? data.items
+    : (data.products || []).map((p) => ({ name: p.name, qty: p.qty, hasPromo: p.hasPromo, kind: "sold", category: "Productos", categorySort: 0 }));
+  const sold = items.filter((i) => (i.kind || "sold") === "sold");
+  const packageItems = items.filter((i) => i.kind === "package");
+  const guestItems = items.filter((i) => i.kind === "guest");
+  const categories = groupSummaryItems(sold);
+  const soldPieces = sold.reduce((sum, i) => sum + (Number(i.qty) || 0), 0);
+  const promoMark = (p) => (p.hasPromo ? `*${p.name}` : p.name);
+
+  let c = commands.init + lineSpacing(LINE_BODY);
+
+  // Encabezado
+  c += commands.alignCenter;
+  const logoPath = path.join(__dirname, "public", "logo.jpg");
+  if (fs.existsSync(logoPath)) {
+    c += await imageToEscPosBitmap(logoPath, 400);
+  } else {
+    c += commands.textSizeLarge + commands.bold + "BRUMA\n" + commands.boldOff + commands.textSizeNormal;
+  }
+  c += vgap(GAP_SECTION);
+  c += commands.textSizeTall + commands.bold + "RESUMEN DEL TURNO\n" + commands.boldOff + commands.textSizeNormal;
+  c += vgap(GAP_ITEM);
+  if (data.openedAt) c += `Turno abierto · ${ticketDateTime(new Date(data.openedAt))}\n`;
+  c += `Impreso${data.printedBy ? ` por ${data.printedBy}` : ""} · ${ticketDateTime()}\n`;
+  c += commands.alignLeft;
+  c += vgap(GAP_SECTION);
+
+  // Conteos
+  c += commands.textSizeTall;
+  c += corteRow("Órdenes", String(Number(data.totalOrders) || 0), { bold: true });
+  c += commands.textSizeNormal;
+  if (data.tableCount != null) c += corteRow("En mesa", String(data.tableCount), { indent: 2 });
+  if (data.takeoutCount != null) c += corteRow("Para llevar", String(data.takeoutCount), { indent: 2 });
+  c += vgap(GAP_ITEM);
+  c += commands.textSizeTall;
+  c += corteRow("Piezas vendidas", String(soldPieces), { bold: true });
+  c += commands.textSizeNormal;
+  c += vgap(GAP_SECTION);
+
+  // Lo más vendido (por producto, todas las variantes juntas)
+  const top = categories.flatMap((cat) => cat.products).sort((a, b) => b.qty - a.qty).slice(0, 5);
+  if (top.length) {
+    c += corteSection("LO MÁS VENDIDO");
+    top.forEach((p, i) => { c += summaryRow(`${i + 1}. `, promoMark(p), p.qty); });
+    c += vgap(GAP_SECTION);
+  }
+
+  // Por categoría
+  for (const cat of categories) {
+    c += commands.bold + summaryRow("", cat.name.toUpperCase(), cat.qty).replace(/\n$/, "") + commands.boldOff + "\n";
+    c += hairLine() + vgap(GAP_ITEM);
+    cat.products.forEach((p, i) => {
+      if (i > 0 && (p.variants.length || cat.products[i - 1].variants.length)) c += vgap(GAP_ITEM);
+      c += summaryRow("", promoMark(p), p.qty);
+      for (const v of p.variants) c += summaryRow("    ", v.name, v.qty);
+    });
+    c += vgap(GAP_SECTION);
+  }
+
+  // Lo que salió pero no se vendió suelto
+  if (packageItems.length) {
+    c += corteSection("INCLUIDOS EN PAQUETES");
+    for (const p of sumByName(packageItems)) c += summaryRow("", p.name, p.qty);
+    c += vgap(GAP_SECTION);
+  }
+  if (guestItems.length) {
+    c += corteSection("CORTESÍAS");
+    for (const p of sumByName(guestItems)) c += summaryRow("", p.name, p.qty);
+    c += vgap(GAP_SECTION);
+  }
+
+  const promotions = data.promotionSummary || [];
+  if (promotions.length) {
+    c += corteSection("PROMOCIONES APLICADAS");
+    for (const promo of promotions) c += summaryRow("", promo.name, promo.count);
+    c += vgap(GAP_SECTION);
+  }
+  if (sold.some((i) => i.hasPromo)) {
+    c += commands.fontSmall + "* Con promoción aplicada\n" + commands.fontNormal;
+    c += vgap(GAP_SECTION);
+  }
+
+  c += commands.feed + commands.cut;
+  return c;
+}
+
+function demoSummaryData() {
+  const opened = new Date(Date.now() - 11 * 3600 * 1000);
+  const cat = (category, categorySort) => (productId, name, qty, extra = {}) =>
+    ({ productId, name, qty, category, categorySort, kind: "sold", ...extra });
+  const bebidas = cat("Bebidas", 1), entradas = cat("Entradas", 2), cocteles = cat("Cocteles", 3), fuertes = cat("Platos fuertes", 4);
+  return {
+    openedAt: opened.toISOString(),
+    printedBy: "Luis (PRUEBA)",
+    totalOrders: 64,
+    tableCount: 50,
+    takeoutCount: 14,
+    items: [
+      bebidas("p1", "Limonada - Natural", 18), bebidas("p1", "Limonada - Mineral", 9),
+      bebidas("p2", "Espresso - Doble", 8), bebidas("p2", "Espresso - Sencillo", 4),
+      bebidas("p3", "Boing Sabores - Mango", 7), bebidas("p4", "Agua mineral", 11),
+      entradas("p5", "Tostada de pulpo", 14), entradas("p6", "Empanada Mixta", 9, { hasPromo: true }),
+      entradas("p7", "Quesadilla de camarón - Pieza", 6),
+      cocteles("p8", "Coctel de camarón - Grande", 12), cocteles("p8", "Coctel de camarón - Chico", 5),
+      cocteles("p9", "Aguachile Verde", 16),
+      fuertes("p10", "Caldo de camarón pelado con verduras de temporada", 7), fuertes("p11", "Camarones Coco", 10),
+      { productId: "p7", name: "Quesadilla de camarón - Pieza", qty: 8, kind: "package" },
+      { productId: "p3", name: "Boing Sabores - Mango", qty: 8, kind: "package" },
+      { productId: "p4", name: "Agua mineral", qty: 2, kind: "guest" },
+    ],
+    promotionSummary: [{ name: "2x1 Empanadas", count: 9 }],
+  };
+}
+
 app.post('/print-summary', async (req, res) => {
   try {
-    const {
-      date,
-      registerName,
-      totalOrders,
-      takeoutCount,
-      tableCount,
-      products,
-      promotionSummary
-    } = req.body;
-
-    let content = "";
-    
-    // Inicializar impresora
-    content += commands.init;
-    
-    // Header centrado
-    content += commands.alignCenter;
-    content += commands.feedLine;
-    content += commands.bold;
-    content += "BRUMA\n";
-    content += commands.boldOff;
-    content += "Mariscos y Cocteles\n";
-    content += commands.feedLine;
-    content += commands.feedLine;
-    
-    // Título
-    content += commands.bold;
-    content += commands.textSizeDouble;
-    content += "RESUMEN DEL TURNO\n";
-    content += commands.textSizeNormal;
-    content += commands.boldOff;
-    content += commands.feedLine;
-    
-    // Fecha y hora
-    const dateObj = new Date(date);
-    const dateStr = dateObj.toLocaleDateString('es-MX', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric',
-      timeZone: 'America/Mexico_City'
-    });
-    const timeStr = dateObj.toLocaleTimeString('es-MX', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      timeZone: 'America/Mexico_City'
-    });
-    content += `${dateStr} - ${timeStr}\n`;
-    content += `${registerName}\n`;
-    content += commands.feedLine;
-    content += commands.feedLine;
-    
-    // Línea separadora
-    content += commands.alignLeft;
-    content += solidLine() + commands.feedLine;
-    content += commands.feedLine;
-    
-    // Conteo de órdenes (sin dinero — los montos van en el Corte)
-    const countLine = (label, value) => {
-      const v = `${value}`;
-      return label + " ".repeat(Math.max(1, 48 - label.length - v.length)) + v + "\n";
-    };
-
-    content += commands.bold;
-    content += commands.textSizeDouble;
-    content += "ORDENES:";
-    const ordersStr = `${totalOrders ?? 0}`;
-    content += " ".repeat(Math.max(1, 24 - 8 - ordersStr.length)) + ordersStr + "\n";
-    content += commands.textSizeNormal;
-    content += commands.boldOff;
-    content += commands.feedLine;
-
-    content += countLine("Para llevar:", takeoutCount ?? 0);
-    content += countLine("En mesa:", tableCount ?? 0);
-    content += commands.feedLine;
-    content += commands.feedLine;
-    
-    // Productos vendidos
-    if (products && products.length > 0) {
-      content += solidLine() + commands.feedLine;
-      content += commands.feedLine;
-      content += commands.bold;
-      content += "PRODUCTOS VENDIDOS\n";
-      content += commands.boldOff;
-      content += commands.feedLine;
-      
-      for (const product of products) {
-        const productName = product.hasPromo ? `*${product.name}` : product.name;
-        const qtyName = `${product.qty}x ${productName}`;
-        // Limitar longitud del nombre si es muy largo
-        const displayName = qtyName.length > 48 ? qtyName.slice(0, 45) + "..." : qtyName;
-        content += displayName + "\n";
-      }
-      
-      content += commands.feedLine;
-    }
-
-    if (promotionSummary && promotionSummary.length > 0) {
-      content += solidLine() + commands.feedLine;
-      content += commands.feedLine;
-      content += commands.bold;
-      content += "PROMOCIONES APLICADAS\n";
-      content += commands.boldOff;
-      content += commands.feedLine;
-
-      for (const promotion of promotionSummary) {
-        content += `${promotion.name} x${promotion.count}\n`;
-      }
-
-      content += commands.feedLine;
-    }
-    
-    // Footer
-    content += commands.feedLine;
-    content += commands.feedLine;
-    content += commands.alignCenter;
-    content += "Gracias por su preferencia\n";
-    content += commands.feedLine;
-    content += commands.feedLine;
-    content += commands.feedLine;
-    content += commands.cut;
-    
-    // Enviar a impresora con fallback USB
-    const client = new net.Socket();
-    let responseSent = false;
-    
-    client.connect(PRINTER_PORT, PRINTER_IP, () => {
-      console.log('✅ Conectado a impresora para resumen');
-      client.write(content);
-      client.end();
-    });
-    
-    client.on('error', async (err) => {
-      console.error('❌ Error de conexión:', err.message);
-      
-      // Intentar fallback USB
-      if (err.code === 'EHOSTUNREACH' || err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
-        console.log('🔄 Intentando imprimir resumen por USB...');
-        try {
-          await sendToUSBPrinter(content);
-          if (!responseSent) {
-            responseSent = true;
-            res.json({ success: true, message: 'Impreso por USB' });
-          }
-        } catch (usbError) {
-          console.error('❌ Fallback USB también falló:', usbError.message);
-          if (!responseSent) {
-            responseSent = true;
-            res.status(500).json({ error: 'Error de conexión con impresora' });
-          }
-        }
-      } else {
-        if (!responseSent) {
-          responseSent = true;
-          res.status(500).json({ error: 'Error de conexión con impresora' });
-        }
-      }
-    });
-    
-    client.on('close', () => {
-      console.log('✅ Resumen enviado a impresora');
-      if (!responseSent) {
-        responseSent = true;
-        res.json({ success: true });
-      }
-    });
-    
+    await sendToPrinter(await buildSummaryTicket(req.body));
+    res.json({ success: true });
   } catch (error) {
-    console.error('❌ Error:', error);
-    res.status(500).json({ error: error.message });
+    console.error("Error printing summary:", error);
+    res.status(500).json({ error: "Error al imprimir resumen" });
+  }
+});
+
+// Prueba del resumen con datos dummy: `npm run test:resumen`.
+app.post('/print-summary/test', async (req, res) => {
+  try {
+    await sendToPrinter(await buildSummaryTicket(demoSummaryData()));
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error printing resumen de prueba:", error);
+    res.status(500).json({ error: "Error al imprimir resumen de prueba" });
   }
 });
 
@@ -1523,161 +1563,249 @@ app.post('/print-comanda', async (req, res) => {
 });
 
 // Endpoint para imprimir corte
+// ── Corte de caja ─────────────────────────────────────────────────────────
+// Mismo lenguaje visual que el ticket de cuenta: logo, líneas finas, cifras
+// alineadas a la derecha y aire entre secciones (vgap/hairLine, ver arriba).
+
+/** "$12,450" — redondeado y con separador de miles. Negativos como "-$200"
+ * (el signo menos tipográfico no existe en WPC1252). */
+function money(n) {
+  const v = Math.round(Number(n) || 0);
+  return `${v < 0 ? "-" : ""}$${Math.abs(v).toLocaleString("en-US")}`;
+}
+
+/** Etiqueta a la izquierda y monto a la derecha, a lo ancho del papel. */
+function corteRow(label, value, { indent = 0, bold = false } = {}) {
+  const v = String(value);
+  let l = " ".repeat(indent) + String(label);
+  if (l.length > 47 - v.length) l = l.slice(0, 47 - v.length);
+  const row = l + " ".repeat(48 - l.length - v.length) + v;
+  return (bold ? commands.bold + row + commands.boldOff : row) + "\n";
+}
+
+function corteSection(title) {
+  return commands.bold + title + commands.boldOff + "\n" + hairLine() + vgap(GAP_ITEM);
+}
+
+/** Etiqueta chica centrada y el monto grande debajo. */
+function corteHero(label, value, size) {
+  return commands.alignCenter + label + "\n" +
+    size + commands.bold + value + "\n" + commands.boldOff + commands.textSizeNormal +
+    commands.alignLeft;
+}
+
+function corteTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone: "America/Mexico_City", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).format(d);
+}
+
+/** Construye los bytes del corte. Separado del endpoint para poder imprimir
+ * una prueba con datos dummy (POST /print-corte/test). Todo lo que no sea
+ * sales/tips es opcional: un iPad con build viejo no manda `register`,
+ * `printedBy` ni el detalle de movimientos, y el corte sale igual sin eso. */
+async function buildCorteTicket(data) {
+  const sales = data.sales || {};
+  const tips = data.tips || {};
+  const commissions = data.commissions || {};
+  const movements = data.movements || {};
+  const deposits = movements.deposits || { total: 0, count: 0 };
+  const withdrawals = movements.withdrawals || { total: 0, count: 0 };
+  const summary = data.summary || {};
+  const register = data.register || {};
+  const num = (v) => Number(v) || 0;
+  // Si la tarjeta/online no traen neto (sin comisión registrada), neto = bruto.
+  const netCard = sales.netCard ?? sales.card;
+  const netOnline = sales.netOnline ?? sales.online;
+  const tipsNetCard = tips.netCard ?? tips.card;
+  const tipsNetOnline = tips.netOnline ?? tips.online;
+
+  // Mismas fórmulas que CorteViewModel (iPad): "Ventas netas" es el número
+  // grande de la vista de Caja.
+  const netSales = num(sales.cash) + num(sales.transfer) + num(netCard) + num(netOnline);
+  const netTips = num(tips.cash) + num(tips.transfer) + num(tipsNetCard) + num(tipsNetOnline);
+  const cashTotal = num(sales.cash) + num(tips.cash);
+  const electronicTotal = netSales + netTips - cashTotal;
+
+  let c = commands.init + lineSpacing(LINE_BODY);
+
+  // Encabezado
+  c += commands.alignCenter;
+  const logoPath = path.join(__dirname, "public", "logo.jpg");
+  if (fs.existsSync(logoPath)) {
+    c += await imageToEscPosBitmap(logoPath, 400);
+  } else {
+    c += commands.textSizeLarge + commands.bold + "BRUMA\n" + commands.boldOff + commands.textSizeNormal;
+  }
+  c += vgap(GAP_SECTION);
+  c += commands.textSizeTall + commands.bold + "CORTE DE CAJA\n" + commands.boldOff + commands.textSizeNormal;
+  c += vgap(GAP_ITEM);
+  if (register.openedAt) {
+    c += `Abrió${register.openedByName ? ` ${register.openedByName}` : ""} · ${ticketDateTime(new Date(register.openedAt))}\n`;
+  }
+  c += `Impreso${data.printedBy ? ` por ${data.printedBy}` : ""} · ${ticketDateTime()}\n`;
+  c += commands.alignLeft;
+  c += vgap(GAP_SECTION);
+
+  // Ventas
+  c += corteSection("VENTAS");
+  c += corteRow("Efectivo", money(sales.cash));
+  c += corteRow("Tarjeta", money(sales.card));
+  if (num(netCard) !== num(sales.card)) c += corteRow("Neto", money(netCard), { indent: 2 });
+  if (num(sales.transfer) > 0) c += corteRow("Transferencia", money(sales.transfer));
+  if (num(sales.online) > 0) {
+    c += corteRow("En línea", money(sales.online));
+    if (num(netOnline) !== num(sales.online)) c += corteRow("Neto", money(netOnline), { indent: 2 });
+  }
+  c += vgap(GAP_ITEM);
+  c += corteRow("Total bruto", money(sales.total), { bold: true });
+  c += vgap(GAP_SECTION);
+
+  // Propinas
+  c += corteSection("PROPINAS");
+  c += corteRow("Efectivo", money(tips.cash));
+  c += corteRow("Tarjeta", money(tips.card));
+  if (num(tipsNetCard) !== num(tips.card)) c += corteRow("Neto", money(tipsNetCard), { indent: 2 });
+  if (num(tips.transfer) > 0) c += corteRow("Transferencia", money(tips.transfer));
+  if (num(tips.online) > 0) {
+    c += corteRow("En línea", money(tips.online));
+    if (num(tipsNetOnline) !== num(tips.online)) c += corteRow("Neto", money(tipsNetOnline), { indent: 2 });
+  }
+  c += vgap(GAP_ITEM);
+  c += corteRow("Total bruto", money(tips.total), { bold: true });
+  c += vgap(GAP_SECTION);
+
+  // Comisiones
+  const onlineCommission = commissions.online || {};
+  if (num(commissions.total) > 0 || num(onlineCommission.total) > 0) {
+    c += corteSection("COMISIONES");
+    if (num(commissions.total) > 0) {
+      c += corteRow(`Terminal (${(num(commissions.rateWithIVA) * 100).toFixed(2)}%)`, money(-num(commissions.total)));
+    }
+    if (num(onlineCommission.total) > 0) {
+      const fee = num(onlineCommission.fixedFeeWithIVA);
+      c += corteRow(`En línea (${(num(onlineCommission.rateWithIVA) * 100).toFixed(2)}% + $${fee.toFixed(2)})`, money(-num(onlineCommission.total)));
+    }
+    c += vgap(GAP_SECTION);
+  }
+
+  // Cómo se reparte el dinero: lo que está en la caja vs. lo que llega al banco
+  c += corteSection("POR FORMA DE PAGO");
+  c += corteRow("Efectivo + propinas efectivo", money(cashTotal), { bold: true });
+  c += vgap(GAP_ITEM);
+  c += corteRow("Tarjeta y transferencias", money(electronicTotal), { bold: true });
+  c += corteRow("Tarjeta neto", money(netCard), { indent: 2 });
+  c += corteRow("Propinas tarjeta neto", money(tipsNetCard), { indent: 2 });
+  if (num(netOnline) + num(tipsNetOnline) > 0) {
+    c += corteRow("En línea neto (con propinas)", money(num(netOnline) + num(tipsNetOnline)), { indent: 2 });
+  }
+  if (num(sales.transfer) + num(tips.transfer) > 0) {
+    c += corteRow("Transferencias", money(num(sales.transfer) + num(tips.transfer)), { indent: 2 });
+  }
+  c += vgap(GAP_SECTION);
+
+  // Los dos números grandes
+  c += hairLine() + vgap(GAP_SECTION);
+  c += corteHero("VENTAS NETAS", money(netSales), commands.textSizeDouble);
+  c += vgap(GAP_SECTION);
+  c += corteHero("Total con propinas", money(netSales + netTips), commands.textSizeDouble);
+  c += vgap(GAP_SECTION);
+  c += hairLine() + vgap(GAP_SECTION);
+
+  // Movimientos de caja, uno por uno si el iPad manda el detalle
+  const movementRows = [
+    ...(deposits.items || []).map((m) => ({ ...m, sign: 1 })),
+    ...(withdrawals.items || []).map((m) => ({ ...m, sign: -1 })),
+  ].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  if (num(deposits.total) > 0 || num(withdrawals.total) > 0) {
+    c += corteSection("MOVIMIENTOS DE CAJA");
+    if (movementRows.length) {
+      for (const m of movementRows) {
+        const what = m.description || (m.sign > 0 ? "Depósito" : "Sangría");
+        c += corteRow(`${corteTime(m.createdAt)}  ${what}`, money(m.sign * num(m.amount)));
+      }
+      c += vgap(GAP_ITEM);
+    }
+    if (num(deposits.total) > 0) c += corteRow(`Depósitos (${deposits.count})`, money(deposits.total), { bold: true });
+    if (num(withdrawals.total) > 0) c += corteRow(`Sangrías (${withdrawals.count})`, money(-num(withdrawals.total)), { bold: true });
+    c += vgap(GAP_SECTION);
+  }
+
+  // Cuadre de efectivo: la suma explícita, para poder revisarla en papel
+  c += corteSection("EFECTIVO EN CAJA");
+  if (register.initialCash != null) {
+    c += corteRow("Fondo inicial", money(register.initialCash));
+    c += corteRow("+ Ventas en efectivo", money(sales.cash));
+    c += corteRow("+ Propinas en efectivo", money(tips.cash));
+    if (num(deposits.total) > 0) c += corteRow("+ Depósitos", money(deposits.total));
+    if (num(withdrawals.total) > 0) c += corteRow("- Sangrías", money(-num(withdrawals.total)));
+    c += hairLine() + vgap(GAP_ITEM);
+  }
+  c += commands.textSizeTall;
+  c += corteRow("Efectivo esperado", money(summary.expectedCash), { bold: true });
+  c += commands.textSizeNormal;
+  c += vgap(GAP_SECTION);
+
+  // Resumen
+  const orders = num(summary.totalOrders);
+  c += corteSection("RESUMEN");
+  c += corteRow("Órdenes", String(orders));
+  if (num(summary.splitOrders) > 0) c += corteRow("Pagos divididos", String(summary.splitOrders));
+  if (orders > 0) c += corteRow("Ticket promedio", money(netSales / orders));
+  c += vgap(GAP_SECTION);
+
+  // Firmas
+  c += vgap(GAP_SECTION) + vgap(GAP_SECTION);
+  c += "  ________________      ________________\n";
+  c += "       Entregó               Recibió\n";
+
+  c += vgap(GAP_SECTION);
+  c += commands.feed + commands.cut;
+  return c;
+}
+
+/** Datos inventados para imprimir una prueba del corte sin tocar la caja. */
+function demoCorteData() {
+  const today = new Date();
+  const opened = new Date(today.getTime() - 11 * 3600 * 1000);
+  const at = (h) => new Date(opened.getTime() + h * 3600 * 1000).toISOString();
+  return {
+    register: { openedAt: opened.toISOString(), closedAt: null, initialCash: 1000, openedByName: "Ana (PRUEBA)" },
+    printedBy: "Luis (PRUEBA)",
+    sales: { total: 28450, cash: 8450, card: 15800, transfer: 1200, online: 3000, netCard: 15250, netOnline: 2890 },
+    tips: { total: 3320, cash: 620, card: 2500, transfer: 0, online: 200, netCard: 2413, netOnline: 193 },
+    commissions: { rateWithIVA: 0.0348, total: 637, online: { rateWithIVA: 0.0418, fixedFeeWithIVA: 3.48, total: 117 } },
+    movements: {
+      deposits: { total: 500, count: 1, items: [{ amount: 500, description: "Cambio extra", createdAt: at(2) }] },
+      withdrawals: { total: 1200, count: 2, items: [
+        { amount: 200, description: "Hielo", createdAt: at(4.5) },
+        { amount: 1000, description: "Pago proveedor pescado", createdAt: at(7) },
+      ] },
+    },
+    summary: { totalOrders: 64, splitOrders: 3, expectedCash: 9370 },
+  };
+}
+
 app.post('/print-corte', async (req, res) => {
   try {
-    const {
-      registerName,
-      openedAt,
-      closedAt,
-      sales,
-      tips,
-      commissions,
-      movements,
-      summary
-    } = req.body;
-
-    let content = "";
-    content += commands.init;
-    content += commands.alignCenter;
-    content += commands.bold;
-    content += commands.textSizeDouble;
-    content += "BRUMA\n";
-    content += commands.textSizeNormal;
-    content += commands.boldOff;
-    content += "Mariscos y Cocteles\n";
-    content += commands.feedLine;
-    content += commands.feedLine;
-    
-    // Título
-    content += commands.bold;
-    content += commands.textSizeDouble;
-    content += "CORTE\n";
-    content += commands.textSizeNormal;
-    content += commands.boldOff;
-    content += commands.feedLine;
-    
-    // Fecha
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Mexico_City' });
-    const timeStr = now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Mexico_City' });
-    content += `${dateStr} ${timeStr}\n`;
-    content += commands.feedLine;
-    
-    // VENTAS
-    content += commands.alignLeft;
-    content += commands.bold;
-    content += "VENTAS\n";
-    content += commands.boldOff;
-    content += solidLine() + commands.feedLine;
-    if (sales.cash > 0) content += `Efectivo:      $${Math.round(sales.cash)}\n`;
-    if (sales.card > 0) {
-      content += `Tarjeta:       $${Math.round(sales.card)}\n`;
-      if (sales.netCard !== sales.card) {
-        content += `  Neto real:   $${Math.round(sales.netCard)}\n`;
-      }
-    }
-    if (sales.transfer > 0) content += `Transferencia: $${Math.round(sales.transfer)}\n`;
-    if (sales.online > 0) {
-      content += `Online:        $${Math.round(sales.online)}\n`;
-      if (sales.netOnline !== sales.online) {
-        content += `  Neto real:   $${Math.round(sales.netOnline)}\n`;
-      }
-    }
-    content += solidLine() + commands.feedLine;
-    content += `Total bruto:   $${Math.round(sales.total)}\n`;
-    if ((sales.netCard && sales.netCard !== sales.card) || (sales.netOnline && sales.netOnline !== sales.online)) {
-      content += `Total neto:    $${Math.round(sales.cash + sales.transfer + (sales.netCard ?? sales.card) + (sales.netOnline ?? sales.online))}\n`;
-    }
-    content += commands.feedLine;
-
-    // PROPINAS
-    content += commands.bold;
-    content += "PROPINAS\n";
-    content += commands.boldOff;
-    content += solidLine() + commands.feedLine;
-    if (tips.cash > 0) content += `Efectivo:      $${Math.round(tips.cash)}\n`;
-    if (tips.card > 0) {
-      content += `Tarjeta:       $${Math.round(tips.card)}\n`;
-      if (tips.netCard !== tips.card) {
-        content += `  Neto real:   $${Math.round(tips.netCard)}\n`;
-      }
-    }
-    if (tips.transfer > 0) content += `Transferencia: $${Math.round(tips.transfer)}\n`;
-    if (tips.online > 0) {
-      content += `Online:        $${Math.round(tips.online)}\n`;
-      if (tips.netOnline !== tips.online) {
-        content += `  Neto real:   $${Math.round(tips.netOnline)}\n`;
-      }
-    }
-    content += solidLine() + commands.feedLine;
-    content += `Total bruto:   $${Math.round(tips.total)}\n`;
-    content += commands.feedLine;
-
-    // COMISIONES
-    if (commissions && commissions.total > 0) {
-      content += commands.bold;
-      content += "COMISIONES BANCARIAS\n";
-      content += commands.boldOff;
-      content += `Tasa: ${(commissions.rateWithIVA * 100).toFixed(2)}%\n`;
-      content += `Total: -$${Math.round(commissions.total)}\n`;
-      content += commands.feedLine;
-    }
-
-    // COMISIÓN ONLINE (Stripe) — distinta a la de terminal
-    if (commissions && commissions.online && commissions.online.total > 0) {
-      content += commands.bold;
-      content += "COMISION PEDIDOS EN LINEA\n";
-      content += commands.boldOff;
-      content += `Tasa: ${(commissions.online.rateWithIVA * 100).toFixed(2)}% + $${commissions.online.fixedFeeWithIVA.toFixed(2)}/op.\n`;
-      content += `Total: -$${Math.round(commissions.online.total)}\n`;
-      content += commands.feedLine;
-    }
-    
-    // MOVIMIENTOS DE CAJA
-    content += commands.bold;
-    content += "MOVIMIENTOS DE CAJA\n";
-    content += commands.boldOff;
-    content += solidLine() + commands.feedLine;
-    if (movements.deposits.total > 0) {
-      content += `Depósitos:     $${Math.round(movements.deposits.total)} (${movements.deposits.count})\n`;
-    }
-    if (movements.withdrawals.total > 0) {
-      content += `Sangrías:     -$${Math.round(movements.withdrawals.total)} (${movements.withdrawals.count})\n`;
-    }
-    content += commands.feedLine;
-    
-    // RESUMEN
-    content += commands.bold;
-    content += "RESUMEN\n";
-    content += commands.boldOff;
-    content += solidLine() + commands.feedLine;
-    content += `Órdenes:       ${summary.totalOrders}\n`;
-    if (summary.splitOrders > 0) content += `Pagos divididos: ${summary.splitOrders}\n`;
-    content += `Efectivo esperado: $${Math.round(summary.expectedCash)}\n`;
-    if (summary.finalCash) {
-      content += `Efectivo contado:  $${Math.round(summary.finalCash)}\n`;
-      const diff = summary.finalCash - summary.expectedCash;
-      if (diff >= 0) {
-        content += `Diferencia:    +$${Math.round(diff)}\n`;
-      } else {
-        content += `Faltante:      -$${Math.round(Math.abs(diff))}\n`;
-      }
-    }
-    content += commands.feedLine;
-    
-    // Footer
-    content += commands.alignCenter;
-    content += solidLine() + commands.feedLine;
-    content += commands.feedLine;
-    content += commands.feedLine;
-    content += commands.feed;
-    content += commands.cut;
-
-    await sendToPrinter(content);
+    await sendToPrinter(await buildCorteTicket(req.body));
     res.json({ success: true });
   } catch (error) {
     console.error("Error printing corte:", error);
     res.status(500).json({ error: "Error al imprimir corte" });
+  }
+});
+
+// Prueba del corte con datos dummy: `npm run test:corte` (ver package.json).
+app.post('/print-corte/test', async (req, res) => {
+  try {
+    await sendToPrinter(await buildCorteTicket(demoCorteData()));
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error printing corte de prueba:", error);
+    res.status(500).json({ error: "Error al imprimir corte de prueba" });
   }
 });
 

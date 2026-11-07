@@ -4,6 +4,9 @@ import SwiftUI
 /// SIN dinero (los montos van en el Corte). Alimentado por `vm.paidOrders`.
 struct ResumenView: View {
     @ObservedObject var vm: CashRegisterViewModel
+    /// productId → (categoría, orden) para agrupar el ticket impreso.
+    var categoryByProduct: [String: (name: String, sort: Int)] = [:]
+    var printedBy: String? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var printing = false
 
@@ -145,15 +148,37 @@ struct ResumenView: View {
         printing = true
         defer { printing = false }
 
-        let products = vm.productsSold.map { ["name": $0.name, "qty": $0.qty] }
-        let body: [String: Any] = [
-            "date": ISO8601DateFormatter().string(from: Date()),
-            "registerName": "Caja \(vm.register?.id.prefix(8) ?? "")",
+        // El print-server agrupa por categoría → producto → variante y separa
+        // incluidos de paquete y cortesías; aquí solo va cada renglón con su tipo.
+        let items: [[String: Any]] = vm.summaryItems.map { item, kind in
+            var dict: [String: Any] = [
+                "productId": item.productId,
+                "name": item.productName,
+                "qty": item.quantity,
+                "kind": kind.rawValue
+            ]
+            if let category = categoryByProduct[item.productId] {
+                dict["category"] = category.name
+                dict["categorySort"] = category.sort
+            }
+            if item.promotionId != nil { dict["hasPromo"] = true }
+            return dict
+        }
+        var promotions: [String: (name: String, count: Int)] = [:]
+        for (item, kind) in vm.summaryItems where kind == .sold {
+            guard let promotionId = item.promotionId else { continue }
+            let current = promotions[promotionId] ?? (item.promotionName ?? "Promoción", 0)
+            promotions[promotionId] = (current.name, current.count + item.quantity)
+        }
+        var body: [String: Any] = [
             "totalOrders": vm.paidOrders.count,
             "takeoutCount": vm.takeoutOrdersCount,
             "tableCount": vm.tableOrdersCount,
-            "products": products
+            "items": items,
+            "promotionSummary": promotions.values.map { ["name": $0.name, "count": $0.count] }
         ]
+        if let openedAt = vm.register?.openedAt { body["openedAt"] = openedAt }
+        if let printedBy, !printedBy.isEmpty { body["printedBy"] = printedBy }
 
         guard let url = URL(string: "\(APIService.shared.printServerURL)/print-summary") else { return }
         var request = URLRequest(url: url)

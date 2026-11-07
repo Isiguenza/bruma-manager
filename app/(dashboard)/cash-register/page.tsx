@@ -399,35 +399,38 @@ export default function CashRegisterPage() {
     if (!register) return;
     setPrintingSummary(true);
     try {
-      // Calcular totales por método de pago
-      const cashTotal = paidOrders
-        .filter(o => o.paymentMethod === 'cash')
-        .reduce((sum, o) => sum + parseFloat(o.total || '0'), 0);
-      
-      const cardTotal = paidOrders
-        .filter(o => o.paymentMethod === 'card' || o.paymentMethod === 'terminal_mercadopago')
-        .reduce((sum, o) => sum + parseFloat(o.total || '0'), 0);
-      
-      const transferTotal = paidOrders
-        .filter(o => o.paymentMethod === 'transfer')
-        .reduce((sum, o) => sum + parseFloat(o.total || '0'), 0);
-      
-      const totalTips = paidOrders
-        .reduce((sum, o) => sum + parseFloat(o.tip || '0'), 0);
-      
-      // Agrupar productos vendidos
-      const productSales: Record<string, number> = {};
-      const productPromotions: Record<string, boolean> = {};
+      // Categoría de cada producto, para que el print-server agrupe el ticket.
+      const [productsRes, categoriesRes] = await Promise.all([
+        fetch("/api/products"),
+        fetch("/api/categories"),
+      ]);
+      const productList: any[] = productsRes.ok ? await productsRes.json() : [];
+      const categoryList: any[] = categoriesRes.ok ? await categoriesRes.json() : [];
+      const categoryById = new Map(categoryList.map((c) => [c.id, c]));
+      const categoryByProduct = new Map(
+        productList.map((p) => [p.id, categoryById.get(p.categoryId)])
+      );
+
+      // Mismas reglas que el iPad (CashRegisterViewModel.summaryItems): los
+      // anulados no cuentan; hijos de paquete y cortesías van en su sección.
+      const items: any[] = [];
       const promotionSales: Record<string, { name: string; count: number }> = {};
       for (const order of paidOrders) {
         for (const item of order.items || []) {
-          const productName = item.productName;
+          if (item.voided) continue;
           const quantity = Number(item.quantity) || 0;
-          productSales[productName] = (productSales[productName] || 0) + quantity;
+          const kind = item.parentItemId ? "package" : item.isGuest ? "guest" : "sold";
+          const category = categoryByProduct.get(item.productId);
+          items.push({
+            productId: item.productId,
+            name: item.productName,
+            qty: quantity,
+            kind,
+            ...(category ? { category: category.name, categorySort: category.sortOrder } : {}),
+            ...(item.promotionId != null ? { hasPromo: true } : {}),
+          });
 
-          if (item.promotionId != null) {
-            productPromotions[productName] = true;
-
+          if (kind === "sold" && item.promotionId != null) {
             const promotionKey = String(item.promotionId);
             const promotion = promotionSales[promotionKey] || {
               name: item.promotionName || "Promoción",
@@ -438,24 +441,15 @@ export default function CashRegisterPage() {
           }
         }
       }
-      
-      // Convertir a array y ordenar por cantidad
-      const productList = Object.entries(productSales)
-        .map(([name, qty]) => ({ name, qty, hasPromo: productPromotions[name] || false }))
-        .sort((a, b) => b.qty - a.qty);
-      const promotionSummary = Object.values(promotionSales);
 
       const summaryData = {
-        date: new Date().toISOString(),
-        registerName: `Caja ${register.id.slice(0, 8)}`,
+        openedAt: register.openedAt,
+        printedBy: currentUser?.name,
         totalOrders: paidOrders.length,
-        cashTotal,
-        cardTotal,
-        transferTotal,
-        totalTips,
-        grandTotal: actualTotalSales,
-        products: productList,
-        promotionSummary
+        tableCount: paidOrders.filter((o) => o.tableId).length,
+        takeoutCount: paidOrders.filter((o) => !o.tableId).length,
+        items,
+        promotionSummary: Object.values(promotionSales),
       };
 
       const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.160:3001";

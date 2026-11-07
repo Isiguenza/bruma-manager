@@ -4,6 +4,9 @@ struct CorteView: View {
     @StateObject var vm = CorteViewModel()
     let registerId: String
     let register: CashRegister
+    /// Para el ticket impreso: id → nombre (quién abrió) y quién imprime.
+    var employeeNames: [String: String] = [:]
+    var printedBy: String? = nil
     
     var body: some View {
         ZStack {
@@ -442,7 +445,7 @@ struct CorteView: View {
     private var actionsSection: some View {
         HStack(spacing: 12) {
             Button(action: {
-                Task { await vm.printCorte() }
+                Task { await vm.printCorte(employeeNames: employeeNames, printedBy: printedBy) }
             }) {
                 HStack {
                     Image(systemName: "printer.fill")
