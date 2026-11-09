@@ -19,6 +19,7 @@ export type HistoryItem = {
   voided?: boolean;
   voidReason?: string | null;
   isGuest?: boolean;
+  loyaltyReward?: boolean;
   promotionName?: string | null;
   originalPrice?: string | null;
   parentItemId?: string | null;
@@ -127,7 +128,13 @@ function ItemCard({ item, childItems }: { item: HistoryItem; childItems: History
   const isPackage = childItems.length > 0;
 
   return (
-    <div className={cn("rounded-xl border bg-background p-3", item.voided && "border-dashed opacity-60")}>
+    <div
+      className={cn(
+        "rounded-xl border bg-background p-3",
+        item.loyaltyReward && "border-amber-400/60 bg-amber-400/10",
+        item.voided && "border-dashed opacity-60"
+      )}
+    >
       <div className="flex gap-3">
         <span
           className={cn(
@@ -166,7 +173,7 @@ function ItemCard({ item, childItems }: { item: HistoryItem; childItems: History
           <div className="flex flex-wrap gap-1.5 empty:hidden">
             {isPackage && <Chip>{item.packageLabel || "Paquete"}</Chip>}
             {(item.course ?? 1) > 1 && <Chip>Tiempo {item.course}</Chip>}
-            {item.isGuest && <Chip tone="blue">Cortesía</Chip>}
+            {item.loyaltyReward ? <Chip tone="gold">★ Premio</Chip> : item.isGuest && <Chip tone="blue">Cortesía</Chip>}
             {item.promotionName && <Chip tone="orange">{item.promotionName}</Chip>}
             {item.voided && <Chip tone="red">Anulado{item.voidReason ? `: ${item.voidReason}` : ""}</Chip>}
           </div>
@@ -215,7 +222,7 @@ function ItemCard({ item, childItems }: { item: HistoryItem; childItems: History
   );
 }
 
-function Chip({ children, tone }: { children: React.ReactNode; tone?: "blue" | "orange" | "red" }) {
+function Chip({ children, tone }: { children: React.ReactNode; tone?: "blue" | "orange" | "red" | "gold" }) {
   return (
     <span
       className={cn(
@@ -223,7 +230,8 @@ function Chip({ children, tone }: { children: React.ReactNode; tone?: "blue" | "
         !tone && "bg-muted text-muted-foreground",
         tone === "blue" && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
         tone === "orange" && "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-        tone === "red" && "bg-red-500/10 text-red-600 dark:text-red-400"
+        tone === "red" && "bg-red-500/10 text-red-600 dark:text-red-400",
+        tone === "gold" && "bg-amber-400/20 text-amber-700 dark:text-amber-300"
       )}
     >
       {children}

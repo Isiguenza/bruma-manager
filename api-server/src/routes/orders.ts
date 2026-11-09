@@ -138,6 +138,7 @@ async function prepareOrderItemWrites(orderId: string, items: any[]): Promise<Pr
       course: item.course || 1,
       deliveredToTable: item.deliveredToTable || false,
       isGuest: isGuestItem,
+      loyaltyReward: !isChild && isGuestItem && item.loyaltyReward === true,
       promotionId: isChild ? null : (item.promotionId || null),
       promotionName: isChild ? null : (item.promotionName || null),
       originalPrice: isChild ? null : (item.originalPrice != null ? item.originalPrice.toString() : null),
@@ -1790,6 +1791,7 @@ router.post("/orders/:id/split-into-tickets", async (req, res) => {
             course: item.course,
             deliveredToTable: item.deliveredToTable,
             isGuest: item.isGuest,
+            loyaltyReward: item.loyaltyReward,
             promotionId: item.promotionId,
             promotionName: item.promotionName,
             originalPrice: item.originalPrice,
@@ -2192,6 +2194,7 @@ router.post("/orders/:id/items/:itemId/replace", async (req, res) => {
       course: target.course,
       deliveredToTable: target.deliveredToTable,
       isGuest: target.isGuest,
+      loyaltyReward: target.loyaltyReward,
       subtotal: target.isGuest ? "0" : row.subtotal,
     });
     let parentRows = prepared.parentRows.map(inherit);
@@ -2693,6 +2696,153 @@ router.patch("/orders/:id/unhold", async (req, res) => {
   }
 });
 
+// POST /api/order-items/:id/loyalty-reward — canjea un premio del pase sobre
+// este platillo: descuenta el premio de la tarjeta, deja el platillo a $0
+// (is_guest) con la marca loyalty_reward, liga la tarjeta a la orden y
+// recalcula el total. Si el renglón trae varias unidades, solo una es premio:
+// se parte en (n-1) cobradas + 1 de premio.
+router.post("/order-items/:id/loyalty-reward", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { cardId } = req.body;
+    if (!cardId) return res.status(400).json({ error: "cardId es requerido" });
+
+    const item = await db.query.orderItems.findFirst({ where: eq(schema.orderItems.id, id) });
+    if (!item || item.voided) return res.status(404).json({ error: "Platillo no encontrado" });
+    if (item.parentItemId) return res.status(400).json({ error: "Los incluidos de un paquete ya van sin costo" });
+    if (item.isGuest) return res.status(400).json({ error: "Ese platillo ya va sin costo" });
+    const product = await db.query.products.findFirst({ where: eq(schema.products.id, item.productId) });
+    if (!product?.loyaltyEligible) {
+      return res.status(400).json({ error: `${item.productName} no aplica como premio de lealtad` });
+    }
+
+    const hasChildren = await db.query.orderItems.findFirst({ where: eq(schema.orderItems.parentItemId, id) });
+    if (item.quantity > 1 && hasChildren) {
+      return res.status(400).json({ error: "Para canjear un paquete, primero deja la cantidad en 1" });
+    }
+
+    // Descuento atómico: si dos iPads canjean a la vez, solo uno lo logra.
+    const [updatedCard] = await db
+      .update(schema.loyaltyCards)
+      .set({
+        rewardsAvailable: sql`${schema.loyaltyCards.rewardsAvailable} - 1`,
+        rewardsRedeemed: sql`${schema.loyaltyCards.rewardsRedeemed} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(schema.loyaltyCards.id, cardId), sql`${schema.loyaltyCards.rewardsAvailable} >= 1`))
+      .returning();
+    if (!updatedCard) return res.status(400).json({ error: "El pase no tiene premios disponibles" });
+
+    let rewardItemId = id;
+    if (item.quantity > 1) {
+      const unitPrice = parseFloat(item.unitPrice) || 0;
+      await db
+        .update(schema.orderItems)
+        .set({ quantity: item.quantity - 1, subtotal: (unitPrice * (item.quantity - 1)).toFixed(2) })
+        .where(eq(schema.orderItems.id, id));
+      const { id: _oldId, createdAt, ...rest } = item;
+      const [clone] = await db
+        .insert(schema.orderItems)
+        .values({
+          ...rest,
+          quantity: 1,
+          subtotal: "0",
+          isGuest: true,
+          loyaltyReward: true,
+          // Justo después del original, para que el carrito lo dibuje a su lado.
+          createdAt: new Date(new Date(createdAt).getTime() + 1),
+        })
+        .returning();
+      rewardItemId = clone.id;
+    } else {
+      await db
+        .update(schema.orderItems)
+        .set({ isGuest: true, loyaltyReward: true, subtotal: "0" })
+        .where(eq(schema.orderItems.id, id));
+    }
+
+    await db.insert(schema.loyaltyTransactions).values({ cardId, stampsAdded: 0, rewardRedeemed: true });
+
+    const orderItemsList = await db.query.orderItems.findMany({ where: eq(schema.orderItems.orderId, item.orderId) });
+    const newSubtotal = orderItemsList.reduce(
+      (sum: number, i: any) => (i.isGuest || i.voided ? sum : sum + (parseFloat(i.subtotal) || 0)),
+      0
+    );
+    await db
+      .update(schema.orders)
+      .set({ subtotal: newSubtotal.toString(), total: newSubtotal.toString(), loyaltyCardId: cardId, updatedAt: new Date() })
+      .where(eq(schema.orders.id, item.orderId));
+
+    sendAppleWalletPush(cardId).catch(console.error);
+    createOrUpdateGoogleWalletObject(updatedCard).catch(console.error);
+
+    const order = await db.query.orders.findFirst({ where: eq(schema.orders.id, item.orderId), with: { items: true } });
+    emitOrderUpdated(order);
+    res.json({ order, card: updatedCard, rewardItemId });
+  } catch (error) {
+    console.error("[POST /order-items/:id/loyalty-reward] 500 error:", error);
+    res.status(500).json({ error: "Error al canjear el premio" });
+  }
+});
+
+// DELETE /api/order-items/:id/loyalty-reward — deshace un canje (el mesero se
+// equivocó o el cliente ya no lo quiere): el platillo vuelve a cobrarse y el
+// premio regresa al pase ligado a la orden, que puede volver a canjearlo.
+router.delete("/order-items/:id/loyalty-reward", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const item = await db.query.orderItems.findFirst({ where: eq(schema.orderItems.id, id) });
+    if (!item) return res.status(404).json({ error: "Platillo no encontrado" });
+    if (!item.loyaltyReward) return res.status(400).json({ error: "Ese platillo no es un premio" });
+
+    const order = await db.query.orders.findFirst({ where: eq(schema.orders.id, item.orderId) });
+    const cardId = order?.loyaltyCardId ?? req.body?.cardId ?? null;
+
+    await db
+      .update(schema.orderItems)
+      .set({
+        isGuest: false,
+        loyaltyReward: false,
+        subtotal: sql`${schema.orderItems.quantity} * ${schema.orderItems.unitPrice}`,
+      })
+      .where(eq(schema.orderItems.id, id));
+
+    let card = null;
+    if (cardId) {
+      [card] = await db
+        .update(schema.loyaltyCards)
+        .set({
+          rewardsAvailable: sql`${schema.loyaltyCards.rewardsAvailable} + 1`,
+          rewardsRedeemed: sql`GREATEST(${schema.loyaltyCards.rewardsRedeemed} - 1, 0)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.loyaltyCards.id, cardId))
+        .returning();
+      if (card) {
+        sendAppleWalletPush(cardId).catch(console.error);
+        createOrUpdateGoogleWalletObject(card).catch(console.error);
+      }
+    }
+
+    const orderItemsList = await db.query.orderItems.findMany({ where: eq(schema.orderItems.orderId, item.orderId) });
+    const newSubtotal = orderItemsList.reduce(
+      (sum: number, i: any) => (i.isGuest || i.voided ? sum : sum + (parseFloat(i.subtotal) || 0)),
+      0
+    );
+    await db
+      .update(schema.orders)
+      .set({ subtotal: newSubtotal.toString(), total: newSubtotal.toString(), updatedAt: new Date() })
+      .where(eq(schema.orders.id, item.orderId));
+
+    const updatedOrder = await db.query.orders.findFirst({ where: eq(schema.orders.id, item.orderId), with: { items: true } });
+    emitOrderUpdated(updatedOrder);
+    res.json({ order: updatedOrder, card });
+  } catch (error) {
+    console.error("[DELETE /order-items/:id/loyalty-reward] 500 error:", error);
+    res.status(500).json({ error: "Error al eliminar el canje" });
+  }
+});
+
 // PATCH /api/order-items/:id/guest - Mark/unmark item as guest and recalculate order total
 router.patch("/order-items/:id/guest", async (req, res) => {
   try {
@@ -2703,6 +2853,7 @@ router.patch("/order-items/:id/guest", async (req, res) => {
       .update(schema.orderItems)
       .set({
         isGuest: isGuest === true,
+        ...(isGuest === true ? {} : { loyaltyReward: false }),
         subtotal: isGuest === true ? "0" : sql`${schema.orderItems.quantity} * ${schema.orderItems.unitPrice}`,
       })
       .where(eq(schema.orderItems.id, id))

@@ -44,6 +44,10 @@ struct CartItemRow: View {
     /// con un toque y sus controles normales (+/−, menú contextual) se apagan.
     private var adminAction: CartAdminAction? { vm.cartAdminAction }
     private var isAdminSelected: Bool { vm.isCartAdminSelected(item) }
+    /// En "Canjear premio", los platillos que no se pueden canjear se atenúan.
+    private var isRewardIneligible: Bool {
+        adminAction == .reward && !isPackageChild && (item.isGuest || !vm.isLoyaltyEligible(item))
+    }
 
     // When inside a promotion group, show original price (discount is shown at group level)
     private var itemTotal: Double {
@@ -69,6 +73,19 @@ struct CartItemRow: View {
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(borderColor, lineWidth: 1))
             }
         }
+        // Premio de lealtad: tarjeta dorada (sobrevive a salir de la mesa: viene del servidor).
+        .overlay {
+            if item.isLoyaltyReward && !isPackageChild {
+                RoundedRectangle(cornerRadius: isPackage ? 13 : 10, style: .continuous)
+                    .strokeBorder(Color.loyaltyGold.opacity(0.8), lineWidth: 1.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: isPackage ? 13 : 10, style: .continuous)
+                            .fill(Color.loyaltyGold.opacity(0.10))
+                    )
+                    .allowsHitTesting(false)
+            }
+        }
+        .opacity(isRewardIneligible ? 0.4 : 1)
         .overlay {
             if let adminAction, isAdminSelected {
                 RoundedRectangle(cornerRadius: isPackage ? 13 : 10, style: .continuous)
@@ -85,6 +102,15 @@ struct CartItemRow: View {
             if adminAction != nil { vm.cartAdminTap(item) }
         }
         .contextMenu {
+            // Deshacer un canje: aplica aunque el platillo ya esté en cocina.
+            if adminAction == nil && item.isLoyaltyReward && !isPackageChild {
+                Button(role: .destructive) {
+                    Task { await vm.undoLoyaltyReward(item) }
+                } label: {
+                    Label("Eliminar canje", systemImage: "star.slash")
+                }
+                Divider()
+            }
             if adminAction != nil {
                 EmptyView()
             } else if isPackageChild {
@@ -201,6 +227,19 @@ struct CartItemRow: View {
                     Label("Cambiando", systemImage: "arrow.2.circlepath")
                         .font(.caption2.weight(.bold))
                         .foregroundColor(.orange)
+                }
+
+                if item.isLoyaltyReward && !isPackageChild {
+                    Label("Premio", systemImage: "star.fill")
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.loyaltyGold))
+                } else if isRewardIneligible {
+                    Text(item.isGuest ? "Ya va sin costo" : "No aplica como premio")
+                        .font(.caption2.weight(.medium))
+                        .foregroundColor(.gray)
                 }
 
                 // Promotion badge

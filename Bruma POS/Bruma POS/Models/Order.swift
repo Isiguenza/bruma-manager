@@ -38,6 +38,8 @@ struct Order: Codable, Identifiable {
     let deliveryLat: String?
     let deliveryLng: String?
     let estimatedReadyMinutes: Int?
+    /// Pase de lealtad ligado a la orden (se lee en Menú Admin → Pase de lealtad).
+    var loyaltyCardId: String? = nil
 
     var isSplitPayment: Bool {
         (payments?.count ?? 0) > 1
@@ -96,7 +98,8 @@ struct Order: Codable, Identifiable {
             discountAmount: discountAmount, discountName: discountName, payments: payments,
             priority: priority ?? self.priority, onHold: onHold ?? self.onHold, splitGroupId: splitGroupId,
             customerPhone: customerPhone, deliveryType: deliveryType, deliveryAddress: deliveryAddress,
-            deliveryLat: deliveryLat, deliveryLng: deliveryLng, estimatedReadyMinutes: estimatedReadyMinutes
+            deliveryLat: deliveryLat, deliveryLng: deliveryLng, estimatedReadyMinutes: estimatedReadyMinutes,
+            loyaltyCardId: loyaltyCardId
         )
     }
 }
@@ -143,6 +146,8 @@ struct OrderItem: Codable, Identifiable {
     let voided: Bool?
     let createdAt: String?
     let isGuest: Bool?
+    /// Premio de lealtad (va con isGuest = true). Opcional: payloads viejos no lo traen.
+    let loyaltyReward: Bool?
     let promotionId: String?
     let promotionName: String?
     let originalPrice: String?
@@ -217,6 +222,17 @@ struct CartItem: Identifiable, Codable {
     
     // Guest fields
     var isGuest: Bool
+    /// Premio de lealtad canjeado sobre este renglón (siempre con isGuest = true).
+    /// Opcional para que los borradores locales viejos (CartDraftStore) sigan decodificando.
+    var loyaltyReward: Bool? = nil
+    var isLoyaltyReward: Bool { loyaltyReward == true }
+
+    /// Copia con id local nuevo (para partir un renglón en dos sin repetir id).
+    func duplicated() -> CartItem {
+        var copy = self
+        copy.id = UUID()
+        return copy
+    }
 
     /// Non-persisted link used to keep package children attached to their parent in the cart.
     var parentLocalId: UUID? = nil
@@ -291,6 +307,7 @@ struct CartItem: Identifiable, Codable {
         )
         cartItem.parentOrderItemId = item.parentItemId
         cartItem.packageLabel = item.packageLabel
+        cartItem.loyaltyReward = item.loyaltyReward
         return cartItem
     }
 }

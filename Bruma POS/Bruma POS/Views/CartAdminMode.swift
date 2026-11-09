@@ -13,6 +13,7 @@ extension CartAdminAction {
         case .guest: return .blue
         case .replace: return .orange
         case .customModifier: return .purple
+        case .reward: return .loyaltyGold
         }
     }
 
@@ -22,6 +23,7 @@ extension CartAdminAction {
         case .guest: return "gift.fill"
         case .replace: return "arrow.2.circlepath"
         case .customModifier: return "plus.circle.fill"
+        case .reward: return "star.fill"
         }
     }
 
@@ -40,6 +42,11 @@ struct CartAdminBanner: View {
         case .delete: return "Toca los platillos a eliminar."
         case .guest: return "Toca los platillos a invitar."
         case .customModifier: return "Toca un platillo, o no elijas ninguno para cobrarlo aparte en la cuenta."
+        case .reward:
+            let name = vm.loyaltyCard.map { " de \($0.displayName)" } ?? ""
+            return vm.loyaltyRedeemableCartItems.isEmpty
+                ? "Ningún platillo de esta cuenta aplica como premio."
+                : "Toca el platillo que es el premio\(name). Solo se pueden los marcados como premio."
         case .replace:
             guard let target = vm.replacementTarget else { return "Toca el platillo (o el incluido de un paquete) que vas a cambiar." }
             return target.parentLocalId != nil
@@ -144,6 +151,16 @@ struct CartAdminFooter: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             case .guest:
                 EmptyView()
+            case .reward:
+                if let card = vm.loyaltyCard {
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill").foregroundColor(.loyaltyGold)
+                        Text("\(card.displayName) · \(card.rewardsAvailable) premio\(card.rewardsAvailable == 1 ? "" : "s") disponible\(card.rewardsAvailable == 1 ? "" : "s")")
+                            .foregroundColor(Color(white: 0.7))
+                    }
+                    .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
 
             HStack(spacing: 12) {
@@ -180,6 +197,19 @@ struct CartAdminFooter: View {
                 }
             }
         }
+        .alert("¿Canjear premio?", isPresented: $vm.showLoyaltyRewardConfirm) {
+            Button("Canjear") { Task { await vm.confirmCartAdminAction() } }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text(rewardConfirmMessage)
+        }
+    }
+
+    private var rewardConfirmMessage: String {
+        guard let id = vm.cartAdminSelection.keys.first, let item = vm.cart.first(where: { $0.id == id }) else { return "" }
+        let who = vm.loyaltyCard.map { " de \($0.displayName)" } ?? ""
+        let unit = item.quantity > 1 ? "1 de \(item.quantity) · " : ""
+        return "\(unit)\(item.productName) queda gratis como premio\(who). Se descuenta un premio del pase."
     }
 
     private var confirmLabel: String {
@@ -191,6 +221,11 @@ struct CartAdminFooter: View {
                 return "Agregar a \(item.productName)"
             }
             return "Cobrar aparte en la cuenta"
+        case .reward:
+            if let id = vm.cartAdminSelection.keys.first, let item = vm.cart.first(where: { $0.id == id }) {
+                return "Canjear \(item.productName)"
+            }
+            return "Elige el platillo"
         case .replace: return ""
         }
     }
@@ -312,6 +347,8 @@ struct CartAdminPinDialog: View {
             return "\(vm.cartAdminSelection.count) platillo(s) a invitar"
         case .customModifier:
             return "\(vm.cartAdminModifierLabel) · \(vm.formatCurrency(vm.cartAdminModifierAmountValue))"
+        case .reward:
+            return nil
         }
     }
 
@@ -391,4 +428,10 @@ struct CartAdminPinDialog: View {
             }
         }
     }
+}
+
+
+extension Color {
+    /// Dorado de los premios de lealtad (tarjeta del carrito, chip "Premio").
+    static let loyaltyGold = Color(red: 0.96, green: 0.76, blue: 0.26)
 }

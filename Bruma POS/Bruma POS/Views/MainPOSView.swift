@@ -140,6 +140,12 @@ struct MainPOSView: View {
                     AdminMenuDialog(vm: vm)
                 }
             }
+
+            if vm.showLoyaltyPassSheet {
+                dialogOverlay(onDismiss: { vm.showLoyaltyPassSheet = false }) {
+                    LoyaltyPassDialog(vm: vm)
+                }
+            }
             
             if vm.showCartAdminPin {
                 dialogOverlay(onDismiss: { vm.cancelCartAdminPin() }) {

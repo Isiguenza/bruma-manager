@@ -712,6 +712,55 @@ class APIService {
         return try await request(url)
     }
     
+    func fetchLoyaltyCard(id: String) async throws -> LoyaltyCard {
+        let url = URL(string: "\(baseURL)/api/loyalty-cards/\(id)")!
+        return try await request(url)
+    }
+
+    /// Liga (o desliga, con nil) el pase de lealtad a una orden abierta, para que
+    /// sobreviva a salir de la mesa y sume los sellos al cobrar.
+    func setOrderLoyaltyCard(orderId: String, cardId: String?) async throws {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)")!
+        let (_, response) = try await requestRaw(url, method: "PATCH", body: ["loyaltyCardId": cardId ?? NSNull()])
+        guard (200...299).contains(response.statusCode) else { throw APIError.serverError }
+    }
+
+    struct LoyaltyRewardResult: Decodable {
+        let order: Order
+        let card: LoyaltyCard
+        let rewardItemId: String
+    }
+
+    /// Canjea un premio del pase sobre un platillo ya guardado: lo deja a $0 con la
+    /// marca de premio, descuenta el premio de la tarjeta y la liga a la orden.
+    func redeemLoyaltyReward(itemId: String, cardId: String) async throws -> LoyaltyRewardResult {
+        let url = URL(string: "\(baseURL)/api/order-items/\(itemId)/loyalty-reward")!
+        return try await request(url, method: "POST", body: ["cardId": cardId])
+    }
+
+    struct LoyaltyRewardUndoResult: Decodable {
+        let order: Order
+        let card: LoyaltyCard?
+    }
+
+    /// Deshace el canje de un platillo ya guardado: vuelve a cobrarse y el premio
+    /// regresa al pase ligado a la orden.
+    func undoLoyaltyReward(itemId: String, cardId: String?) async throws -> LoyaltyRewardUndoResult {
+        let url = URL(string: "\(baseURL)/api/order-items/\(itemId)/loyalty-reward")!
+        return try await request(url, method: "DELETE", body: cardId.map { ["cardId": $0] })
+    }
+
+    /// Devuelve un premio a la tarjeta (canje de un platillo que no se había mandado).
+    func restoreLoyaltyReward(cardId: String) async throws -> LoyaltyCard {
+        let url = URL(string: "\(baseURL)/api/loyalty-cards/\(cardId)/restore-reward")!
+        return try await request(url, method: "POST")
+    }
+
+    func redeemLoyaltyCard(cardId: String) async throws -> LoyaltyCard {
+        let url = URL(string: "\(baseURL)/api/loyalty-cards/\(cardId)/redeem")!
+        return try await request(url, method: "POST")
+    }
+
     func addStamps(cardId: String, count: Int) async throws -> LoyaltyCard {
         let url = URL(string: "\(baseURL)/api/loyalty-cards/\(cardId)/stamps")!
         let body = ["stamps": count]

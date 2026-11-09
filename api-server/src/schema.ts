@@ -179,6 +179,8 @@ export const products = pgTable("products", {
   hasVariants: boolean("has_variants").notNull().default(false),
   variants: text("variants"), // JSON: [{ name: "Pieza", price: "50.00" }, { name: "Orden", price: "150.00" }]
   flowTags: jsonb("flow_tags").notNull().default(sql`'[]'::jsonb`),
+  // Se puede canjear como premio de lealtad (switch en el detalle del platillo).
+  loyaltyEligible: boolean("loyalty_eligible").notNull().default(false),
   active: boolean("active").notNull().default(true),
   menuImages: text("menu_images"), // JSON: ["url1", "url2", ...] — up to 4 images for web menu
   menuVideo: text("menu_video"),   // Single video URL for web menu
@@ -480,6 +482,8 @@ export const orderItems = pgTable("order_items", {
   promotionDiscount: decimal("promotion_discount", { precision: 10, scale: 2 }),
   // Guest/invited item
   isGuest: boolean("is_guest").notNull().default(false), // Item invitado (no se cobra)
+  // Premio de lealtad: va con isGuest = true; solo distingue premio de cortesía.
+  loyaltyReward: boolean("loyalty_reward").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

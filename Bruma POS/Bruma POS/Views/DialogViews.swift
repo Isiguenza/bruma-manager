@@ -580,6 +580,16 @@ struct AdminMenuDialog: View {
 
             VStack(spacing: 10) {
                 AdminPillButton(
+                    icon: "star.fill",
+                    label: vm.loyaltyCard.map { "Pase de lealtad · \($0.customerName)" } ?? "Pase de lealtad",
+                    iconColor: .loyaltyGold,
+                    action: {
+                        vm.showAdminMenu = false
+                        vm.showLoyaltyPassSheet = true
+                    }
+                )
+
+                AdminPillButton(
                     icon: "gift.fill",
                     label: "Invitar Productos",
                     iconColor: .white,

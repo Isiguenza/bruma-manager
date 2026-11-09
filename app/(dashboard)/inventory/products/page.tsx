@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CaretRight, DotsThree, FlowArrow, GlobeX, MagnifyingGlass, PencilSimple, Plus, Spinner, Trash, X } from "@phosphor-icons/react";
+import { CaretRight, DotsThree, FlowArrow, GlobeX, MagnifyingGlass, PencilSimple, Plus, Spinner, Star, Trash, X } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { useSearchSeed } from "@/lib/use-search-seed";
 import { Button } from "@/components/ui/button";
@@ -563,7 +563,7 @@ function ProductRow({
   const thumb = productThumb(p);
   const [broken, setBroken] = useState(false);
   const variants = p.hasVariants ? parseVariants(p.variants).length : 0;
-  const raw = p as Product & { hasCustomFlow?: boolean; menuWebVisible?: boolean };
+  const raw = p as Product & { hasCustomFlow?: boolean; menuWebVisible?: boolean; loyaltyEligible?: boolean };
 
   return (
     <div
@@ -589,6 +589,7 @@ function ProductRow({
       <div className={cn("min-w-0 flex-1", !p.active && "opacity-60")}>
         <div className="flex items-center gap-2">
           <p className="truncate font-medium">{p.name}</p>
+          {raw.loyaltyEligible && <Star className="size-3.5 shrink-0 text-amber-500" weight="fill" aria-label="Premio de lealtad" />}
           {raw.hasCustomFlow && <FlowArrow className="size-3.5 shrink-0 text-primary" aria-label="Flujo propio" />}
           {raw.menuWebVisible === false && <GlobeX className="size-3.5 shrink-0 text-muted-foreground" aria-label="Oculto en el menú web" />}
         </div>

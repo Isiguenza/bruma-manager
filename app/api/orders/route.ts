@@ -110,6 +110,7 @@ export async function GET(request: NextRequest) {
             voidReason: true,
             voidedBy: true,
             isGuest: true,
+            loyaltyReward: true,
             promotionId: true,
             promotionName: true,
             originalPrice: true,

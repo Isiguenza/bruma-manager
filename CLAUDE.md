@@ -587,6 +587,34 @@ el mismo rango `[from, to)` que está viendo la vista. Recibe `tz` (la página m
 escriben como hora de pared local (`wallClock`), si no un gasto de las 9 pm
 saldría con la fecha del día siguiente.
 
+## Pase de lealtad en el POS: lectura y canje de premio
+
+Se lee en **Menú Admin → Pase de lealtad** (`Views/LoyaltyPassDialog.swift`,
+cámara dentro del modal); la pantalla de cobro solo muestra un indicador. El
+pase se liga a la orden en el servidor (`PATCH /orders/:id {loyaltyCardId}` vía
+`POSViewModel.linkLoyaltyCard`) y se restaura al volver a la mesa (`didSet` de
+`currentOrderId` → `syncLoyaltyCardWithOrder`); los sellos se siguen sumando al
+cobrar como antes.
+
+Canjear premio = `CartAdminAction.reward`: se elige UN platillo del carrito
+(sin PIN, con confirmación). Solo aplican los productos con
+`products.loyalty_eligible` (switch "Premio de lealtad" en el detalle del
+platillo del dashboard); los demás se atenúan. Ya guardado →
+`POST /api/order-items/:id/loyalty-reward` (descuenta el premio de forma
+atómica, rechaza no marcados, parte el renglón si trae varias unidades, deja
+`is_guest` + `loyalty_reward`, liga la tarjeta y recalcula). Sin enviar → se
+canjea con `/loyalty-cards/:id/redeem` y el renglón viaja con `loyaltyReward`
+al mandarlo. `loyalty_reward` solo distingue premio de cortesía (tarjeta dorada
++ chip "Premio"); para cobro y reportes sigue contando como cortesía.
+Deshacer: mantener presionada la tarjeta dorada → "Eliminar canje"
+(`POSViewModel.undoLoyaltyReward`). Guardado → `DELETE
+/api/order-items/:id/loyalty-reward` (vuelve a cobrarse y devuelve el premio
+al pase ligado a la orden); sin enviar → `POST /loyalty-cards/:id/restore-reward`.
+El renglón partido por el canje NO se vuelve a juntar con el original.
+Columnas: `drizzle/manual_order_item_loyalty_reward.sql` — **correr ANTES de
+desplegar** api-server/dashboard: ambos leen todas las columnas de `products` y
+`order_items` y sin ellas truenan las consultas.
+
 ## Tarjetas de lealtad (Apple/Google Wallet): cambiar el diseño
 
 El arte original vive en `api-server/public/pass-assets/` (las copias en

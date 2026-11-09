@@ -31,6 +31,8 @@ struct Product: Codable, Identifiable {
     let category: ProductCategory?
     let imageUrl: String?
     let flowTags: [String]
+    /// Se puede canjear como premio de lealtad (switch del dashboard).
+    let loyaltyEligible: Bool
 
     init(
         id: String,
@@ -46,7 +48,8 @@ struct Product: Codable, Identifiable {
         active: Bool,
         category: ProductCategory?,
         imageUrl: String?,
-        flowTags: [String] = []
+        flowTags: [String] = [],
+        loyaltyEligible: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -62,10 +65,11 @@ struct Product: Codable, Identifiable {
         self.category = category
         self.imageUrl = imageUrl
         self.flowTags = flowTags
+        self.loyaltyEligible = loyaltyEligible
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, description, price, platformPrice, categoryId, subcategoryId, groupId, hasVariants, variants, active, category, imageUrl, flowTags
+        case id, name, description, price, platformPrice, categoryId, subcategoryId, groupId, hasVariants, variants, active, category, imageUrl, flowTags, loyaltyEligible
     }
 
     init(from decoder: Decoder) throws {
@@ -84,6 +88,7 @@ struct Product: Codable, Identifiable {
         category = try values.decodeIfPresent(ProductCategory.self, forKey: .category)
         imageUrl = try values.decodeIfPresent(String.self, forKey: .imageUrl)
         flowTags = try values.decodeIfPresent([String].self, forKey: .flowTags) ?? []
+        loyaltyEligible = try values.decodeIfPresent(Bool.self, forKey: .loyaltyEligible) ?? false
     }
     
     var parsedVariants: [ProductVariant] {

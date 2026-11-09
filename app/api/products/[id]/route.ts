@@ -66,6 +66,7 @@ export async function PUT(
         menuImages: menuImages !== undefined ? menuImages : undefined,
         menuVideo: menuVideo !== undefined ? menuVideo : undefined,
         menuWebVisible: menuWebVisible !== undefined ? menuWebVisible : undefined,
+        loyaltyEligible: body.loyaltyEligible !== undefined ? body.loyaltyEligible === true : undefined,
         updatedAt: new Date(),
       })
       .where(eq(products.id, id))

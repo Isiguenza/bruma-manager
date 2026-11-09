@@ -760,62 +760,36 @@ struct PaymentView: View {
 
     // MARK: - Loyalty (dentro del sheet de confirmar)
 
-    /// Fila única — abre un menú (sin tarjeta) o el modal de sellos/premio
-    /// (con tarjeta ya leída), en vez del bloque grande de antes.
+    /// Solo indicador: el pase ahora se lee en Menú Admin → Pase de lealtad.
+    /// Con pase ligado avisa a quién se le suman los sellos; tocarlo abre el
+    /// mismo modal del pase.
     @ViewBuilder
     private var loyaltyRow: some View {
-        if let card = vm.loyaltyCard {
-            Button {
-                vm.showLoyaltyStampsDialog = true
-            } label: {
-                HStack {
-                    HStack(spacing: 10) {
-                        Image(systemName: "star.fill").foregroundStyle(.yellow)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(card.displayName).foregroundStyle(.white).fontWeight(.semibold)
-                            Text("\(card.stamps)/\(card.stampsPerReward) sellos")
-                                .font(.caption2)
-                                .foregroundStyle(.gray)
-                        }
+        Button {
+            vm.showLoyaltyPassSheet = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "star.fill").foregroundStyle(Color.loyaltyGold)
+                if let card = vm.loyaltyCard {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Sellos para \(card.displayName)").foregroundStyle(.white).fontWeight(.semibold)
+                        Text("\(card.stamps % max(card.stampsPerReward, 1))/\(card.stampsPerReward) sellos · +1 al cobrar")
+                            .font(.caption2)
+                            .foregroundStyle(.gray)
                     }
-                    Spacer()
-                    if card.rewardsAvailable > 0 {
-                        Text("Premio disponible")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.yellow)
-                    }
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.gray)
+                } else {
+                    Text("Sin pase de lealtad").foregroundStyle(Color(white: 0.6))
                 }
-                .padding(.horizontal, 18)
-                .frame(height: 54)
+                Spacer()
+                Text(vm.loyaltyCard == nil ? "Leer pase" : "Ver pase")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.gray)
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.gray)
             }
-            .buttonStyle(.flatCapsuleNeutral)
-        } else {
-            Menu {
-                Button {
-                    vm.qrDialogOpen = true
-                } label: {
-                    Label("Leer Pase", systemImage: "qrcode.viewfinder")
-                }
-                Button {
-                    vm.showLoyaltyEmailDialog = true
-                } label: {
-                    Label("Añadir por Correo", systemImage: "envelope.fill")
-                }
-            } label: {
-                HStack {
-                    HStack(spacing: 10) {
-                        Image(systemName: "star.fill").foregroundStyle(.yellow)
-                        Text("Acumular Sellos Lealtad").foregroundStyle(.white)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.gray)
-                }
-                .padding(.horizontal, 18)
-                .frame(height: 54)
-            }
-            .buttonStyle(.flatCapsuleNeutral)
+            .padding(.horizontal, 18)
+            .frame(height: 54)
         }
+        .buttonStyle(.flatCapsuleNeutral)
     }
 
     // MARK: - Split Tickets Confirm

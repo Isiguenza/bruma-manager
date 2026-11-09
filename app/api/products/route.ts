@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
         hasVariants: hasVariants || false,
         variants: variants || null,
         flowTags: normalizeFlowTags(body.flowTags),
+        loyaltyEligible: body.loyaltyEligible === true,
         active: active ?? true,
       })
       .returning();

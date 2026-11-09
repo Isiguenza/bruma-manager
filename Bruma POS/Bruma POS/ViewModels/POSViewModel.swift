@@ -186,7 +186,9 @@ class POSViewModel: ObservableObject {
     @Published var activeSeat = "C"
     @Published var activeCourse = 1
     @Published var guestCount = 1
-    @Published var currentOrderId: String?
+    @Published var currentOrderId: String? {
+        didSet { syncLoyaltyCardWithOrder(from: oldValue) }
+    }
     // Número de orden humano (#47), para imprimir en tickets — nunca el UUID
     // interno (currentOrderId), que no significa nada para staff/clientes.
     @Published var currentOrderNumber: Int?
@@ -457,6 +459,10 @@ class POSViewModel: ObservableObject {
     @Published var showLoyaltyRewardDialog: Bool = false
     @Published var loyaltyRewardMode: String = ""
     @Published var loyaltyRewardDiscountPct: String = ""
+    /// Modal del pase (Menú Admin → Pase de lealtad): cámara + datos del pase.
+    @Published var showLoyaltyPassSheet: Bool = false
+    /// Confirmación antes de canjear el premio sobre el platillo elegido.
+    @Published var showLoyaltyRewardConfirm: Bool = false
     
     // MARK: - Guest / Courtesy
     @Published var showGuestProductDialog = false
@@ -3728,6 +3734,7 @@ class POSViewModel: ObservableObject {
         if let v = item.extraName { dict["extraName"] = v }
         if let v = item.customModifiers { dict["customModifiers"] = v }
         if item.isGuest { dict["isGuest"] = true }
+        if item.isGuest && item.isLoyaltyReward { dict["loyaltyReward"] = true }
         if item.deliveredToTable { dict["deliveredToTable"] = true }
         // Persist promo state so a promo that spans items across kitchen sends
         // (e.g. 2x1 where one unit was already sent) survives reload and can be
@@ -4940,7 +4947,7 @@ class POSViewModel: ObservableObject {
         Task {
             do {
                 let card = try await APIService.shared.searchLoyaltyCard(barcode: code)
-                loyaltyCard = card
+                linkLoyaltyCard(card)
                 qrDialogOpen = false
                 qrCode = ""
                 showToast("Cliente: \(card.displayName)")
@@ -4962,7 +4969,7 @@ class POSViewModel: ObservableObject {
         Task {
             do {
                 let card = try await APIService.shared.searchLoyaltyCardByEmail(email)
-                loyaltyCard = card
+                linkLoyaltyCard(card)
                 showLoyaltyEmailDialog = false
                 loyaltyEmailInput = ""
                 showToast("Cliente: \(card.displayName)")
@@ -5320,7 +5327,7 @@ enum CartDraftStore {
 // MARK: - Modo admin en el carrito
 
 enum CartAdminAction: Equatable {
-    case delete, guest, replace, customModifier
+    case delete, guest, replace, customModifier, reward
 
     var title: String {
         switch self {
@@ -5328,6 +5335,7 @@ enum CartAdminAction: Equatable {
         case .guest: return "Invitar productos"
         case .replace: return "Reemplazar item"
         case .customModifier: return "Modificador personalizado"
+        case .reward: return "Canjear premio"
         }
     }
 }
@@ -5397,6 +5405,21 @@ extension POSViewModel {
                 return
             }
             toggleCartAdminSelection(item)
+        case .reward:
+            guard !isChild else {
+                showToast("Los incluidos de un paquete ya van sin costo", isError: true)
+                return
+            }
+            guard !item.isGuest else {
+                showToast("Ese platillo ya va sin costo", isError: true)
+                return
+            }
+            guard isLoyaltyEligible(item) else {
+                showToast("\(item.productName) no aplica como premio", isError: true)
+                return
+            }
+            // Un solo premio por canje.
+            cartAdminSelection = cartAdminSelection[item.id] != nil ? [:] : [item.id: 1]
         case .customModifier:
             guard !isChild else {
                 showToast("Aplica el modificador al platillo del paquete", isError: true)
@@ -5434,6 +5457,8 @@ extension POSViewModel {
                 && cartAdminModifierAmountValue > 0
         case .replace:
             return pendingReplacementItems != nil && replacementTarget != nil
+        case .reward:
+            return cartAdminSelection.count == 1 && (loyaltyCard?.rewardsAvailable ?? 0) > 0
         case nil:
             return false
         }
@@ -5449,12 +5474,17 @@ extension POSViewModel {
         switch cartAdminAction {
         case .delete: return cartAdminSelectionHasSentItems
         case .replace: return replacementTarget?.itemId != nil
+        case .reward: return false
         case .guest, .customModifier, nil: return true
         }
     }
 
     func requestCartAdminConfirm() {
         guard canConfirmCartAdmin else { return }
+        if cartAdminAction == .reward {
+            showLoyaltyRewardConfirm = true
+            return
+        }
         if cartAdminNeedsPin {
             showCartAdminPin = true
         } else {
@@ -5486,6 +5516,7 @@ extension POSViewModel {
         case .guest: performCartAdminGuest()
         case .customModifier: performCartAdminModifier()
         case .replace: await performReplacement()
+        case .reward: await performCartAdminReward()
         case nil: break
         }
         cartAdminProcessing = false
@@ -5779,5 +5810,157 @@ private extension BuiltSelection {
             ownerChildItemIndex: ownerChildItemIndex,
             sortOrder: sortOrder
         )
+    }
+}
+
+
+// MARK: - Pase de lealtad ligado a la orden + canje de premio sobre un platillo
+//
+// El pase se lee en Menú Admin → Pase de lealtad (`LoyaltyPassSheet`) y queda
+// ligado a la orden en el servidor (`orders.loyalty_card_id`), así sobrevive a
+// salir de la mesa y suma los sellos al cobrar. El premio se canjea eligiendo
+// un platillo del carrito (`CartAdminAction.reward`): solo los marcados como
+// "Premio de lealtad" en el dashboard (`Product.loyaltyEligible`). Queda a $0
+// con `isGuest` + `loyaltyReward` y el carrito lo pinta dorado.
+extension POSViewModel {
+    func isLoyaltyEligible(_ item: CartItem) -> Bool {
+        products.first { $0.id == item.productId }?.loyaltyEligible == true
+    }
+
+    /// Platillos del carrito que hoy se podrían canjear como premio.
+    var loyaltyRedeemableCartItems: [CartItem] {
+        cart.filter { $0.parentLocalId == nil && !$0.isGuest && isLoyaltyEligible($0) }
+    }
+
+    func linkLoyaltyCard(_ card: LoyaltyCard) {
+        loyaltyCard = card
+        guard let orderId = currentOrderId else { return }
+        Task {
+            do {
+                try await APIService.shared.setOrderLoyaltyCard(orderId: orderId, cardId: card.id)
+            } catch {
+                showToast("El pase se leyó, pero no se pudo ligar a la orden", isError: true)
+            }
+        }
+    }
+
+    func unlinkLoyaltyCard() {
+        loyaltyCard = nil
+        guard let orderId = currentOrderId else { return }
+        Task { try? await APIService.shared.setOrderLoyaltyCard(orderId: orderId, cardId: nil) }
+    }
+
+    /// Al cambiar de orden: el pase de la anterior se suelta y se trae el que
+    /// tenga ligado la nueva. De nil a un id (la orden se acaba de crear con el
+    /// pase ya leído) no se suelta.
+    func syncLoyaltyCardWithOrder(from oldValue: String?) {
+        guard currentOrderId != oldValue else { return }
+        if oldValue != nil { loyaltyCard = nil }
+        guard let orderId = currentOrderId, loyaltyCard == nil else { return }
+        Task {
+            guard let order = try? await APIService.shared.fetchOrder(orderId: orderId),
+                  let cardId = order.loyaltyCardId,
+                  let card = try? await APIService.shared.fetchLoyaltyCard(id: cardId) else { return }
+            if currentOrderId == orderId && loyaltyCard == nil { loyaltyCard = card }
+        }
+    }
+
+    /// Del modal del pase al carrito: elegir el platillo que es el premio.
+    func beginLoyaltyRewardSelection() {
+        showLoyaltyPassSheet = false
+        beginCartAdmin(.reward)
+    }
+
+    /// Mantener presionada la tarjeta dorada → "Eliminar canje": el platillo
+    /// vuelve a cobrarse y el premio regresa al pase (se puede volver a canjear).
+    func undoLoyaltyReward(_ item: CartItem) async {
+        guard item.isLoyaltyReward else { return }
+
+        if let itemId = item.itemId {
+            isSyncingCartToServer = true
+            defer { isSyncingCartToServer = false }
+            do {
+                let result = try await APIService.shared.undoLoyaltyReward(itemId: itemId, cardId: loyaltyCard?.id)
+                if let card = result.card { loyaltyCard = card }
+                applyDecodedOrderToCart(result.order)
+                applyPromotions()
+                emitCustomerDisplayState()
+                showToast("Canje eliminado · el premio regresó al pase")
+            } catch {
+                showToast(error.localizedDescription, isError: true)
+            }
+            return
+        }
+
+        guard let index = cart.firstIndex(where: { $0.id == item.id }) else { return }
+        cart[index].isGuest = false
+        cart[index].loyaltyReward = nil
+        applyPromotions()
+        emitCustomerDisplayState()
+        guard let card = loyaltyCard else {
+            showToast("Canje eliminado")
+            return
+        }
+        do {
+            loyaltyCard = try await APIService.shared.restoreLoyaltyReward(cardId: card.id)
+            showToast("Canje eliminado · el premio regresó al pase")
+        } catch {
+            showToast("Se quitó el canje, pero no se pudo devolver el premio al pase", isError: true)
+        }
+    }
+
+    func performCartAdminReward() async {
+        guard let card = loyaltyCard,
+              let id = cartAdminSelection.keys.first,
+              let item = cart.first(where: { $0.id == id }) else { return }
+
+        if let itemId = item.itemId {
+            // Ya guardado: un solo POST que canjea, deja el platillo a $0 y recalcula.
+            isSyncingCartToServer = true
+            defer { isSyncingCartToServer = false }
+            do {
+                let result = try await APIService.shared.redeemLoyaltyReward(itemId: itemId, cardId: card.id)
+                loyaltyCard = result.card
+                applyDecodedOrderToCart(result.order)
+                applyPromotions()
+                emitCustomerDisplayState()
+                Haptics.success()
+                showToast("Premio canjeado: \(item.productName)")
+            } catch {
+                showToast(error.localizedDescription, isError: true)
+            }
+            return
+        }
+
+        // Sin enviar: se canjea en la tarjeta y el renglón se marca local; al
+        // mandarlo a cocina viaja con `loyaltyReward` (ver itemToDict).
+        guard let index = cart.firstIndex(where: { $0.id == id }) else { return }
+        let hasChildren = cart.contains { $0.parentLocalId == id }
+        if cart[index].quantity > 1 && hasChildren {
+            showToast("Para canjear un paquete, primero deja la cantidad en 1", isError: true)
+            return
+        }
+        do {
+            loyaltyCard = try await APIService.shared.redeemLoyaltyCard(cardId: card.id)
+        } catch {
+            showToast(error.localizedDescription, isError: true)
+            return
+        }
+        guard let current = cart.firstIndex(where: { $0.id == id }) else { return }
+        if cart[current].quantity > 1 {
+            cart[current].quantity -= 1
+            var reward = cart[current].duplicated()
+            reward.quantity = 1
+            reward.isGuest = true
+            reward.loyaltyReward = true
+            cart.insert(reward, at: current + 1)
+        } else {
+            cart[current].isGuest = true
+            cart[current].loyaltyReward = true
+        }
+        applyPromotions()
+        emitCustomerDisplayState()
+        Haptics.success()
+        showToast("Premio canjeado: \(item.productName)")
     }
 }

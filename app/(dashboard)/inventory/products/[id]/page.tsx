@@ -62,6 +62,7 @@ type Form = {
   menuVideo: string;
   menuWebVisible: boolean;
   flowTags: string[];
+  loyaltyEligible: boolean;
 };
 
 const EMPTY: Form = {
@@ -79,12 +80,13 @@ const EMPTY: Form = {
   menuVideo: "",
   menuWebVisible: true,
   flowTags: [],
+  loyaltyEligible: false,
 };
 
 const MAX_PHOTOS = 4;
 
 function formFrom(p: Product): Form {
-  const raw = p as Product & { menuImages?: unknown; menuVideo?: string | null; menuWebVisible?: boolean; flowTags?: unknown };
+  const raw = p as Product & { menuImages?: unknown; menuVideo?: string | null; menuWebVisible?: boolean; flowTags?: unknown; loyaltyEligible?: boolean };
   return {
     name: p.name,
     description: p.description || "",
@@ -100,6 +102,7 @@ function formFrom(p: Product): Form {
     menuVideo: raw.menuVideo || "",
     menuWebVisible: raw.menuWebVisible !== false,
     flowTags: Array.isArray(raw.flowTags) ? (raw.flowTags as string[]) : [],
+    loyaltyEligible: raw.loyaltyEligible === true,
   };
 }
 
@@ -581,6 +584,12 @@ export default function ProductDetailPage() {
               hint={form.menuWebVisible ? "Sale en cocinabruma.com.mx" : "Oculto en la página pública"}
               checked={form.menuWebVisible}
               onChange={(v) => set("menuWebVisible", v)}
+            />
+            <ToggleRow
+              label="Premio de lealtad"
+              hint={form.loyaltyEligible ? "Se puede canjear gratis con el pase" : "No se puede canjear como premio"}
+              checked={form.loyaltyEligible}
+              onChange={(v) => set("loyaltyEligible", v)}
             />
           </Section>
 

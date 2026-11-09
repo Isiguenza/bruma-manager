@@ -406,6 +406,32 @@ router.post("/loyalty-cards/:id/redeem", async (req, res) => {
   }
 });
 
+// POST /api/loyalty-cards/:id/restore-reward
+// Devuelve un premio canjeado por error (el POS deshace el canje de un platillo
+// que todavía no se mandaba a cocina). Lo inverso de /redeem.
+router.post("/loyalty-cards/:id/restore-reward", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [updatedCard] = await db
+      .update(schema.loyaltyCards)
+      .set({
+        rewardsAvailable: sql`${schema.loyaltyCards.rewardsAvailable} + 1`,
+        rewardsRedeemed: sql`GREATEST(${schema.loyaltyCards.rewardsRedeemed} - 1, 0)`,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.loyaltyCards.id, id))
+      .returning();
+    if (!updatedCard) return res.status(404).json({ error: "Tarjeta no encontrada" });
+
+    sendAppleWalletPush(id).catch(console.error);
+    createOrUpdateGoogleWalletObject(updatedCard).catch(console.error);
+    res.json(updatedCard);
+  } catch (error) {
+    console.error("Error restoring reward:", error);
+    res.status(500).json({ error: "Error al devolver el premio" });
+  }
+});
+
 // POST /api/loyalty-cards/promotions
 // Send a promotion message to Apple Wallet passes
 router.post("/loyalty-cards/promotions", async (req, res) => {
