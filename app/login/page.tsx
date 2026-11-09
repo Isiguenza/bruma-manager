@@ -6,6 +6,7 @@ import { Eye, EyeSlash, Envelope, LockSimple, SpinnerGap, WarningCircle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { BrumaLogo } from "@/components/bruma-logo";
 
 // Verde del wordmark de Bruma.
 const BRAND = "#034a49";
@@ -57,8 +58,8 @@ export default function LoginPage() {
           style={{ background: "radial-gradient(circle, #ffffff 0%, transparent 70%)" }}
         />
         <span className="text-sm font-medium tracking-wide text-white/60">Cocina Bruma</span>
-        <div className="space-y-4">
-          <p className="font-[family-name:var(--font-brand)] text-7xl tracking-[0.18em]">BRUMA</p>
+        <div className="space-y-8">
+          <BrumaLogo variant="full" className="h-72 text-white xl:h-80" />
           <p className="max-w-sm text-lg text-white/70">
             Caja, menú, clientes y ventas del restaurante en un solo lugar.
           </p>
@@ -70,9 +71,7 @@ export default function LoginPage() {
       <div className="flex items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-sm space-y-8">
           <div className="space-y-2">
-            <p className="font-[family-name:var(--font-brand)] text-3xl tracking-[0.18em] lg:hidden" style={{ color: BRAND }}>
-              BRUMA
-            </p>
+            <BrumaLogo variant="full" className="mb-6 h-28 text-[#034a49] lg:hidden dark:text-white" />
             <h1 className="text-2xl font-semibold tracking-tight">Inicia sesión</h1>
             <p className="text-sm text-muted-foreground">Entra con tu correo y contraseña del panel.</p>
           </div>

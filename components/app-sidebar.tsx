@@ -95,8 +95,10 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="px-3 py-4">
-        <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
-          <BrumaLogo size="sm" />
+        <Link href="/dashboard" aria-label="Inicio" className="flex h-9 items-center overflow-hidden px-1 text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          {/* Expandida: logo horizontal. Colapsada a íconos: solo el pez. */}
+          <BrumaLogo variant="horizontal" className="h-9 group-data-[collapsible=icon]:hidden" />
+          <BrumaLogo variant="isotipo" className="hidden h-6 group-data-[collapsible=icon]:block" />
         </Link>
       </SidebarHeader>
 

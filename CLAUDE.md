@@ -396,6 +396,10 @@ más lo consume), panel "Auditoría" en `/cash-register`.
   de flujos (`/flows*`, `…/flow`) van a todo lo ancho. Las páginas NO ponen su
   propio `max-w`/padding de página (excepto vistas angostas a propósito, como
   el detalle de orden con `max-w-5xl`).
+- Logos: `components/bruma-logo.tsx` (`horizontal` / `isotipo` / `full`). Los SVG de
+  `public/logos` son blancos: se pintan como máscara con `bg-current`, así que el
+  color sale de `text-*` (no uses `<img>` o desaparecen en tema claro). Favicon =
+  `app/icon.svg` + `favicon.ico` + `apple-icon.png`, generados del isotipo.
 - Encabezado de página: `components/page-header.tsx` (eyebrow = sección de la
   navegación). No armar `<h1>` a mano en páginas nuevas.
 - Inicio (`/dashboard`) lee `GET /api/dashboard/stats`. "Venta" = misma

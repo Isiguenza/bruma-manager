@@ -1,57 +1,32 @@
-import Image from "next/image";
 import { cn } from "@/lib/utils";
 
+// Los SVG de marca (public/logos) vienen en blanco. Se pintan como máscara con
+// `bg-current`, así toman el color del texto: oscuros en tema claro, claros en
+// oscuro, o el que se pase con `text-*`. Tamaño: alto por className (`h-8`), el
+// ancho sale solo del aspect ratio de cada archivo.
+const LOGOS = {
+  /** Isotipo + BRUMA en una línea. */
+  horizontal: { src: "/logos/Horiz.svg", ratio: 956.76 / 312.75 },
+  /** Solo el pez. */
+  isotipo: { src: "/logos/Iso_w.svg", ratio: 935.82 / 812.32 },
+  /** Isotipo arriba, BRUMA · Marisquería abajo. */
+  full: { src: "/logos/LogoBruma.svg", ratio: 664.46 / 821.55 },
+} as const;
+
 interface BrumaLogoProps {
-  variant?: "default" | "white";
-  size?: "sm" | "md" | "lg";
+  variant?: keyof typeof LOGOS;
   className?: string;
-  showText?: boolean;
 }
 
-export function BrumaLogo({ 
-  variant = "default", 
-  size = "md",
-  className,
-  showText = true 
-}: BrumaLogoProps) {
-  const sizeClasses = {
-    sm: "h-8",
-    md: "h-12",
-    lg: "h-16"
-  };
-
-  const textSizeClasses = {
-    sm: "text-xl",
-    md: "text-2xl",
-    lg: "text-3xl"
-  };
-
-  // Intentar cargar logo desde /public/branding, si no existe mostrar texto
+export function BrumaLogo({ variant = "horizontal", className }: BrumaLogoProps) {
+  const { src, ratio } = LOGOS[variant];
+  const mask = `url(${src}) center / contain no-repeat`;
   return (
-    <div className={cn("flex items-center gap-3", className)}>
-      {/* Placeholder para logo - reemplazar cuando se agregue el archivo */}
-      <div className={cn(
-        "flex items-center justify-center rounded-lg bg-primary",
-        sizeClasses[size],
-        size === "sm" ? "w-8" : size === "md" ? "w-12" : "w-16"
-      )}>
-        <span className={cn(
-          "font-bold text-primary-foreground",
-          size === "sm" ? "text-sm" : size === "md" ? "text-lg" : "text-xl"
-        )}>
-          B
-        </span>
-      </div>
-      
-      {showText && (
-        <span className={cn(
-          "font-bold tracking-tight",
-          variant === "white" ? "text-white" : "text-primary",
-          textSizeClasses[size]
-        )}>
-          BRUMA
-        </span>
-      )}
-    </div>
+    <span
+      role="img"
+      aria-label="BRUMA Marisquería"
+      className={cn("inline-block shrink-0 bg-current", className)}
+      style={{ aspectRatio: ratio, mask, WebkitMask: mask }}
+    />
   );
 }
