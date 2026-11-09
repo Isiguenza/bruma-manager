@@ -6,11 +6,32 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'your-secret-key-change-in-production'
 );
 
+const PUBLIC_LOYALTY_URL = 'https://cocinabruma.com.mx/lealtad';
+
+async function isValidToken(token: string) {
+  try {
+    await jwtVerify(token, JWT_SECRET);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // El registro de lealtad se mudó a la web pública. Los links viejos (QRs
+  // impresos, /links, tarjetas compartidas) se mandan al nuevo dominio.
+  if (pathname === '/loyalty/register' || pathname.startsWith('/loyalty/register/')) {
+    return NextResponse.redirect(PUBLIC_LOYALTY_URL);
+  }
+  if (pathname.startsWith('/loyalty/card/')) {
+    const barcode = pathname.slice('/loyalty/card/'.length).split('/')[0];
+    return NextResponse.redirect(`${PUBLIC_LOYALTY_URL}/tarjeta?c=${barcode}`);
+  }
+
   // Public routes that don't need authentication
-  const publicRoutes = ['/login', '/loyalty'];
+  const publicRoutes = ['/login'];
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
   
   if (isPublicRoute) {
@@ -19,6 +40,12 @@ export default async function proxy(request: NextRequest) {
 
   // Check for auth token
   const token = request.cookies.get('auth_token')?.value;
+
+  // /loyalty es el panel de Clientes Frecuentes: con sesión se ve; sin sesión
+  // (un cliente con el link viejo) se va al registro público.
+  if (pathname === '/loyalty' && !(token && (await isValidToken(token)))) {
+    return NextResponse.redirect(PUBLIC_LOYALTY_URL);
+  }
 
   if (!token) {
     // Redirect to login if accessing protected route without token

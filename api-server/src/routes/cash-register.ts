@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, schema } from "../db";
-import { eq, and, isNull, desc, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, sql, inArray } from "drizzle-orm";
+import { registerTotals } from "../lib/registerTotals";
 import { emitCashRegisterOpened, emitCashRegisterClosed } from "../sockets/events";
 
 const router = Router();
@@ -89,34 +90,19 @@ router.post("/cash-register/:id/close", async (req, res) => {
       ),
     });
 
-    const cashSales = paidOrders
-      .filter(o => o.paymentMethod === "cash")
-      .reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-
-    const terminalSales = paidOrders
-      .filter(o => o.paymentMethod === "terminal_mercadopago" || o.paymentMethod === "card")
-      .reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-
-    const transferSales = paidOrders
-      .filter(o => o.paymentMethod === "transfer")
-      .reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-
-    const totalSales = cashSales + terminalSales + transferSales;
-
-    // Get deposits and withdrawals from transactions
     const transactions = await db.query.cashRegisterTransactions.findMany({
       where: eq(schema.cashRegisterTransactions.registerId, id),
     });
+    const payments = paidOrders.length
+      ? await db.select().from(schema.orderPayments).where(inArray(schema.orderPayments.orderId, paidOrders.map(o => o.id)))
+      : [];
 
-    const withdrawals = transactions
-      .filter(t => t.type === "withdrawal")
-      .reduce((sum, t) => sum + parseFloat(t.amount), 0);
-
-    const deposits = transactions
-      .filter(t => t.type === "deposit")
-      .reduce((sum, t) => sum + parseFloat(t.amount), 0);
-
-    const expectedCash = parseFloat(register.initialCash) + cashSales - withdrawals + deposits;
+    // Mismas reglas que el Corte en vivo (antes sumaba `total` con propina de
+    // las cuentas en efectivo e ignoraba pagos divididos: la lista de cortes
+    // marcaba faltantes en cajas que sí cuadraban).
+    const totals = registerTotals(parseFloat(register.initialCash), paidOrders, payments, transactions);
+    const { cashSales, transferSales, totalSales, withdrawals, deposits, expectedCash } = totals;
+    const terminalSales = totals.cardSales;
     const difference = parseFloat(finalCash.toString()) - expectedCash;
 
     const [closedRegister] = await db

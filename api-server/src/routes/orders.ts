@@ -18,6 +18,9 @@ import { unmergeByOrderId, unmergeByTableId, hasOtherUnpaidOrdersAtTable } from 
 import { refundStripePayment, captureStripePayment, cancelStripePaymentIntent } from "./online-orders";
 import { notifyOrderReady, notifyOrderOutForDelivery } from "../lib/whatsapp";
 import { printKitchenComanda } from "../lib/kitchenPrint";
+import { getLoyaltyDiscountPct } from "../lib/loyaltySettings";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const router = Router();
 
@@ -1363,7 +1366,7 @@ router.post("/orders/:id/pay", async (req, res) => {
     if (discount && parseFloat(discount) > 0) {
       updates.discountAmount = discount.toString();
       updates.discountName = discountName || "Descuento";
-      if (discountId) updates.discountId = discountId;
+      if (discountId && UUID_RE.test(discountId)) updates.discountId = discountId;
     }
 
     if (openRegister) {
@@ -1580,7 +1583,7 @@ router.post("/orders/:id/pay-split", async (req, res) => {
     if (discount && parseFloat(discount) > 0) {
       updates.discountAmount = discount.toString();
       updates.discountName = discountName || "Descuento";
-      if (discountId) updates.discountId = discountId;
+      if (discountId && UUID_RE.test(discountId)) updates.discountId = discountId;
     }
 
     if (openRegister) {
@@ -2782,6 +2785,94 @@ router.post("/order-items/:id/loyalty-reward", async (req, res) => {
   } catch (error) {
     console.error("[POST /order-items/:id/loyalty-reward] 500 error:", error);
     res.status(500).json({ error: "Error al canjear el premio" });
+  }
+});
+
+// POST /api/orders/:id/loyalty-discount — canjear el premio como % de descuento
+// sobre la cuenta (el % configurado en /loyalty). Descuenta el premio de forma
+// atómica, guarda el % en la orden (persiste al volver a la mesa) y liga el pase.
+// El monto se calcula al cobrar, sobre lo que traiga la cuenta en ese momento.
+router.post("/orders/:id/loyalty-discount", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { cardId } = req.body;
+    if (!cardId) return res.status(400).json({ error: "cardId es requerido" });
+
+    const order = await db.query.orders.findFirst({ where: eq(schema.orders.id, id) });
+    if (!order) return res.status(404).json({ error: "Orden no encontrada" });
+    if (order.paymentStatus === "paid") return res.status(400).json({ error: "La orden ya está pagada" });
+    if (order.loyaltyDiscountPct) return res.status(400).json({ error: "Esta cuenta ya tiene el descuento de lealtad" });
+
+    const pct = await getLoyaltyDiscountPct();
+
+    const [card] = await db
+      .update(schema.loyaltyCards)
+      .set({
+        rewardsAvailable: sql`${schema.loyaltyCards.rewardsAvailable} - 1`,
+        rewardsRedeemed: sql`${schema.loyaltyCards.rewardsRedeemed} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(schema.loyaltyCards.id, cardId), sql`${schema.loyaltyCards.rewardsAvailable} >= 1`))
+      .returning();
+    if (!card) return res.status(400).json({ error: "El pase no tiene premios disponibles" });
+
+    await db
+      .update(schema.orders)
+      .set({ loyaltyDiscountPct: pct.toString(), loyaltyCardId: cardId, updatedAt: new Date() })
+      .where(eq(schema.orders.id, id));
+    await db.insert(schema.loyaltyTransactions).values({ cardId, orderId: id, stampsAdded: 0, rewardRedeemed: true });
+
+    sendAppleWalletPush(cardId).catch(console.error);
+    createOrUpdateGoogleWalletObject(card).catch(console.error);
+
+    const updatedOrder = await db.query.orders.findFirst({ where: eq(schema.orders.id, id), with: { items: true } });
+    emitOrderUpdated(updatedOrder);
+    res.json({ order: updatedOrder, card });
+  } catch (error) {
+    console.error("[POST /orders/:id/loyalty-discount] 500 error:", error);
+    res.status(500).json({ error: "Error al canjear el descuento" });
+  }
+});
+
+// DELETE /api/orders/:id/loyalty-discount — deshace el canje del descuento y
+// devuelve el premio al pase ligado a la orden.
+router.delete("/orders/:id/loyalty-discount", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await db.query.orders.findFirst({ where: eq(schema.orders.id, id) });
+    if (!order) return res.status(404).json({ error: "Orden no encontrada" });
+    if (!order.loyaltyDiscountPct) return res.status(400).json({ error: "Esta cuenta no tiene descuento de lealtad" });
+    if (order.paymentStatus === "paid") return res.status(400).json({ error: "La orden ya está pagada" });
+
+    await db
+      .update(schema.orders)
+      .set({ loyaltyDiscountPct: null, updatedAt: new Date() })
+      .where(eq(schema.orders.id, id));
+
+    let card = null;
+    const cardId = order.loyaltyCardId ?? req.body?.cardId ?? null;
+    if (cardId) {
+      [card] = await db
+        .update(schema.loyaltyCards)
+        .set({
+          rewardsAvailable: sql`${schema.loyaltyCards.rewardsAvailable} + 1`,
+          rewardsRedeemed: sql`GREATEST(${schema.loyaltyCards.rewardsRedeemed} - 1, 0)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.loyaltyCards.id, cardId))
+        .returning();
+      if (card) {
+        sendAppleWalletPush(cardId).catch(console.error);
+        createOrUpdateGoogleWalletObject(card).catch(console.error);
+      }
+    }
+
+    const updatedOrder = await db.query.orders.findFirst({ where: eq(schema.orders.id, id), with: { items: true } });
+    emitOrderUpdated(updatedOrder);
+    res.json({ order: updatedOrder, card });
+  } catch (error) {
+    console.error("[DELETE /orders/:id/loyalty-discount] 500 error:", error);
+    res.status(500).json({ error: "Error al eliminar el canje" });
   }
 });
 

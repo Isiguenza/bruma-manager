@@ -1,6 +1,8 @@
 import jwt, { SignOptions } from "jsonwebtoken";
 import path from "path";
 import fs from "fs";
+import { eq } from "drizzle-orm";
+import { db, schema } from "../db";
 import { getPassAssetResolver } from "./pass-assets";
 
 const GOOGLE_AUTH_URL = "https://oauth2.googleapis.com/token";
@@ -352,7 +354,35 @@ async function uploadToR2(buffer: Buffer, key: string): Promise<string> {
 
 // skipClass: the caller already refreshed the class (bulk refresh).
 // createIfMissing=false: only touch cards the customer actually saved to Google.
-export async function createOrUpdateGoogleWalletObject(
+// Una actualización a la vez por tarjeta, y siempre con la fila FRESCA de la DB.
+// Antes cada llamada mandaba la foto de la tarjeta que recibió: canjear y
+// deshacer el canje segundos después lanzaba dos PUT en paralelo (cada uno
+// genera y sube la imagen de sellos antes) y si el del canje terminaba al
+// último, el pase de Android se quedaba con el premio descontado aunque la DB
+// ya lo tuviera de regreso.
+const googleUpdateQueue = new Map<string, Promise<unknown>>();
+
+export function createOrUpdateGoogleWalletObject(
+  card: any,
+  opts: { skipClass?: boolean; createIfMissing?: boolean } = {}
+) {
+  const previous = googleUpdateQueue.get(card.id) ?? Promise.resolve();
+  const next = previous
+    .catch(() => {})
+    .then(async () => {
+      const fresh = await db.query.loyaltyCards
+        .findFirst({ where: eq(schema.loyaltyCards.id, card.id) })
+        .catch(() => null);
+      return writeGoogleWalletObject(fresh ?? card, opts);
+    });
+  googleUpdateQueue.set(card.id, next);
+  next.finally(() => {
+    if (googleUpdateQueue.get(card.id) === next) googleUpdateQueue.delete(card.id);
+  }).catch(() => {});
+  return next;
+}
+
+async function writeGoogleWalletObject(
   card: any,
   opts: { skipClass?: boolean; createIfMissing?: boolean } = {}
 ) {

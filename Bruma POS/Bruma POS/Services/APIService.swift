@@ -743,6 +743,27 @@ class APIService {
         let card: LoyaltyCard?
     }
 
+    private struct LoyaltySettings: Decodable { let discountPct: Double }
+
+    /// % del premio "descuento" configurado en el dashboard (/loyalty).
+    func fetchLoyaltyDiscountPct() async throws -> Double {
+        let url = URL(string: "\(baseURL)/api/loyalty/settings")!
+        let settings: LoyaltySettings = try await request(url)
+        return settings.discountPct
+    }
+
+    /// Canjea el premio como % de descuento sobre la cuenta.
+    func redeemLoyaltyDiscount(orderId: String, cardId: String) async throws -> LoyaltyRewardUndoResult {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/loyalty-discount")!
+        return try await request(url, method: "POST", body: ["cardId": cardId])
+    }
+
+    /// Quita el descuento de lealtad de la cuenta y devuelve el premio al pase.
+    func undoLoyaltyDiscount(orderId: String, cardId: String?) async throws -> LoyaltyRewardUndoResult {
+        let url = URL(string: "\(baseURL)/api/orders/\(orderId)/loyalty-discount")!
+        return try await request(url, method: "DELETE", body: cardId.map { ["cardId": $0] })
+    }
+
     /// Deshace el canje de un platillo ya guardado: vuelve a cobrarse y el premio
     /// regresa al pase ligado a la orden.
     func undoLoyaltyReward(itemId: String, cardId: String?) async throws -> LoyaltyRewardUndoResult {

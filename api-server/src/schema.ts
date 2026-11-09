@@ -412,6 +412,8 @@ export const orders = pgTable("orders", {
   discountId: uuid("discount_id").references(() => discounts.id),
   discountName: varchar("discount_name", { length: 255 }),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
+  // % canjeado como premio de lealtad (null = sin canje). Ver drizzle/manual_loyalty_discount_reward.sql.
+  loyaltyDiscountPct: decimal("loyalty_discount_pct", { precision: 5, scale: 2 }),
   source: varchar("source", { length: 50 }).default("pos"), // "pos", "uber_eats", "rappi", "web", etc.
   // Modo Práctica (Bruma POS Mobile): orden real (imprime, aparece en el
   // Pase) pero excluida de caja/reportes/dashboard. Ver drizzle/manual_is_practice.sql.

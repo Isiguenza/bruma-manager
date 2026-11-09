@@ -48,6 +48,7 @@ import {
   EnvelopeSimple,
   Barcode,
   ChatCircleText,
+  Percent,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
@@ -57,6 +58,8 @@ import { FaApple, FaGoogle } from "react-icons/fa";
 import type { LoyaltyCard, LoyaltyTransaction } from "@/lib/types";
 import { getApiUrl } from "@/lib/utils";
 import { ApplePassPreview } from "@/components/apple-pass-preview";
+
+const PUBLIC_REGISTER_URL = "https://cocinabruma.com.mx/lealtad";
 
 interface CardForm {
   customerName: string;
@@ -149,11 +152,17 @@ export default function LoyaltyPage() {
   const [refreshSeason, setRefreshSeason] = useState("");
   const [origin, setOrigin] = useState("");
 
+  // Premio como % de descuento (el POS lo ofrece junto a "platillo gratis")
+  const [rewardDialogOpen, setRewardDialogOpen] = useState(false);
+  const [discountPct, setDiscountPct] = useState("");
+  const [savingDiscountPct, setSavingDiscountPct] = useState(false);
+
   useEffect(() => {
     setOrigin(window.location.origin);
   }, []);
 
-  const registerUrl = `${origin}/loyalty/register`;
+  // El registro vive en la web pública (ya no en admin).
+  const registerUrl = PUBLIC_REGISTER_URL;
 
   useEffect(() => {
     fetchCards();
@@ -312,6 +321,43 @@ export default function LoyaltyPage() {
       loadTransactions(card.id);
     } catch {
       toast.error("Error canjeando premio");
+    }
+  }
+
+  async function openRewardDialog() {
+    setRewardDialogOpen(true);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/loyalty/settings`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setDiscountPct(String(data.discountPct ?? 6));
+    } catch {
+      toast.error("No se pudo cargar el porcentaje");
+    }
+  }
+
+  async function handleSaveDiscountPct() {
+    const pct = Number(discountPct);
+    if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
+      toast.error("El porcentaje debe estar entre 1 y 100");
+      return;
+    }
+    setSavingDiscountPct(true);
+    try {
+      const res = await fetch(`${getApiUrl()}/api/loyalty/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ discountPct: pct }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setDiscountPct(String(data.discountPct));
+      toast.success(`Premio de descuento: ${data.discountPct}%`);
+      setRewardDialogOpen(false);
+    } catch {
+      toast.error("No se pudo guardar");
+    } finally {
+      setSavingDiscountPct(false);
     }
   }
 
@@ -502,6 +548,9 @@ export default function LoyaltyPage() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setPromoDialogOpen(true)}>
             <PaperPlaneTilt className="mr-1 size-4" /> Enviar Promoción
+          </Button>
+          <Button variant="outline" onClick={openRewardDialog}>
+            <Gift className="mr-1 size-4" /> Premios
           </Button>
           <Button variant="outline" onClick={openRefreshDialog}>
             <ArrowsClockwise className="mr-1 size-4" /> Actualizar Tarjetas
@@ -1207,6 +1256,47 @@ export default function LoyaltyPage() {
               disabled={submitting || !promoMessage.trim()}
             >
               {submitting ? "Enviando..." : "Enviar Promoción"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reward settings Dialog */}
+      <Dialog open={rewardDialogOpen} onOpenChange={setRewardDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Premios</DialogTitle>
+            <DialogDescription>
+              Al canjear un premio en el POS se elige entre un platillo gratis (los marcados como
+              &ldquo;Premio de lealtad&rdquo; en Platillos) o un descuento sobre toda la cuenta.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="loyalty-discount-pct">Descuento del premio</Label>
+            <div className="relative">
+              <Input
+                id="loyalty-discount-pct"
+                type="number"
+                inputMode="decimal"
+                min={1}
+                max={100}
+                step={0.5}
+                value={discountPct}
+                onChange={(e) => setDiscountPct(e.target.value)}
+                className="pr-9"
+              />
+              <Percent className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Aplica a las cuentas que se canjeen de aquí en adelante; las que ya lo tienen conservan su porcentaje.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRewardDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveDiscountPct} disabled={savingDiscountPct || !discountPct}>
+              {savingDiscountPct ? "Guardando…" : "Guardar"}
             </Button>
           </DialogFooter>
         </DialogContent>

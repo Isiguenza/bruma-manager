@@ -42,6 +42,7 @@ struct LoyaltyPassDialog: View {
         .background(Color(white: 0.09))
         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .task { await vm.refreshLoyaltyDiscountSetting() }
     }
 
     // MARK: - Lector
@@ -159,26 +160,7 @@ struct LoyaltyPassDialog: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.loyaltyGold.opacity(0.35), lineWidth: 1))
 
-            // Canjear
-            Button {
-                vm.beginLoyaltyRewardSelection()
-            } label: {
-                Label("Canjear premio", systemImage: "star.fill")
-                    .font(.headline.weight(.bold))
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-            }
-            .buttonStyle(.flatCapsule(Color.loyaltyGold, foreground: .black))
-            .disabled(card.rewardsAvailable == 0 || redeemable.isEmpty)
-
-            if card.rewardsAvailable == 0 {
-                hint("Aún no tiene premios: le faltan \(perReward - current) sellos.")
-            } else if redeemable.isEmpty {
-                hint("Ningún platillo de esta cuenta aplica como premio. Agrega uno marcado como \"Premio de lealtad\".")
-            } else {
-                hint("Después eliges en el carrito cuál platillo es el premio (\(redeemable.count) aplican).")
-            }
+            rewardOptions(card: card, redeemable: redeemable, missing: perReward - current)
 
             HStack(spacing: 10) {
                 Button {
@@ -205,6 +187,106 @@ struct LoyaltyPassDialog: View {
                 .buttonStyle(.flatCapsuleNeutral)
             }
         }
+    }
+
+    // MARK: - Canjear: platillo gratis o % de descuento
+
+    @ViewBuilder
+    private func rewardOptions(card: LoyaltyCard, redeemable: [CartItem], missing: Int) -> some View {
+        let pctLabel = POSViewModel.formatPct(vm.loyaltyDiscountSettingPct)
+
+        if vm.hasLoyaltyDiscount {
+            // Ya canjeado como descuento: se ve y se puede deshacer aquí mismo.
+            HStack(spacing: 12) {
+                Image(systemName: "percent")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.black)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(Color.loyaltyGold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(vm.selectedDiscount?.name ?? "Premio lealtad")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(.white)
+                    Text("−\(vm.flexibleDiscountAmount.formatted(.currency(code: "MXN"))) sobre la cuenta actual")
+                        .font(.caption)
+                        .foregroundColor(Color(white: 0.6))
+                }
+                Spacer()
+                Button {
+                    Task { await vm.undoLoyaltyDiscount() }
+                } label: {
+                    Text("Eliminar canje")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 12)
+                        .frame(height: 34)
+                }
+                .buttonStyle(.flatCapsuleNeutral)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.loyaltyGold.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.loyaltyGold.opacity(0.5), lineWidth: 1))
+        }
+
+        if card.rewardsAvailable == 0 {
+            if !vm.hasLoyaltyDiscount {
+                hint("Aún no tiene premios: le faltan \(missing) sellos.")
+            }
+        } else {
+            Text("CANJEAR PREMIO")
+                .font(.caption2.weight(.bold))
+                .tracking(1.2)
+                .foregroundColor(.gray)
+
+            HStack(spacing: 10) {
+                rewardChoice(
+                    icon: "fork.knife",
+                    title: "Platillo gratis",
+                    subtitle: redeemable.isEmpty ? "Nada en la cuenta aplica" : "Eliges cuál en el carrito",
+                    enabled: !redeemable.isEmpty
+                ) {
+                    vm.beginLoyaltyRewardSelection()
+                }
+
+                rewardChoice(
+                    icon: "percent",
+                    title: "\(pctLabel) de descuento",
+                    subtitle: vm.hasLoyaltyDiscount ? "Ya aplicado" : (vm.currentOrderId == nil ? "Manda primero la comanda" : "Sobre toda la cuenta"),
+                    enabled: !vm.hasLoyaltyDiscount && vm.currentOrderId != nil
+                ) {
+                    Task { await vm.redeemLoyaltyDiscount() }
+                }
+            }
+        }
+    }
+
+    private func rewardChoice(icon: String, title: String, subtitle: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.black)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(Color.loyaltyGold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(.white)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(Color(white: 0.6))
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.loyaltyGold.opacity(enabled ? 0.45 : 0.1), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
     }
 
     private func hint(_ text: String) -> some View {

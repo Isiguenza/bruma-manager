@@ -400,7 +400,9 @@ más lo consume), panel "Auditoría" en `/cash-register`.
   navegación). No armar `<h1>` a mano en páginas nuevas.
 - Inicio (`/dashboard`) lee `GET /api/dashboard/stats`. "Venta" = misma
   definición que el Corte del api-server: `subtotal` sin propina (o
-  `total − tip`). Los conteos de platillos excluyen hijos de paquete,
+  `total − tip`). El día de una venta es el de la CAJA donde se cobró
+  (`orderDay`), no `createdAt`: `orders` no tiene `paid_at` y un consumo de
+  empleado viejo cobrado hoy entra al corte de hoy. Los conteos de platillos excluyen hijos de paquete,
   cortesías y anulados.
 - Historial de órdenes (`/orders/history`): dos vistas que NUNCA se combinan
   (decisión del dueño): lista a pantalla completa → clic → la lista se oculta y
@@ -611,6 +613,19 @@ Deshacer: mantener presionada la tarjeta dorada → "Eliminar canje"
 /api/order-items/:id/loyalty-reward` (vuelve a cobrarse y devuelve el premio
 al pase ligado a la orden); sin enviar → `POST /loyalty-cards/:id/restore-reward`.
 El renglón partido por el canje NO se vuelve a juntar con el original.
+**Premio como % de descuento** (la otra opción del modal del pase): `POST/DELETE
+/api/orders/:id/loyalty-discount` guarda el % en `orders.loyalty_discount_pct`
+(persiste al volver a la mesa; `syncLoyaltyCardWithOrder` lo restaura) y en el
+POS se aplica como `selectedDiscount` con id `"loyalty-reward"`, así lo cobran
+todos los métodos de pago sin tocar `payOrder`. El monto se calcula al cobrar.
+Requiere orden guardada (sin `currentOrderId` no se ofrece). El % se configura en
+`/loyalty` → "Premios" (`restaurant_settings.loyalty_discount_pct`, SQL crudo
+como `wallet_season`, default 6). `pay`/`pay-split` solo guardan `discountId`
+si es UUID: el POS manda ids sintéticos. SQL:
+`drizzle/manual_loyalty_discount_reward.sql`, también ANTES de desplegar.
+`createOrUpdateGoogleWalletObject` va en cola por tarjeta y relee la fila de la
+DB antes del PUT: con la foto que recibía, canjear y deshacer seguidos dejaba el
+pase de Android con el valor viejo si el primer PUT terminaba al último.
 Columnas: `drizzle/manual_order_item_loyalty_reward.sql` — **correr ANTES de
 desplegar** api-server/dashboard: ambos leen todas las columnas de `products` y
 `order_items` y sin ellas truenan las consultas.
@@ -650,7 +665,7 @@ temporada activa). Si cambias el acomodo en `apple-pass.ts`, cambia la réplica.
 `lib/google-wallet.ts`) con sus propios assets: las tarjetas nuevas salían sin
 temporada y cada sello puesto desde una ruta Next re-renderizaba la de Android
 con los sellos originales. Ahora las dos rutas son redirect 307 al api-server
-(las siguen usando `/loyalty/register`, `/loyalty/card` y QRs ya impresos) y
+(las siguen usando QRs y passes ya emitidos) y
 `lib/google-wallet.ts` solo llama `refresh-all` con ese `cardId`. No vuelvas a
 generar un pass del lado de Next.
 
@@ -660,6 +675,17 @@ los demás quedan en la tarjeta sin aviso). El PUT del objeto va ANTES del
 `addMessage`: un PUT sin `messages` borraría el mensaje recién agregado. En
 Apple la notificación sale del back field `latestMessage` con
 `changeMessage: "%@"` al recargar el pass.
+
+## Registro de lealtad = web pública
+
+Vive en el repo de la web: `cocinabruma.com.mx/lealtad` (registro + login) y
+`/lealtad/tarjeta?c=<barcode>` (el sitio es estático: el código va en query, no
+en ruta dinámica). Consulta el api-server: `POST /api/loyalty/register`,
+`POST /api/loyalty/login` (copia fiel de las rutas Next viejas; distintas de
+`POST /loyalty-cards`, que es el alta del dashboard) y `GET /api/loyalty/search`.
+En admin ya no existe: `proxy.ts` manda `/loyalty/register` y `/loyalty/card/*`
+al dominio público, y `/loyalty` (panel de Clientes Frecuentes) solo con sesión;
+sin sesión también redirige al registro público.
 
 ## Encuesta de satisfacción (QR en el ticket de cuenta)
 
@@ -901,8 +927,13 @@ recalcula. Imprimir corte manda el MISMO body que `CorteViewModel.printCorte()`
 (`buildCortePrintBody`). El cierre web (`close-register-dialog.tsx`) usa
 `POST /api/cash-register/:id/close`, que NO exige supervisor: solo guarda el
 motivo en auditoría; arriba de la tolerancia ($10) la UI exige el motivo.
-Historial de cortes: la lista usa columnas guardadas al cerrar; el detalle es
-el mismo `CorteView` recalculado en vivo.
+Historial de cortes: la lista (`GET /api/cash-register?status=closed`) también
+recalcula en vivo ventas/esperado/diferencia con `registerTotals`
+(`lib/cash-register/register-totals.ts`, espejo `api-server/src/lib/registerTotals.ts`),
+igual que los dos cierres de caja. Antes guardaba una fórmula vieja (efectivo con
+propinas de tarjeta, sin splits) y marcaba faltante en cortes que sí cuadraban;
+las columnas de cajas cerradas antes del fix siguen mal: no las leas. El detalle
+es el mismo `CorteView` recalculado en vivo.
 
 **Corte y Resumen en el POS = secciones de la tab de Caja, no sheets:**
 selector `Caja · Corte · Resumen` en el header de `CashRegisterView`

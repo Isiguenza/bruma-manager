@@ -14,14 +14,17 @@ import { CUSTOM_MODIFIER_PRODUCT_ID } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
-// Los timestamps se guardan como `timestamp` SIN zona en UTC y el contenedor
-// corre en UTC: cortar "hoy" con la hora del servidor mezclaba lo vendido
-// después de las 6 pm (CDMX) con el día siguiente. Todo se agrupa en hora de
-// CDMX dentro de Postgres.
+// Los timestamps se guardan como `timestamp` SIN zona en UTC: todo se agrupa en
+// hora de CDMX dentro de Postgres, sin depender de la zona del proceso.
 const TZ = "America/Mexico_City";
 const localTs = (col: unknown) => sql`(${col} AT TIME ZONE 'UTC' AT TIME ZONE ${TZ})`;
 const localDate = (col: unknown) => sql`(${localTs(col)})::date`;
 const todayLocal = sql`(now() AT TIME ZONE ${TZ})::date`;
+// Día de VENTA de una orden = el día en que se abrió la caja donde se cobró (así
+// lo cuenta el Corte); sin caja, el día en que se creó. Con createdAt a secas, un
+// consumo de empleado de octubre cobrado hoy entraba al corte de hoy pero no al
+// Inicio, y los dos números no cuadraban.
+const orderDay = sql`COALESCE((SELECT ${localDate(sql`cr.opened_at`)} FROM cash_registers cr WHERE cr.id = ${orders.cashRegisterId}), ${localDate(orders.createdAt)})`;
 const nowLocalTime = sql`(now() AT TIME ZONE ${TZ})::time`;
 
 // Misma definición de "venta" que el Corte (api-server cash-register):
@@ -52,7 +55,7 @@ export async function GET() {
           count: sql<number>`COUNT(*)::int`,
         })
         .from(orders)
-        .where(and(paidReal, sql`${localDate(orders.createdAt)} = ${todayLocal}`)),
+        .where(and(paidReal, sql`${orderDay} = ${todayLocal}`)),
 
       // Mismo día de la semana pasada, hasta la misma hora: comparación justa.
       db
@@ -61,7 +64,7 @@ export async function GET() {
         .where(
           and(
             paidReal,
-            sql`${localDate(orders.createdAt)} = ${todayLocal} - 7`,
+            sql`${orderDay} = ${todayLocal} - 7`,
             sql`(${localTs(orders.createdAt)})::time <= ${nowLocalTime}`
           )
         ),
@@ -69,27 +72,27 @@ export async function GET() {
       db
         .select({ sales: sql<string>`COALESCE(SUM(${saleAmount}), 0)` })
         .from(orders)
-        .where(and(paidReal, sql`${localDate(orders.createdAt)} = ${todayLocal} - 7`)),
+        .where(and(paidReal, sql`${orderDay} = ${todayLocal} - 7`)),
 
       db
         .select({
-          day: sql<string>`CASE WHEN ${localDate(orders.createdAt)} = ${todayLocal} THEN 'today' ELSE 'lastWeek' END`,
+          day: sql<string>`CASE WHEN ${orderDay} = ${todayLocal} THEN 'today' ELSE 'lastWeek' END`,
           hour: sql<number>`EXTRACT(HOUR FROM ${localTs(orders.createdAt)})::int`,
           sales: sql<string>`SUM(${saleAmount})`,
           count: sql<number>`COUNT(*)::int`,
         })
         .from(orders)
-        .where(and(paidReal, sql`${localDate(orders.createdAt)} IN (${todayLocal}, ${todayLocal} - 7)`))
+        .where(and(paidReal, sql`${orderDay} IN (${todayLocal}, ${todayLocal} - 7)`))
         .groupBy(sql`1, 2`),
 
       db
         .select({
-          date: sql<string>`${localDate(orders.createdAt)}::text`,
+          date: sql<string>`${orderDay}::text`,
           sales: sql<string>`SUM(${saleAmount})`,
           count: sql<number>`COUNT(*)::int`,
         })
         .from(orders)
-        .where(and(paidReal, sql`${localDate(orders.createdAt)} >= ${todayLocal} - 13`))
+        .where(and(paidReal, sql`${orderDay} >= ${todayLocal} - 13`))
         .groupBy(sql`1`),
 
       // Platillos vendidos sueltos: sin incluidos de paquete, cortesías ni anulados.
@@ -104,7 +107,7 @@ export async function GET() {
         .where(
           and(
             paidReal,
-            sql`${localDate(orders.createdAt)} = ${todayLocal}`,
+            sql`${orderDay} = ${todayLocal}`,
             ne(orderItems.productId, CUSTOM_MODIFIER_PRODUCT_ID),
             isNull(orderItems.parentItemId),
             eq(orderItems.voided, false),

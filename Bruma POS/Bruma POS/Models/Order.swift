@@ -40,6 +40,8 @@ struct Order: Codable, Identifiable {
     let estimatedReadyMinutes: Int?
     /// Pase de lealtad ligado a la orden (se lee en Menú Admin → Pase de lealtad).
     var loyaltyCardId: String? = nil
+    /// % canjeado como premio de lealtad (decimal como texto, "6.00"); nil = sin canje.
+    var loyaltyDiscountPct: String? = nil
 
     var isSplitPayment: Bool {
         (payments?.count ?? 0) > 1
@@ -99,7 +101,7 @@ struct Order: Codable, Identifiable {
             priority: priority ?? self.priority, onHold: onHold ?? self.onHold, splitGroupId: splitGroupId,
             customerPhone: customerPhone, deliveryType: deliveryType, deliveryAddress: deliveryAddress,
             deliveryLat: deliveryLat, deliveryLng: deliveryLng, estimatedReadyMinutes: estimatedReadyMinutes,
-            loyaltyCardId: loyaltyCardId
+            loyaltyCardId: loyaltyCardId, loyaltyDiscountPct: loyaltyDiscountPct
         )
     }
 }

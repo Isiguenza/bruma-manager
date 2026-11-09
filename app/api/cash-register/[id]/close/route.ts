@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { cashRegisters, cashRegisterTransactions, auditLog, orders } from "@/lib/db/schema";
-import { eq, and, sql, gte } from "drizzle-orm";
+import { cashRegisters, cashRegisterTransactions, auditLog, orders, orderPayments } from "@/lib/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
+import { registerTotals } from "@/lib/cash-register/register-totals";
 
 const CASH_TOLERANCE = parseFloat(process.env.CASH_TOLERANCE || "10");
 
@@ -62,38 +63,22 @@ export async function POST(
       ),
     });
 
-    // Calculate totals from actual orders (like the summary does)
-    const cashSales = paidOrders
-      .filter(o => o.paymentMethod === "cash")
-      .reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-
-    const terminalSales = paidOrders
-      .filter(o => o.paymentMethod === "terminal_mercadopago" || o.paymentMethod === "card")
-      .reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-
-    const transferSales = paidOrders
-      .filter(o => o.paymentMethod === "transfer")
-      .reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-
-    // Get withdrawals and deposits from transactions
     const transactions = await db.query.cashRegisterTransactions.findMany({
       where: eq(cashRegisterTransactions.registerId, id),
     });
+    const payments = paidOrders.length
+      ? await db.select().from(orderPayments).where(inArray(orderPayments.orderId, paidOrders.map((o) => o.id)))
+      : [];
 
-    const withdrawals = transactions
-      .filter(t => t.type === "withdrawal")
-      .reduce((sum, t) => sum + parseFloat(t.amount), 0);
-
-    const deposits = transactions
-      .filter(t => t.type === "deposit")
-      .reduce((sum, t) => sum + parseFloat(t.amount), 0);
-
-    // Expected cash = initial + cash sales - withdrawals + deposits
-    const expectedCash = parseFloat(register.initialCash) + cashSales - withdrawals + deposits;
+    // Mismas reglas que el Corte en vivo (antes sumaba `total` con propina de
+    // las cuentas en efectivo e ignoraba pagos divididos: la lista de cortes
+    // marcaba faltantes en cajas que sí cuadraban).
+    const totals = registerTotals(parseFloat(register.initialCash), paidOrders, payments, transactions);
+    const { cashSales, transferSales, totalSales, withdrawals, deposits, expectedCash } = totals;
+    const terminalSales = totals.cardSales;
     const difference = finalCash - expectedCash;
     const absDifference = Math.abs(difference);
 
-    const totalSales = cashSales + terminalSales + transferSales;
 
     // Close register
     const [updated] = await db

@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { randomUUID } from "crypto";
+import bcrypt from "bcrypt";
 import { db, schema } from "../db";
 import { eq, desc, inArray, isNull, sql } from "drizzle-orm";
 import { sendAppleWalletPush, sendAppleWalletPushToAll } from "../lib/apple-push";
 import { createOrUpdateGoogleWalletObject, refreshAllGoogleWalletObjects, sendGoogleWalletMessage } from "../lib/google-wallet";
+import { getLoyaltyDiscountPct, setLoyaltyDiscountPct } from "../lib/loyaltySettings";
 import { getActiveWalletSeason, listWalletSeasons, setActiveWalletSeason } from "../lib/pass-assets";
 
 const router = Router();
@@ -247,6 +249,73 @@ router.post("/loyalty-cards/:id/redeem-points", async (req, res) => {
   }
 });
 
+// ── Registro público (cocinabruma.com.mx/lealtad) ──────────────────────────
+// Copia fiel de lo que hacían las rutas Next `POST /api/loyalty` y
+// `POST /api/loyalty/login` cuando el registro vivía en admin.cocinabruma.com.mx:
+// mismas validaciones y mismos mensajes. Distinto de `POST /loyalty-cards`
+// (alta desde el dashboard: pide teléfono, no correo ni PIN).
+
+// POST /api/loyalty/register
+router.post("/loyalty/register", async (req, res) => {
+  try {
+    const { customerName, customerLastName, customerPhone, customerEmail, birthDate, stampsPerReward, pin } = req.body;
+
+    if (!customerName?.trim()) return res.status(400).json({ error: "Nombre requerido" });
+    if (!customerLastName?.trim()) return res.status(400).json({ error: "Apellido requerido" });
+    if (!customerEmail?.trim()) return res.status(400).json({ error: "Correo electrónico requerido" });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())) {
+      return res.status(400).json({ error: "Correo electrónico inválido" });
+    }
+    if (pin && !/^\d{4}$/.test(pin)) return res.status(400).json({ error: "PIN debe ser de 4 dígitos" });
+
+    const barcodeValue = `BRUMA-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`;
+    const pinHash = pin ? await bcrypt.hash(pin, 10) : null;
+
+    const [newCard] = await db
+      .insert(schema.loyaltyCards)
+      .values({
+        customerName: customerName.trim(),
+        customerLastName: customerLastName.trim(),
+        customerPhone: customerPhone?.trim() || null,
+        customerEmail: customerEmail.trim(),
+        birthDate: birthDate || null,
+        barcodeValue,
+        pinHash,
+        stampsPerReward: stampsPerReward || 8,
+      })
+      .returning();
+
+    const { pinHash: _pin, ...card } = newCard;
+    res.status(201).json(card);
+  } catch (error) {
+    console.error("Error registering loyalty card:", error);
+    res.status(500).json({ error: "Error creating card", details: String(error) });
+  }
+});
+
+// POST /api/loyalty/login — correo + PIN → tarjeta (sin PIN guardado, entra directo).
+router.post("/loyalty/login", async (req, res) => {
+  try {
+    const { email, pin } = req.body;
+    if (!email || !pin) return res.status(400).json({ error: "Correo y PIN son requeridos" });
+
+    const found = await db.query.loyaltyCards.findFirst({
+      where: eq(schema.loyaltyCards.customerEmail, String(email).trim().toLowerCase()),
+    });
+    if (!found) return res.status(404).json({ error: "Tarjeta no encontrada" });
+
+    if (found.pinHash && !(await bcrypt.compare(String(pin), found.pinHash))) {
+      return res.status(401).json({ error: "PIN incorrecto" });
+    }
+
+    const { pinHash: _pin, ...card } = found;
+    res.json({ verified: true, card });
+  } catch (error) {
+    console.error("Error login loyalty:", error);
+    res.status(500).json({ error: "Error" });
+  }
+});
+
 // GET /api/loyalty/search?barcode=...&email=...&phone=...
 router.get("/loyalty/search", async (req, res) => {
   try {
@@ -403,6 +472,26 @@ router.post("/loyalty-cards/:id/redeem", async (req, res) => {
   } catch (error) {
     console.error("Error redeeming reward:", error);
     res.status(500).json({ error: "Error al canjear recompensa" });
+  }
+});
+
+// GET/PUT /api/loyalty/settings — % del premio "descuento" (lo lee el POS al
+// abrir el pase; se cambia en /loyalty del dashboard).
+router.get("/loyalty/settings", async (_req, res) => {
+  res.json({ discountPct: await getLoyaltyDiscountPct() });
+});
+
+router.put("/loyalty/settings", async (req, res) => {
+  try {
+    const pct = Number(req.body?.discountPct);
+    if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
+      return res.status(400).json({ error: "El porcentaje debe estar entre 1 y 100" });
+    }
+    await setLoyaltyDiscountPct(Math.round(pct * 100) / 100);
+    res.json({ discountPct: await getLoyaltyDiscountPct() });
+  } catch (error) {
+    console.error("Error saving loyalty settings:", error);
+    res.status(500).json({ error: "Error al guardar" });
   }
 });
 

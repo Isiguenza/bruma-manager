@@ -460,6 +460,8 @@ class POSViewModel: ObservableObject {
     @Published var loyaltyRewardMode: String = ""
     @Published var loyaltyRewardDiscountPct: String = ""
     /// Modal del pase (Menú Admin → Pase de lealtad): cámara + datos del pase.
+    /// % del premio "descuento" (se configura en /loyalty del dashboard).
+    @Published var loyaltyDiscountSettingPct: Double = 6
     @Published var showLoyaltyPassSheet: Bool = false
     /// Confirmación antes de canjear el premio sobre el platillo elegido.
     @Published var showLoyaltyRewardConfirm: Bool = false
@@ -5855,13 +5857,77 @@ extension POSViewModel {
     /// pase ya leído) no se suelta.
     func syncLoyaltyCardWithOrder(from oldValue: String?) {
         guard currentOrderId != oldValue else { return }
-        if oldValue != nil { loyaltyCard = nil }
-        guard let orderId = currentOrderId, loyaltyCard == nil else { return }
+        if oldValue != nil {
+            loyaltyCard = nil
+            if hasLoyaltyDiscount { selectedDiscount = nil }
+        }
+        guard let orderId = currentOrderId else { return }
         Task {
             guard let order = try? await APIService.shared.fetchOrder(orderId: orderId),
-                  let cardId = order.loyaltyCardId,
+                  currentOrderId == orderId else { return }
+            applyLoyaltyDiscount(from: order)
+            guard loyaltyCard == nil, let cardId = order.loyaltyCardId,
                   let card = try? await APIService.shared.fetchLoyaltyCard(id: cardId) else { return }
             if currentOrderId == orderId && loyaltyCard == nil { loyaltyCard = card }
+        }
+    }
+
+    // MARK: Premio como % de descuento
+
+    static let loyaltyDiscountId = "loyalty-reward"
+
+    /// El descuento de lealtad vive en `selectedDiscount` (así lo cobran todos
+    /// los métodos de pago); el % canjeado se guarda en la orden del servidor.
+    var hasLoyaltyDiscount: Bool { selectedDiscount?.id == Self.loyaltyDiscountId }
+
+    static func formatPct(_ pct: Double) -> String {
+        pct.rounded() == pct ? "\(Int(pct))%" : String(format: "%.1f%%", pct)
+    }
+
+    func applyLoyaltyDiscount(from order: Order) {
+        if let pct = order.loyaltyDiscountPct.flatMap(Double.init), pct > 0 {
+            selectedDiscount = Discount(
+                id: Self.loyaltyDiscountId, name: "Premio lealtad \(Self.formatPct(pct))", description: nil,
+                type: "percentage", value: pct, requiresAuthorization: false, active: true
+            )
+        } else if hasLoyaltyDiscount {
+            selectedDiscount = nil
+        }
+        applyPromotions()
+        emitCustomerDisplayState()
+    }
+
+    func refreshLoyaltyDiscountSetting() async {
+        if let pct = try? await APIService.shared.fetchLoyaltyDiscountPct() {
+            loyaltyDiscountSettingPct = pct
+        }
+    }
+
+    func redeemLoyaltyDiscount() async {
+        guard let card = loyaltyCard else { return }
+        guard let orderId = currentOrderId else {
+            showToast("Manda primero la comanda para canjear el descuento", isError: true)
+            return
+        }
+        do {
+            let result = try await APIService.shared.redeemLoyaltyDiscount(orderId: orderId, cardId: card.id)
+            if let updated = result.card { loyaltyCard = updated }
+            applyLoyaltyDiscount(from: result.order)
+            showToast("Premio canjeado: \(selectedDiscount?.name ?? "descuento") en esta cuenta")
+        } catch {
+            showToast(error.localizedDescription, isError: true)
+        }
+    }
+
+    func undoLoyaltyDiscount() async {
+        guard let orderId = currentOrderId else { return }
+        do {
+            let result = try await APIService.shared.undoLoyaltyDiscount(orderId: orderId, cardId: loyaltyCard?.id)
+            if let updated = result.card { loyaltyCard = updated }
+            applyLoyaltyDiscount(from: result.order)
+            showToast("Canje eliminado · el premio regresó al pase")
+        } catch {
+            showToast(error.localizedDescription, isError: true)
         }
     }
 
