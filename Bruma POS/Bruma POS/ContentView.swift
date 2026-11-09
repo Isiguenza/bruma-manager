@@ -70,6 +70,7 @@ struct ContentView: View {
             vm?.employeeId != nil && vm?.currentScreen != .customerDisplay
         }
         .onAppear { sessionLock.timeout = 180 }
+        .localBackendBadge()
     }
 }
 

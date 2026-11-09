@@ -114,6 +114,9 @@ export async function GET(request: NextRequest) {
             promotionName: true,
             originalPrice: true,
             promotionDiscount: true,
+            // Para agrupar incluidos de paquete bajo su padre en el historial.
+            parentItemId: true,
+            packageLabel: true,
             createdAt: true,
           },
           with: {
@@ -135,6 +138,7 @@ export async function GET(request: NextRequest) {
           },
         },
         table: true,
+        payments: true,
         user: {
           columns: {
             id: true,

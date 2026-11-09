@@ -1,9 +1,34 @@
-node_modules
-.next
+# Todo lo que NO necesita ninguna imagen (dashboard, api-server, print-server).
+# Ojo: el Dockerfile del dashboard hace `COPY . .` antes de `pnpm run build`;
+# cualquier archivo que pase aquí y cambie invalida el caché y obliga a
+# reconstruir el dashboard completo (p. ej. tocar un .swift del iPad).
+
+# Dependencias y builds: cada imagen instala/compila los suyos. `node_modules`
+# sin `**/` solo excluía la de la raíz: `api-server/node_modules` se colaba y,
+# además, el `COPY api-server/ .` la ponía ENCIMA de la que instala la imagen.
+**/node_modules
+**/.next
 .git
 .gitignore
-*.md
+
+# Apps de iOS y proyectos que no se despliegan con Docker
+Bruma POS
+Bruma_waitress
 BRUMA_Dispatch
+**/*.xcodeproj
+**/xcuserdata
+**/DerivedData
+
+# El print-server se construye con su propio contexto (./print-server)
 print-server
+
+# Notas, scripts locales y herramientas de desarrollo
+*.md
+docs
+dev-dashboard.sh
+**/dev-local.sh
 .env.example
 .windsurf
+.xcodebuildmcp
+.claude
+.DS_Store

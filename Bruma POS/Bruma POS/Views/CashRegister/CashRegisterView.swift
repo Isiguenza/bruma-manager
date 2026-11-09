@@ -9,6 +9,13 @@ struct CashRegisterView: View {
 
     @State private var showEditPayment = false
 
+    /// Selector del header: Corte y Resumen ocupan la pantalla completa de la
+    /// tab en vez de abrirse como sheet angosto.
+    enum Section: String, CaseIterable {
+        case caja = "Caja", corte = "Corte", resumen = "Resumen"
+    }
+    @State private var section: Section = .caja
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -43,9 +50,9 @@ struct CashRegisterView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .onTapGesture {
-            vm.resetInactivityTimer()
-        }
+        // simultaneousGesture (no onTapGesture) para que también cuenten los
+        // toques sobre botones y hojas inferiores, no solo sobre el fondo.
+        .simultaneousGesture(TapGesture().onEnded { vm.resetInactivityTimer() })
         .preferredColorScheme(.dark)
     }
     
@@ -168,12 +175,10 @@ struct CashRegisterView: View {
         VStack(spacing: 16) {
 
             // Header
-            HStack {
+            HStack(spacing: 12) {
                 Text("Caja Registradora")
                     .font(.title.bold())
                     .foregroundColor(.white)
-
-                Spacer()
 
                 HStack(spacing: 6) {
                     Circle()
@@ -186,11 +191,111 @@ struct CashRegisterView: View {
                 .padding(.horizontal, 12)
                 .frame(height: 30)
                 .background(Capsule().fill(Color.white.opacity(0.1)))
+
+                Spacer()
+
+                Picker("Sección", selection: $section) {
+                    ForEach(Section.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 340)
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
 
-            // Dos columnas: órdenes (izq, ancha) + ventas y acciones (der, angosta)
+            switch section {
+            case .caja:
+                cajaColumns(register)
+            case .corte:
+                CorteView(
+                    vm: corteVM,
+                    registerId: register.id,
+                    employeeNames: Dictionary(posVM.employees.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }),
+                    printedBy: posVM.employeeName,
+                    showToast: { message, isError in vm.showToast(message, isError: isError) },
+                    onCloseRegister: { vm.showCloseDialog = true }
+                )
+            case .resumen:
+                ResumenView(
+                    vm: vm,
+                    categoryByProduct: resumenCategories,
+                    printedBy: posVM.employeeName
+                )
+            }
+        }
+        .task(id: register.id) {
+            await corteVM.loadCorte(registerId: register.id)
+        }
+        .sheet(isPresented: $showReportes) {
+            ReportesView(registerId: register.id)
+        }
+        .sheet(item: $vm.selectedOrder, onDismiss: { showEditPayment = false }) { order in
+            orderDetailSheet(order)
+        }
+        .sheet(isPresented: $vm.showQuickCount) {
+            quickCashCountSheet(register: register)
+        }
+        .fullScreenCover(isPresented: $vm.showCloseDialog) {
+            CloseCashRegisterView(vm: vm, posVM: posVM, corteVM: corteVM, register: register)
+        }
+        // Hojas inferiores (mismo patrón que el cobro), ancladas a la tab.
+        .bottomSheet(isPresented: vm.showDepositDialog, onDismiss: { vm.showDepositDialog = false }) {
+            CashMovementSheet(kind: .deposit, isPresented: vm.showDepositDialog, vm: vm, registerId: register.id, userId: posVM.employeeId) {
+                vm.showDepositDialog = false
+            }
+        }
+        .bottomSheet(isPresented: vm.showWithdrawDialog, onDismiss: { vm.showWithdrawDialog = false }) {
+            CashMovementSheet(kind: .withdrawal, isPresented: vm.showWithdrawDialog, vm: vm, registerId: register.id, userId: posVM.employeeId) {
+                vm.showWithdrawDialog = false
+            }
+        }
+        .bottomSheet(isPresented: showDeleteConfirm, onDismiss: closeRefundSheet) {
+            RefundOrderSheet(
+                order: orderToDelete,
+                isPresented: showDeleteConfirm,
+                formatCurrency: vm.formatCurrency,
+                onConfirm: { reason, pin in
+                    guard let order = orderToDelete else { return false }
+                    let ok = await vm.refundOrder(orderId: order.id, reason: reason, pin: pin)
+                    if ok {
+                        closeRefundSheet()
+                        await corteVM.loadCorte(registerId: register.id)
+                    }
+                    return ok
+                },
+                onDismiss: closeRefundSheet
+            )
+        }
+        .bottomSheet(isPresented: showTipDialog, onDismiss: closeTipSheet) {
+            AddTipSheet(
+                order: orderForTip,
+                isPresented: showTipDialog,
+                methodName: paymentMethodText(orderForTip?.paymentMethod ?? "cash").lowercased(),
+                formatCurrency: vm.formatCurrency,
+                onSave: { tip in
+                    guard let order = orderForTip else { return false }
+                    let ok = await vm.addTip(orderId: order.id, tip: tip, tipPaymentMethod: order.paymentMethod ?? "cash")
+                    if ok {
+                        closeTipSheet()
+                        await corteVM.loadCorte(registerId: register.id)
+                    }
+                    return ok
+                },
+                onDismiss: closeTipSheet
+            )
+        }
+    }
+
+    private func closeRefundSheet() {
+        showDeleteConfirm = false
+    }
+
+    private func closeTipSheet() {
+        showTipDialog = false
+    }
+
+    /// Vista "Caja": órdenes (izq, ancha) + ventas y acciones (der, angosta).
+    private func cajaColumns(_ register: CashRegister) -> some View {
             HStack(alignment: .top, spacing: 12) {
 
                 // Izquierda: barras por método de pago (arriba) + lista de órdenes
@@ -215,7 +320,7 @@ struct CashRegisterView: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         Button {
-                            showVentasDetalle = true
+                            section = .corte
                         } label: {
                             heroCard
                         }
@@ -235,123 +340,7 @@ struct CashRegisterView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }
-        .task(id: register.id) {
-            await corteVM.loadCorte(registerId: register.id)
-        }
-        .sheet(isPresented: $vm.showResumen) {
-            ResumenView(
-                vm: vm,
-                categoryByProduct: resumenCategories,
-                printedBy: posVM.employeeName
-            )
-        }
-        .sheet(isPresented: $showVentasDetalle) {
-            ventasDetalleSheet(register)
-        }
-        .sheet(isPresented: $showReportes) {
-            ReportesView(registerId: register.id)
-        }
-        .sheet(isPresented: $vm.showDepositDialog) {
-            DepositModal(vm: vm, posVM: posVM, registerId: register.id)
-        }
-        .sheet(isPresented: $vm.showWithdrawDialog) {
-            WithdrawModal(vm: vm, posVM: posVM, registerId: register.id)
-        }
-        .sheet(isPresented: $vm.showCloseDialog) {
-            CloseCashRegisterModal(
-                vm: vm,
-                posVM: posVM,
-                register: register,
-                corteExpectedCash: corteVM.hasData ? corteVM.cashExpected : nil
-            )
-        }
-        .sheet(item: $vm.selectedOrder, onDismiss: { showEditPayment = false }) { order in
-            orderDetailSheet(order)
-        }
-        .sheet(isPresented: $vm.showQuickCount) {
-            quickCashCountSheet(register: register)
-        }
-        .sheet(isPresented: $vm.showCorte) {
-            CorteView(
-                registerId: register.id,
-                register: register,
-                employeeNames: Dictionary(posVM.employees.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }),
-                printedBy: posVM.employeeName
-            )
-        }
-        .alert("Reembolsar Orden", isPresented: $showDeleteConfirm) {
-            TextField("Motivo", text: $deleteReason)
-            SecureField("PIN de gerente", text: $deletePin)
-            Button("Cancelar", role: .cancel) {
-                orderToDelete = nil
-                deleteReason = ""
-                deletePin = ""
-            }
-            Button("Reembolsar", role: .destructive) {
-                handleDeleteOrder()
-            }
-        } message: {
-            if let order = orderToDelete {
-                Text("¿Reembolsar y anular la orden #\(order.orderNumber)? Requiere PIN de gerente. Queda registrada para auditoría.")
-            }
-        }
-        .alert("Agregar propina", isPresented: $showTipDialog) {
-            TextField("Monto de propina", text: $tipInput)
-                .keyboardType(.decimalPad)
-            Button("Cancelar", role: .cancel) {
-                orderForTip = nil
-                tipInput = ""
-            }
-            Button("Guardar") { handleAddTip() }
-        } message: {
-            if let order = orderForTip {
-                Text("Propina para la orden #\(order.orderNumber). Se cobra por el mismo método (\(paymentMethodText(order.paymentMethod ?? "cash"))). Actualiza corte y ventas del día.")
-            }
-        }
-    }
 
-    private func handleAddTip() {
-        guard let order = orderForTip,
-              let tip = Double(tipInput.replacingOccurrences(of: ",", with: ".")),
-              tip >= 0 else { return }
-        Task {
-            let ok = await vm.addTip(orderId: order.id, tip: tip, tipPaymentMethod: order.paymentMethod ?? "cash")
-            if ok, let rid = vm.register?.id {
-                await corteVM.loadCorte(registerId: rid)
-            }
-            orderForTip = nil
-            tipInput = ""
-        }
-    }
-    
-    private func metricCard(title: String, value: String, subtitle: String? = nil, icon: String, accent: Color = .blue) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.title3)
-                    .foregroundColor(accent)
-                Spacer()
-            }
-            
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.gray)
-            
-            Text(value)
-                .font(.title2.bold())
-                .foregroundColor(.white)
-            
-            if let subtitle = subtitle {
-                Text(subtitle)
-                    .font(.caption2)
-                    .foregroundColor(.gray)
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
-        .padding(16)
-        .modifier(FlatCard())
-    }
-    
     // Acciones de caja — grid de 3 columnas para el panel derecho.
     private var actionButtonsGrid: some View {
         LazyVGrid(columns: [
@@ -359,14 +348,6 @@ struct CashRegisterView: View {
             GridItem(.flexible(), spacing: 10),
             GridItem(.flexible(), spacing: 10)
         ], spacing: 10) {
-            actionButton(title: "Corte", subtitle: "Ver corte de caja", icon: "doc.text.fill", iconColor: .yellow) {
-                vm.showCorte = true
-            }
-
-            actionButton(title: "Resumen", subtitle: "Órdenes y productos", icon: "list.clipboard.fill", iconColor: .blue) {
-                vm.showResumen = true
-            }
-
             actionButton(title: "Cajón", subtitle: "Abrir cajón", icon: "lock.open.fill", iconColor: .cyan) {
                 Task {
                     try? await APIService.shared.openCashDrawer()
@@ -385,8 +366,10 @@ struct CashRegisterView: View {
                 showReportes = true
             }
 
-            actionButton(title: "Cerrar", subtitle: "Cerrar caja", icon: "lock.fill", iconColor: .red) {
-                vm.showCloseDialog = true
+            // No abre el cierre directo: lleva al Corte, que es donde se cierra,
+            // para que nadie cierre sin haber revisado el corte.
+            actionButton(title: "Cerrar", subtitle: "Revisar y cerrar", icon: "lock.fill", iconColor: .red) {
+                section = .corte
             }
         }
     }
@@ -468,128 +451,6 @@ struct CashRegisterView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.green.opacity(0.25), lineWidth: 1))
-    }
-
-    // MARK: - Corte Cards
-
-    private func corteCardsGrid(_ register: CashRegister) -> some View {
-        let data = corteVM.corteData
-        return LazyVGrid(columns: [
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12)
-        ], spacing: 12) {
-            metricCard(
-                title: "Propinas (neto)",
-                value: data == nil ? "…" : corteVM.formatCurrency(corteVM.totalNetTips),
-                subtitle: data.map { "Bruto: \(corteVM.formatCurrency($0.tips.total))" },
-                icon: "heart.fill", accent: .pink
-            )
-            metricCard(
-                title: "Efectivo esperado",
-                value: data == nil ? "…" : corteVM.formatCurrency(corteVM.cashExpected),
-                subtitle: nil,
-                icon: "dollarsign.circle.fill", accent: .yellow
-            )
-            metricCard(
-                title: "Fondo inicial",
-                value: vm.formatCurrency(register.initialCash),
-                subtitle: nil,
-                icon: "banknote.fill", accent: .green
-            )
-            metricCard(
-                title: "Órdenes",
-                value: "\(data?.summary.totalOrders ?? vm.paidOrders.count)",
-                subtitle: "\(vm.takeoutOrdersCount) para llevar · \(vm.tableOrdersCount) en mesa",
-                icon: "list.number", accent: .blue
-            )
-        }
-    }
-
-    // MARK: - Desglose de ventas (sheet al tocar el hero)
-
-    private func ventasDetalleSheet(_ register: CashRegister) -> some View {
-        let data = corteVM.corteData
-        return NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    heroCard
-                    corteCardsGrid(register)
-
-                    // Desglose detallado
-                    VStack(spacing: 0) {
-                        detailRow(label: "Fondo inicial (apertura)", value: vm.formatCurrency(register.initialCash))
-                        detailDivider
-                        detailRow(label: "Ventas brutas", value: data.map { corteVM.formatCurrency($0.sales.total) } ?? "…")
-                        detailDivider
-                        detailRow(label: "Ventas netas", value: data == nil ? "…" : corteVM.formatCurrency(corteVM.totalNetSales), highlight: true)
-                        detailDivider
-                        detailRow(label: "Efectivo", value: data.map { corteVM.formatCurrency($0.sales.cash) } ?? "…")
-                        detailDivider
-                        detailRow(label: "Tarjeta (neto)", value: data.map { corteVM.formatCurrency($0.sales.netCard) } ?? "…")
-                        detailDivider
-                        detailRow(label: "Transferencia", value: data.map { corteVM.formatCurrency($0.sales.transfer) } ?? "…")
-                        detailDivider
-                        detailRow(label: "Propinas (bruto)", value: data.map { corteVM.formatCurrency($0.tips.total) } ?? "…")
-                        detailDivider
-                        detailRow(label: "Propinas (neto)", value: data == nil ? "…" : corteVM.formatCurrency(corteVM.totalNetTips))
-                        detailDivider
-                        detailRow(
-                            label: "Comisiones",
-                            value: data.map { "-\(corteVM.formatCurrency($0.commissions.total))" } ?? "…",
-                            subtitle: data.map { "Tasa \(corteVM.formatPercentage($0.commissions.rateWithIVA))" }
-                        )
-                        detailDivider
-                        detailRow(label: "Efectivo esperado en caja", value: data == nil ? "…" : corteVM.formatCurrency(corteVM.cashExpected), highlight: true)
-                        detailDivider
-                        detailRow(
-                            label: "Órdenes",
-                            value: "\(data?.summary.totalOrders ?? vm.paidOrders.count)",
-                            subtitle: "\(vm.takeoutOrdersCount) para llevar · \(vm.tableOrdersCount) en mesa"
-                        )
-                    }
-                    .padding(.horizontal, 16)
-                    .background(Color(white: 0.08))
-                    .cornerRadius(14)
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(white: 0.15), lineWidth: 1))
-
-                    Spacer(minLength: 20)
-                }
-                .padding(20)
-            }
-            .background(Color.black.ignoresSafeArea())
-            .navigationTitle("Desglose de ventas")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Listo") { showVentasDetalle = false }
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
-    }
-
-    private var detailDivider: some View {
-        Divider().background(Color.white.opacity(0.08))
-    }
-
-    private func detailRow(label: String, value: String, subtitle: String? = nil, highlight: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.subheadline)
-                    .foregroundColor(highlight ? .white : .gray)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption2)
-                        .foregroundColor(.gray.opacity(0.7))
-                }
-            }
-            Spacer()
-            Text(value)
-                .font(highlight ? .headline.bold() : .subheadline.weight(.semibold))
-                .foregroundColor(highlight ? .green : .white)
-        }
-        .padding(.vertical, 12)
     }
 
     // MARK: - Payment Method Bars
@@ -871,7 +732,6 @@ struct CashRegisterView: View {
 
                 Button {
                     orderForTip = order
-                    tipInput = ""
                     showTipDialog = true
                 } label: {
                     Label("Editar propina", systemImage: "heart.fill")
@@ -1171,16 +1031,12 @@ struct CashRegisterView: View {
     // Delete order state
     @State private var orderToDelete: Order?
     @State private var showDeleteConfirm = false
-    @State private var deleteReason = ""
-    @State private var deletePin = ""
 
     // Editar propina de orden pagada
     @State private var orderForTip: Order?
-    @State private var tipInput = ""
     @State private var showTipDialog = false
 
     // Desglose de ventas (sheet al tocar el hero)
-    @State private var showVentasDetalle = false
 
     // Reportes (empleado/producto/hora)
     @State private var showReportes = false
@@ -1195,18 +1051,6 @@ struct CashRegisterView: View {
     }
     
     // Delete order handler
-    private func handleDeleteOrder() {
-        guard let order = orderToDelete, !deleteReason.isEmpty, deletePin.count == 4 else { return }
-        Task {
-            let success = await vm.refundOrder(orderId: order.id, reason: deleteReason, pin: deletePin)
-            if success {
-                orderToDelete = nil
-                deleteReason = ""
-                deletePin = ""
-            }
-        }
-    }
-    
     private func formatTimeOnly(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"

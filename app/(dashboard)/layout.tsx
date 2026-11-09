@@ -1,31 +1,30 @@
 "use client";
 
-import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
+import { usePathname } from "next/navigation";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { AppHeader } from "@/components/app-header";
 import { Toaster } from "@/components/ui/sonner";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { Storefront } from "@phosphor-icons/react";
+import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  // Los editores de flujos usan todo el ancho; el resto del dashboard se
+  // centra con un ancho máximo para no estirarse en pantallas grandes.
+  const fullWidth = pathname.startsWith("/flows") || pathname.endsWith("/flow");
+
   return (
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <header className="flex h-14 items-center justify-between gap-2 border-b px-4 lg:px-6">
-          <SidebarTrigger className="-ml-1" />
-          <Link href="/bar">
-            <Button variant="default" size="sm" className="gap-2">
-              <Storefront className="size-4" weight="fill" />
-              POS
-            </Button>
-          </Link>
-        </header>
-        <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
+        <AppHeader />
+        <main className="flex-1 overflow-auto p-4 lg:p-6">
+          <div className={cn("mx-auto w-full", !fullWidth && "max-w-7xl")}>{children}</div>
+        </main>
       </SidebarInset>
       <Toaster richColors position="top-right" />
     </SidebarProvider>

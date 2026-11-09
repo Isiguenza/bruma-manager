@@ -1,24 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  addDays,
-  differenceInCalendarDays,
-  eachDayOfInterval,
-  eachHourOfInterval,
-  eachWeekOfInterval,
-  endOfDay,
-  format,
-  isSameDay,
-  isToday,
-  isYesterday,
-  startOfDay,
-  startOfHour,
-  startOfMonth,
-  startOfWeek,
-  subDays,
-  subMonths,
-} from "date-fns";
+import * as dfns from "date-fns";
+import { TZDate, tz } from "@date-fns/tz";
 import { es } from "date-fns/locale";
 import type { DateRange } from "react-day-picker";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -67,6 +51,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { BRUMA_TZ } from "@/lib/time";
 import {
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABELS,
@@ -100,6 +85,34 @@ const CATEGORY_ICONS: Record<ExpenseCategory, Icon> = {
   personal: UsersThree,
   otros: DotsThreeCircle,
 };
+
+// Todo en hora de CDMX, sin importar la zona del navegador: mismas funciones
+// de date-fns con la zona fija (`in`), así el resto de la página no cambia.
+const IN = { in: tz(BRUMA_TZ) };
+const addDays = (d: Date, n: number) => dfns.addDays(d, n, IN);
+const subDays = (d: Date, n: number) => dfns.subDays(d, n, IN);
+const subMonths = (d: Date, n: number) => dfns.subMonths(d, n, IN);
+const startOfDay = (d: Date) => dfns.startOfDay(d, IN);
+const endOfDay = (d: Date) => dfns.endOfDay(d, IN);
+const startOfHour = (d: Date) => dfns.startOfHour(d, IN);
+const startOfMonth = (d: Date) => dfns.startOfMonth(d, IN);
+const startOfWeek = (d: Date, o: { weekStartsOn: 1 }) => dfns.startOfWeek(d, { ...o, ...IN });
+const differenceInCalendarDays = (a: Date, b: Date) => dfns.differenceInCalendarDays(a, b, IN);
+const eachDayOfInterval = (i: dfns.Interval) => dfns.eachDayOfInterval(i, IN);
+const eachHourOfInterval = (i: dfns.Interval) => dfns.eachHourOfInterval(i, IN);
+const eachWeekOfInterval = (i: dfns.Interval, o: { weekStartsOn: 1 }) => dfns.eachWeekOfInterval(i, { ...o, ...IN });
+const isSameDay = (a: Date, b: Date) => dfns.isSameDay(a, b, IN);
+const isToday = (d: Date) => dfns.isToday(d, IN);
+const isYesterday = (d: Date) => dfns.isYesterday(d, IN);
+const format = (d: Date, f: string, o?: { locale?: dfns.Locale }) => dfns.format(d, f, { ...o, ...IN });
+
+/** "2026-11-08T15:20" del input datetime-local = hora de CDMX (no la del navegador). */
+function fromLocalInput(value: string) {
+  const [date, time = "00:00"] = value.split("T");
+  const [y, m, d] = date.split("-").map(Number);
+  const [h, min] = time.split(":").map(Number);
+  return new TZDate(y, m - 1, d, h, min, BRUMA_TZ);
+}
 
 const CATEGORY_META = Object.fromEntries(
   EXPENSE_CATEGORIES.map((c) => [c, { label: EXPENSE_CATEGORY_LABELS[c], icon: CATEGORY_ICONS[c] }])
@@ -342,8 +355,8 @@ export default function ExpensesPage() {
   // ---- Excel del rango que se está viendo (el navegador descarga solo por el
   // Content-Disposition de la respuesta).
   function downloadExcel() {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const qs = new URLSearchParams({ from: bounds.from.toISOString(), to: bounds.to.toISOString(), tz });
+    // El Excel escribe hora de pared de CDMX, no la del navegador.
+    const qs = new URLSearchParams({ from: bounds.from.toISOString(), to: bounds.to.toISOString(), tz: BRUMA_TZ });
     window.location.href = `/api/expenses/export?${qs}`;
   }
 
@@ -375,7 +388,7 @@ export default function ExpensesPage() {
         concept: form.concept.trim(),
         amount: Number(form.amount),
         category: form.category || guessExpenseCategory(form.concept),
-        expenseDate: form.expenseDate ? new Date(form.expenseDate).toISOString() : undefined,
+        expenseDate: form.expenseDate ? fromLocalInput(form.expenseDate).toISOString() : undefined,
         notes: form.notes,
       };
       const res = await fetch(editing ? `/api/expenses/${editing.id}` : "/api/expenses", {

@@ -43,7 +43,46 @@ struct PinNumpadView: View {
             .foregroundColor(.white)
             .frame(width: 80, height: 80)
             .modifier(GlassCircle(isActive: false, color: .blue))
+            // Toda la tecla es tocable: el glassEffect dibuja el círculo pero
+            // no cuenta para hit-testing, así que antes solo el glifo recibía
+            // el toque y los taps rápidos a la orilla se perdían.
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(InstantKeyStyle())
+    }
+}
+
+/// Dispara la tecla al TOCAR (no al soltar), como el teclado de código de
+/// iOS: al teclear rápido el siguiente dedo suele bajar antes de que suba el
+/// anterior, y con el disparo al soltar se perdían dígitos. Cada tecla tiene
+/// su propio gesto, así que toques encimados en teclas distintas cuentan
+/// todos. Un solo disparo por toque (aunque el dedo se mueva).
+private struct InstantKeyStyle: PrimitiveButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        InstantKey(configuration: configuration)
+    }
+
+    private struct InstantKey: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var pressed = false
+
+        var body: some View {
+            configuration.label
+                .scaleEffect(pressed ? 0.9 : 1)
+                .brightness(pressed ? 0.15 : 0)
+                .animation(.spring(response: 0.18, dampingFraction: 0.6), value: pressed)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            guard !pressed, isEnabled else { return }
+                            pressed = true
+                            Haptics.tap()
+                            configuration.trigger()
+                        }
+                        .onEnded { _ in pressed = false }
+                )
+                .accessibilityAction { configuration.trigger() }
+        }
     }
 }

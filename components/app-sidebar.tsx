@@ -3,32 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/components/theme-provider";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
-  ChartBar,
-  ClipboardText,
-  CurrencyDollar,
-  Package,
-  CreditCard,
-  Archive,
-  ChefHat,
   GearSix,
-  UserCircle,
   SignOut,
-  ClockCounterClockwise,
-  Storefront,
-  Tag,
-  Percent,
-  Truck,
   Sun,
   Moon,
-  CaretDown,
-  List,
-  Notepad,
-  ChatText,
-  GitBranch,
-  Receipt,
-  Smiley,
+  CaretUpDown,
+  CaretRight,
 } from "@phosphor-icons/react";
 import { BrumaLogo } from "@/components/bruma-logo";
 import {
@@ -42,8 +24,13 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarSeparator,
+  SidebarRail,
 } from "@/components/ui/sidebar";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,431 +39,152 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
+import { navSections, isNavActive, type NavItem } from "@/lib/nav";
 
-const mainNavItems = [
-  {
-    title: "Dashboard",
-    url: "/dashboard",
-    icon: ChartBar,
-  },
-  {
-    title: "Historial Órdenes",
-    url: "/orders/history",
-    icon: ClipboardText,
-  },
-];
-
-const menuNavItems = [
-  {
-    title: "Menú",
-    url: "/inventory/products",
-    icon: Notepad,
-  },
-  {
-    title: "Categorías",
-    url: "/inventory/categories",
-    icon: Archive,
-  },
-  {
-    title: "Mesas",
-    url: "/tables",
-    icon: Storefront,
-  },
-  {
-    title: "Notas Rápidas",
-    url: "/inventory/quick-notes",
-    icon: ChatText,
-  },
-  {
-    title: "Flujos",
-    url: "/flows",
-    icon: GitBranch,
-  },
-];
-
-const inventoryNavItems = [
-  {
-    title: "Inventario",
-    url: "/inventory/stock",
-    icon: Package,
-  },
-  {
-    title: "Ingredientes",
-    url: "/inventory/ingredients",
-    icon: ChefHat,
-  },
-  {
-    title: "Recetas",
-    url: "/inventory/recipes",
-    icon: ChefHat,
-  },
-];
-
-const supplierNavItems = [
-  {
-    title: "Proveedores",
-    url: "/suppliers",
-    icon: Truck,
-  },
-];
-
-const financeNavItems = [
-  {
-    title: "Caja",
-    url: "/cash-register",
-    icon: CurrencyDollar,
-  },
-  {
-    title: "Historial Cortes",
-    url: "/cash-register/history",
-    icon: ClockCounterClockwise,
-  },
-  {
-    title: "Compras y Gastos",
-    url: "/expenses",
-    icon: Receipt,
-  },
-];
-
-const loyaltyNavItems = [
-  {
-    title: "Clientes Frecuentes",
-    url: "/loyalty",
-    icon: CreditCard,
-  },
-  {
-    title: "Encuestas",
-    url: "/surveys",
-    icon: Smiley,
-  },
-];
-
-const marketingNavItems = [
-  {
-    title: "Promociones",
-    url: "/promotions",
-    icon: Tag,
-  },
-  {
-    title: "Descuentos",
-    url: "/discounts",
-    icon: Percent,
-  },
-];
-
-const settingsNavItems = [
-  {
-    title: "Empleados",
-    url: "/settings/employees",
-    icon: UserCircle,
-  },
-  {
-    title: "Mercado Pago",
-    url: "/settings/mercadopago",
-    icon: GearSix,
-  },
-  {
-    title: "Pedidos en línea",
-    url: "/settings/online-orders",
-    icon: Storefront,
-  },
-];
+const noopSubscribe = () => () => {};
 
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  // Solo en el cliente (el tema real no se conoce en el servidor).
+  const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
 
   useEffect(() => {
-    setMounted(true);
-    // Fetch user info
-    fetch('/api/auth/me')
-      .then(res => res.json())
-      .then(data => setUser(data))
-      .catch(() => setUser({ name: "Usuario", email: "usuario@bruma.com" }));
+    fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setUser(data))
+      .catch(() => setUser(null));
   }, []);
 
   async function handleLogout() {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-      toast.success('Sesión cerrada');
-      router.push('/login');
+      await fetch("/api/auth/logout", { method: "POST" });
+      toast.success("Sesión cerrada");
+      router.push("/login");
       router.refresh();
-    } catch (error) {
-      toast.error('Error al cerrar sesión');
+    } catch {
+      toast.error("Error al cerrar sesión");
     }
   }
 
-  const isActive = (url: string) => {
-    if (url === "/dashboard") return pathname === "/dashboard";
-    return pathname.startsWith(url);
-  };
+  // Solo iniciales: antes se pedía un avatar a un servicio externo con el
+  // nombre del usuario en la URL.
+  const initials = (user?.name ?? "")
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2) || "·";
 
-  const getUserInitials = () => {
-    if (!user) return "U";
-    return user.name
-      .split(" ")
-      .map(n => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
+  const renderItem = (item: NavItem) => (
+    <SidebarMenuItem key={item.url}>
+      <SidebarMenuButton asChild isActive={isNavActive(item.url, pathname)} tooltip={item.title}>
+        <Link href={item.url}>
+          <item.icon weight={isNavActive(item.url, pathname) ? "fill" : "regular"} />
+          <span>{item.title}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
 
   return (
-    <Sidebar>
-      <SidebarHeader className="border-b px-6 py-4">
-        <Link href="/dashboard">
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="px-3 py-4">
+        <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
           <BrumaLogo size="sm" />
         </Link>
-        <span className="text-xs text-muted-foreground">
-          Marisquería
-        </span>
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Principal</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {mainNavItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <Link href={item.url}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {navSections.map((section) => {
+          const containsActive = section.items.some((i) => isNavActive(i.url, pathname));
 
-        <SidebarSeparator />
+          if (!section.collapsible) {
+            return (
+              <SidebarGroup key={section.title}>
+                <SidebarGroupLabel>{section.title}</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>{section.items.map(renderItem)}</SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            );
+          }
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Menú</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {menuNavItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <Link href={item.url}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Inventario & Recetas</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {inventoryNavItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <Link href={item.url}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Proveedores</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {supplierNavItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <Link href={item.url}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Finanzas</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {financeNavItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <Link href={item.url}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Lealtad</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {loyaltyNavItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <Link href={item.url}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Marketing</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {marketingNavItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <Link href={item.url}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Configuración</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {settingsNavItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <Link href={item.url}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+          return (
+            <Collapsible key={section.title} defaultOpen={containsActive} className="group/collapsible">
+              <SidebarGroup>
+                <SidebarGroupLabel asChild>
+                  <CollapsibleTrigger className="w-full cursor-pointer hover:text-sidebar-foreground">
+                    {section.title}
+                    <CaretRight className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                  </CollapsibleTrigger>
+                </SidebarGroupLabel>
+                <CollapsibleContent>
+                  <SidebarGroupContent>
+                    <SidebarMenu>{section.items.map(renderItem)}</SidebarMenu>
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </SidebarGroup>
+            </Collapsible>
+          );
+        })}
       </SidebarContent>
 
-      <SidebarFooter className="border-t p-4">
+      <SidebarFooter className="border-t p-2">
         <DropdownMenu>
-          <DropdownMenuTrigger className="w-full">
-            <div className="flex items-center gap-3 rounded-lg p-2">
-              <Avatar className="size-10">
-                <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${user?.name || "User"}`} />
-                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                  {getUserInitials()}
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent">
+              <Avatar className="size-8 rounded-lg">
+                <AvatarFallback className="rounded-lg bg-primary/10 text-xs font-semibold text-primary">
+                  {initials}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex-1 text-left">
-                <p className="text-sm font-medium leading-none">
-                  {user?.name || "Cargando..."}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {user?.email || ""}
-                </p>
+              <div className="grid flex-1 text-left leading-tight">
+                <span className="truncate text-sm font-medium">{user?.name ?? "Mi cuenta"}</span>
+                {user?.email && <span className="truncate text-xs text-muted-foreground">{user.email}</span>}
               </div>
-              <CaretDown className="size-4 text-muted-foreground" />
-            </div>
+              <CaretUpDown className="ml-auto size-4 text-muted-foreground" />
+            </SidebarMenuButton>
           </DropdownMenuTrigger>
-          <DropdownMenuContent 
-            align="end" 
-            className="w-56"
-            side="top"
-          >
-            <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
+          <DropdownMenuContent align="end" side="top" className="w-56">
+            <DropdownMenuLabel>Mi cuenta</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            
             <DropdownMenuItem asChild>
               <Link href="/settings/profile" className="cursor-pointer">
                 <GearSix className="mr-2 size-4" />
-                <span>Configuración</span>
+                <span>Mi perfil</span>
               </Link>
             </DropdownMenuItem>
-            
             <DropdownMenuSeparator />
-            
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-              Tema
-            </DropdownMenuLabel>
-            
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Tema</DropdownMenuLabel>
             {mounted && (
               <>
-                <DropdownMenuItem 
-                  onClick={() => setTheme("light")}
-                  className="cursor-pointer"
-                >
+                <DropdownMenuItem onClick={() => setTheme("light")} className="cursor-pointer">
                   <Sun className="mr-2 size-4" />
                   <span>Claro</span>
-                  {theme === "light" && (
-                    <span className="ml-auto text-primary">✓</span>
-                  )}
+                  {theme === "light" && <span className="ml-auto text-primary">✓</span>}
                 </DropdownMenuItem>
-                
-                <DropdownMenuItem 
-                  onClick={() => setTheme("dark")}
-                  className="cursor-pointer"
-                >
+                <DropdownMenuItem onClick={() => setTheme("dark")} className="cursor-pointer">
                   <Moon className="mr-2 size-4" />
                   <span>Oscuro</span>
-                  {theme === "dark" && (
-                    <span className="ml-auto text-primary">✓</span>
-                  )}
+                  {theme === "dark" && <span className="ml-auto text-primary">✓</span>}
                 </DropdownMenuItem>
               </>
             )}
-            
             <DropdownMenuSeparator />
-            
-            <DropdownMenuItem 
-              onClick={handleLogout}
-              className="cursor-pointer text-destructive focus:text-destructive"
-            >
+            <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive focus:text-destructive">
               <SignOut className="mr-2 size-4" />
               <span>Cerrar sesión</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   );
 }

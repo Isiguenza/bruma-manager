@@ -228,6 +228,29 @@ Usar las herramientas de XcodeBuildMCP en vez de `xcodebuild` a mano:
 si falla `xcodebuild -version`, pedirle al usuario que corra
 `sudo xcode-select -s /Applications/Xcode.app` con el prefijo `!`.
 
+**Probar en local sin tocar producción:** `api-server/.env` apunta a la DB de
+PROD. Para pruebas: `./api-server/dev-local.sh`, que carga primero
+`api-server/.env.local` (gitignored) con `DATABASE_URL` del branch de Neon
+`dev-local` (proyecto `BRUMA_BD`, copia de `production`; se recrea/resetea con
+`neonctl branches reset dev-local --parent`), Stripe dummy y WhatsApp/Mailgun
+vacíos (no-op). **Gotcha:** el `DATABASE_URL` de Neon trae `&channel_binding=`
+— sin comillas, `source` lo corta en el `&`, la variable queda sin definir y
+dotenv cae al `.env` de PROD sin avisar (ya pasó: comandas de prueba llegaron
+a cocina y al Pase). Por eso va entre comillas y `dev-local.sh` se niega a
+arrancar si la URL no es la del branch. La app elige ambiente con el `return` manual de
+`AppEnvironment.current` (`Config/Environment.swift`; `.development` =
+`MacBook-Pro-de-Inaki.local:4000`/`:3003`) — el usuario corre todo desde
+Xcode y prefiere ese switch a mano, no launch arguments. En `.development`
+las dos apps muestran el letrero naranja "LOCAL · PRUEBAS" arriba
+(`Styles/LocalBackendBadge.swift`): sin letrero = estás en PROD (ya se coló
+una comanda de prueba a cocina y al Pase así). No hace falta Docker/OrbStack:
+los dos `dev-local.sh` corren con Node directo.
+Impresión local: `./print-server/dev-local.sh` (puerto 3003,
+`print-server/.env.local`) contra las impresoras reales — tickets
+`192.168.0.151`, cocina `192.168.0.107` (las reporta `GET /health` del
+print-server de prod, `192.168.0.152:3001`; los defaults del código están
+viejos). Sale papel de verdad.
+
 **Los diagnósticos de SourceKit que aparecen automáticamente tras cada
 Edit/Write en este proyecto son frecuentemente ruido/incorrectos** (falsos
 "Cannot find type X in scope" en archivos de un target multi-compartido,
@@ -295,7 +318,12 @@ círculos `.flatCircleNeutral` 80x80, el mismo look que ya tenía el acceso a
 Caja. Reemplazó 3 implementaciones independientes (`NumpadView` en
 `LoginView.swift`, `ComandasNumpad` privado en `ComandasLoginView.swift`,
 `pinNumpadButton` inline en `CashRegisterView.swift`). Cualquier pantalla de
-PIN nueva debe reusar este componente, no reinventar el numpad.
+PIN nueva debe reusar este componente, no reinventar el numpad. Sus teclas
+disparan al TOCAR (`InstantKeyStyle`, `PrimitiveButtonStyle` con
+`DragGesture(minimumDistance: 0)`), no al soltar, y llevan
+`.contentShape(Rectangle())`: el `glassEffect` no cuenta para hit-testing, así
+que sin eso solo el glifo era tocable y los taps rápidos se perdían. No lo
+regreses a `.buttonStyle(.plain)`.
 
 **Gate de caja movido de login a "enviar a cocina":** `handleOpenComanda()`
 ya NO bloquea el login si la caja está cerrada (solo informa via banner) —
@@ -348,6 +376,58 @@ misma limitación que ya tenía `printComanda`. Lectura desde el dashboard:
 directo de `lib/db/schema.ts` — no tiene espejo en `api-server` porque nada
 más lo consume), panel "Auditoría" en `/cash-register`.
 
+## Dashboard Next.js: base común
+
+- **Hora de CDMX en todo, sin depender de la zona del proceso.** La DB guarda
+  `timestamp` SIN zona en UTC. Los Dockerfile (dashboard y api-server) fijan
+  `ENV TZ=America/Mexico_City`, así que en prod `new Date().setHours(0)` SÍ da
+  medianoche de CDMX — pero no lo asumas: en SQL se agrupa con
+  `col AT TIME ZONE 'UTC' AT TIME ZONE 'America/Mexico_City'`, los rangos de
+  día con `cdmxDayStart/End`, y en pantalla se formatea con `lib/time.ts` (zona
+  fija, no la del navegador ni la del server).
+- **Navegación = `lib/nav.ts`**, única lista de páginas: la leen la barra
+  lateral, el título del header (`AppHeader`) y la búsqueda ⌘K
+  (`components/command-menu.tsx`). Página nueva → se agrega solo ahí.
+- La búsqueda ⌘K precarga el buscador de una página con `?search=` vía
+  `useSearchSeed(setSearch)` (`lib/use-search-seed.ts`); usa `window` y un
+  evento, NO `useSearchParams`, que exige `<Suspense>` en páginas cliente y
+  rompe el build.
+- Ancho: el layout del dashboard centra todo con `max-w-7xl`; solo los editores
+  de flujos (`/flows*`, `…/flow`) van a todo lo ancho. Las páginas NO ponen su
+  propio `max-w`/padding de página (excepto vistas angostas a propósito, como
+  el detalle de orden con `max-w-5xl`).
+- Encabezado de página: `components/page-header.tsx` (eyebrow = sección de la
+  navegación). No armar `<h1>` a mano en páginas nuevas.
+- Inicio (`/dashboard`) lee `GET /api/dashboard/stats`. "Venta" = misma
+  definición que el Corte del api-server: `subtotal` sin propina (o
+  `total − tip`). Los conteos de platillos excluyen hijos de paquete,
+  cortesías y anulados.
+- Historial de órdenes (`/orders/history`): dos vistas que NUNCA se combinan
+  (decisión del dueño): lista a pantalla completa → clic → la lista se oculta y
+  se abre el detalle (items a la izquierda, pago/acciones a la derecha). Sin
+  modal; `?order=<id>` compartible, Esc regresa a la lista conservando el
+  scroll (el scroll vive en `<main>`, no en `window`), ←/→ anterior/siguiente. Las tarjetas de items imitan
+  el carrito del POS (`_components/order-items.tsx`: incluidos de paquete
+  dentro del padre, modificadores de `customModifiers`, notas, asientos) y para
+  eso `GET /api/orders` regresa `parentItemId`, `packageLabel` y `payments`.
+  Editar pago usa `POST /api/orders/:id/payment-details` (como la Caja), NO el
+  `PATCH` crudo que no recalcula la transacción ni deja auditoría.
+- Platillos: lista en `/inventory/products`, detalle en su pantalla
+  `/inventory/products/[id]` (`new` = alta). `products.menuImages` llega de la
+  API como TEXTO JSON, no arreglo: usa `parseMenuImages`/`productThumb`
+  (`_components/shared.ts`); indexar el string pedía la imagen a la URL "[".
+  La portada (`menuImages[0]`) es la miniatura. `POST /api/products` NO guarda
+  fotos/video/visible-en-web y `PUT` exige el platillo completo (también
+  ignora `groupId`): el alta hace POST y luego PUT. La imagen del POS
+  (`image_url`) ya se sube al CDN (`/api/menu/upload`); el `/api/upload` viejo
+  la guardaba como base64 dentro de la DB.
+- El login NO tiene `<Toaster>` (solo vive en el layout del dashboard): ahí los
+  errores van en línea, no con `toast`.
+- Local: `./dev-dashboard.sh` (puerto 3010) usa `.env.development.local`
+  (branch `dev-local`, api-server local). Next carga ese archivo solo en
+  `next dev`. **`getApiUrl()` cae a la API de PROD si falta
+  `NEXT_PUBLIC_API_SERVER_URL`.**
+
 ## Proveedores (dashboard Next.js) — quién nos vende qué y cuánto le debemos
 
 Tab "Proveedores" (`app/(dashboard)/suppliers/`), 100% en el dashboard Next.js
@@ -362,6 +442,15 @@ producto/variante en el momento (`sourceCategoryId` queda solo como
 trazabilidad/agrupación visual, nunca se lee para el cálculo). Si después se
 agrega un producto nuevo a esa categoría, NO aparece solo — hay que tocar
 "Resincronizar categoría" en el detalle del proveedor.
+
+**Rangos de fecha = días de CDMX.** `calculateSupplierTotals` recibe
+`"YYYY-MM-DD"` y los convierte con `cdmxDayStart/cdmxDayEnd` (`lib/time.ts`).
+Antes hacía `new Date("…T23:59:59")` sin zona, que solo es correcto porque el
+contenedor fija `TZ=America/Mexico_City`; en cualquier proceso en UTC cortaba el
+último día a las 5:59 pm. Ahora no depende de la zona del proceso.
+Las tres páginas usan el mismo `PeriodPicker` (`suppliers/_components/period.tsx`,
+semana de lunes a domingo) y recalculan solas; la lista enlaza al detalle y al
+consolidado con `?from&to` para conservar el periodo.
 
 **No-traslape es a nivel aplicación, no constraint de DB**
 (`lib/suppliers/overlap.ts`, `findSupplierItemConflict`): un producto/variante
@@ -487,9 +576,14 @@ es soft delete (`deleted_at`) justamente para que la fila conserve su
 `api-server/src/lib/expenseCategories.ts`. Tabla creada con
 `drizzle/manual_expenses.sql` (ya aplicada en Neon).
 
+La página de gastos hace TODA su aritmética de fechas en CDMX: redefine arriba
+las funciones de date-fns con `{ in: tz("America/Mexico_City") }`
+(`@date-fns/tz`), y el input de fecha se interpreta como hora de CDMX
+(`fromLocalInput`). No importes `startOfDay`/`format` directo de date-fns ahí.
+
 Excel: `GET /api/expenses/export?from&to&tz` (`exceljs`, server-side) exporta
-el mismo rango `[from, to)` que está viendo la vista. Recibe `tz` del navegador
-porque el contenedor corre en UTC y Excel no tiene zonas horarias: las fechas se
+el mismo rango `[from, to)` que está viendo la vista. Recibe `tz` (la página manda
+`America/Mexico_City` fijo) porque Excel no tiene zonas horarias: las fechas se
 escriben como hora de pared local (`wallClock`), si no un gasto de las 9 pm
 saldría con la fecha del día siguiente.
 
@@ -741,6 +835,10 @@ agrupa categoría → producto → variante (separa la variante por el último
 `" - "`). La regla de qué cuenta vive dos veces: `CashRegisterViewModel.summaryItems`
 (iPad) y `handlePrintSummary` en `app/(dashboard)/cash-register/page.tsx`.
 El payload viejo (`products` ya sumado) sigue funcionando como una sola categoría.
+El agrupado del ticket (`groupSummaryItems`: categoría → producto → variante,
+"Otros" al final, un solo nombre = se muestra completo) tiene **dos espejos a
+mano**: `ResumenView.swift` (iPad) y `cash-register/_components/resumen-view.tsx`
+(dashboard). Si cambias la regla en uno, cámbiala en los tres.
 
 Pruebas sin tocar la caja, desde `print-server/`: `npm run test:corte [url]`
 y `npm run test:resumen [url]` (`scripts/test-print.js` → `POST
@@ -764,38 +862,55 @@ dividido (`order_payments`), web/online ni plataforma. Emite `order:updated` +
 `order:paid`. (`POST /api/orders/:id/tip` es el hermano viejo, solo propina —
 sigue existiendo.)
 
+**Caja del dashboard = la del iPad** (`app/(dashboard)/cash-register`, piezas
+en `_components/`): mismo selector Caja · Corte · Resumen, mismo acomodo, mismos
+colores de método (`METHOD_COLORS` = tonos de PaymentView) y TODOS los números
+salen de `GET /api/cash-register/:id/corte` (espejo Next del corte del
+api-server; comparados campo por campo: solo difiere `commissions.rate`, que no
+se muestra). No vuelvas a calcular ventas/esperado en la página: la versión
+anterior sumaba `total` con propina y tomaba depósitos de columnas que nadie
+recalcula. Imprimir corte manda el MISMO body que `CorteViewModel.printCorte()`
+(`buildCortePrintBody`). El cierre web (`close-register-dialog.tsx`) usa
+`POST /api/cash-register/:id/close`, que NO exige supervisor: solo guarda el
+motivo en auditoría; arriba de la tolerancia ($10) la UI exige el motivo.
+Historial de cortes: la lista usa columnas guardadas al cerrar; el detalle es
+el mismo `CorteView` recalculado en vivo.
+
+**Corte y Resumen en el POS = secciones de la tab de Caja, no sheets:**
+selector `Caja · Corte · Resumen` en el header de `CashRegisterView`
+(`@State section`). `CorteView` NO tiene ViewModel propio: recibe el mismo
+`corteVM` que pinta la tarjeta de Ventas Netas (tocarla lleva al Corte), así
+que pantalla, tarjeta y ticket nunca difieren; se refresca al entrar.
+`printCorte` regresa `Bool` para el toast.
+El botón "Cerrar caja" vive en el pie del Corte (solo con la caja abierta); el
+"Cerrar" del grid de la vista Caja NO abre el cierre, lleva al Corte — a
+propósito, para que nadie cierre sin revisarlo.
+Cerrar caja = `CloseCashRegisterView` (fullScreenCover, conteo por
+denominación o total) y toma esperado/desglose del mismo `corteVM`; el conteo
+se agrega a la nota de cierre ("Conteo: 12×$500, …"). Depósito, sangría,
+reembolso (PIN con `PinNumpadView`) y propina son `.bottomSheet` en
+`CashRegisterSheets.swift`. **Gotcha:** la Caja se re-bloquea a los 2 min sin
+toques (`CashRegisterViewModel.startInactivityTimer`); cualquier pantalla que
+se presente ENCIMA (cover/sheet del sistema) debe llamar
+`vm.resetInactivityTimer()` en sus toques o se cierra a media operación.
+
 UI: en el dashboard, botón "Editar pago" en el modal de historial de
 `/cash-register`. En el POS, al tocar una orden en la tab de Caja se abre
 `CashRegisterView.orderDetailSheet` (NO `OrdersHistoryModal.swift`, que es
 **código muerto** — no se presenta en ningún lado) → botón "Editar método de
 pago y propina" → `EditOrderPaymentSheet` (archivo propio, reusable).
 
-## Promociones en `app/bar` (venta web/POS de bar)
+## Promociones
 
-`lib/utils/promotions.ts` (`applyPromotions`) **muta `item.unitPrice` al precio
-YA con descuento aplicado** y deja el precio original en `item.originalPrice`.
-**Gotcha ya corregido una vez, cuidado si se toca de nuevo:** cualquier cálculo
-de subtotal en `app/bar/page.tsx` que sume `unitPrice * quantity` y LUEGO reste
-`promotionDiscount` otra vez está descontando dos veces (afecta caja real —
-sobrescribe `orders.subtotal` vía `POST /api/orders/:id/pay`). El subtotal
-"antes de descuentos" debe sumar `item.originalPrice ?? item.unitPrice` (fallback
-al precio actual solo si el item nunca tuvo promoción), y restar
-`totalPromotionDiscount` una sola vez sobre eso.
+El POS web (`app/bar`, `app/dispatch`, `orders/new|pay|dispatch`) se **eliminó**
+(obsoleto: las ventas van por Bruma POS en iPad). Las rutas `app/api/*` que
+usaba se dejaron intactas.
 
-`applyPromotions(cartItems, promotions, products)` recibe `products` (tercer
-parámetro, antes no existía) porque necesita `categoryId` para
-`applyTo:"category"` y para resolver el id de variante puntual — el creador de
-promociones guarda ids de variante como `${productId}::${variantName}` en
-`productIds` (estable aunque se reordenen); el motor también lee el formato
-por índice heredado para promociones ya guardadas. El `CartItem` de
-`app/bar/page.tsx` NUNCA guarda ese id compuesto (solo el `productId` base +
-`productName` tipo `"Producto - Variante"`), así que `applyPromotions` compara
-ese nombre contra las variantes para reconstruir el id — si se cambia ese
-formato al armar variantes (`handleAddVariant`), el matching se rompe en silencio.
-Las promos antiguas que todavía guardan `${productId}-variant-${idx}` no pueden
-reconstruirse de forma determinista si alguien ya reordenó las variantes: ejecutar
-una vez `npx tsx scripts/migrate-promotion-variant-ids.ts --apply` contra la DB
-real las convierte usando el orden actual (sin `--apply` solo muestra el plan).
+El creador de promociones guarda ids de variante como
+`${productId}::${variantName}` en `productIds` (estable aunque se reordenen);
+el formato heredado `${productId}-variant-${idx}` se convierte una vez con
+`npx tsx scripts/migrate-promotion-variant-ids.ts --apply` contra la DB real
+(sin `--apply` solo muestra el plan).
 
 **Tiempo real de promociones:** el CRUD del dashboard vive en rutas Next.js y
 Socket.IO vive en el proceso `api-server`, por lo que las rutas Next notifican
@@ -805,12 +920,6 @@ serverless puede terminar la invocación antes de despachar ese fetch.
 `API_SERVER_URL` debe estar configurada en el deployment del dashboard para
 apuntar al api-server; una falla de esa notificación nunca revierte una
 escritura ya confirmada.
-
-`app/bar` no es cliente de Socket.IO: para que una promoción creada en otra
-sesión alcance un carrito ya abierto, refresca `/api/promotions/active` con
-`cache: "no-store"` al volver a enfocar/visibilizar la página y cada minuto.
-No volver a depender solo del fetch de montaje, o el carrito seguirá usando la
-lista anterior hasta una recarga manual.
 
 ## Pedidos en línea: que nunca quede uno "en el aire"
 
@@ -874,7 +983,7 @@ que tiene, en **cualquiera de sus nodos**, al menos una opción
 `emits_child_item = true`, y esa selección no generó hijo (`child_item_id` /
 `childItemIndex` nulo). No se imprime ni se espejea como modificador: el filtro autoritativo está en
 `api-server/src/lib/kitchenPrint.ts`; `print-server/server.js` mantiene el
-resguardo legacy para snapshots, y POS Swift / `app/bar/page.tsx` aplican la
+resguardo legacy para snapshots, y POS Swift aplica la
 misma regla sobre el grafo ya resuelto.
 
 **Evaluación: el servidor resuelve, el cliente camina.** El resolver compone el
@@ -893,8 +1002,7 @@ el motor (TS y Swift) expone `childItemIndex`, que es el índice dentro del arra
 de **hijos**. El cable usa `childIndex`, que es el índice dentro del array
 `items` **completo** del body, y el backend valida
 `records[childIndex].parentIndex === record.index`. La traducción va **en la capa
-adaptadora** (`POSViewModel.itemDicts(for:)` y el armado del body de
-`app/bar/page.tsx`), nunca dentro del motor: cambiarla ahí hace divergir las dos
+adaptadora** (`POSViewModel.itemDicts(for:)`), nunca dentro del motor: cambiarla ahí hace divergir las dos
 implementaciones y rompe los vectores compartidos. Mandar el nombre equivocado
 no da error — `child_item_id` queda en `null` en silencio.
 

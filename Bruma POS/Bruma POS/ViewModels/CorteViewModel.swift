@@ -72,8 +72,10 @@ class CorteViewModel: ObservableObject {
     
     /// `employeeNames` (id → nombre) resuelve quién abrió la caja: el corte solo
     /// trae el id. `printedBy` es el empleado activo en el POS.
-    func printCorte(employeeNames: [String: String] = [:], printedBy: String? = nil) async {
-        guard let data = corteData else { return }
+    /// Regresa `false` si el print-server no respondió OK.
+    @discardableResult
+    func printCorte(employeeNames: [String: String] = [:], printedBy: String? = nil) async -> Bool {
+        guard let data = corteData else { return false }
         let movementItems: (CorteMovement) -> [[String: Any]] = { movement in
             movement.items.map { ["amount": $0.amount, "description": $0.description ?? "", "createdAt": $0.createdAt] }
         }
@@ -85,7 +87,7 @@ class CorteViewModel: ObservableObject {
             register["openedByName"] = name
         }
         
-        guard let url = URL(string: "\(APIService.shared.printServerURL)/print-corte") else { return }
+        guard let url = URL(string: "\(APIService.shared.printServerURL)/print-corte") else { return false }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -142,6 +144,8 @@ class CorteViewModel: ObservableObject {
         if let printedBy, !printedBy.isEmpty { body["printedBy"] = printedBy }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: request)
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else { return false }
+        return (200..<300).contains(http.statusCode)
     }
 }

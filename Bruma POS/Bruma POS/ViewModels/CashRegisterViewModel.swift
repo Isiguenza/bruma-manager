@@ -60,13 +60,7 @@ class CashRegisterViewModel: ObservableObject {
     // MARK: - Quick Cash Count
     @Published var showQuickCount = false
     @Published var quickCashInput = ""
-    
-    // MARK: - Corte
-    @Published var showCorte = false
 
-    // MARK: - Resumen
-    @Published var showResumen = false
-    
     var quickCashDifference: Double {
         let counted = Double(quickCashInput.replacingOccurrences(of: ",", with: "")) ?? 0
         return counted - expectedCash
@@ -193,22 +187,6 @@ class CashRegisterViewModel: ObservableObject {
                 let kind: SummaryKind = item.parentItemId != nil ? .package : (item.isGuest == true ? .guest : .sold)
                 return (item, kind)
             }
-    }
-
-    /// Productos VENDIDOS (sin anulados, incluidos de paquete ni cortesías)
-    /// agrupados por nombre (incluye variantes), de mayor a menor cantidad.
-    var productsSold: [(name: String, qty: Int)] {
-        var counts: [String: Int] = [:]
-        for (item, kind) in summaryItems where kind == .sold {
-            counts[item.productName, default: 0] += item.quantity
-        }
-        return counts
-            .map { (name: $0.key, qty: $0.value) }
-            .sorted { $0.qty > $1.qty }
-    }
-
-    var totalProductsSold: Int {
-        productsSold.reduce(0) { $0 + $1.qty }
     }
 
     // MARK: - Filtered Orders

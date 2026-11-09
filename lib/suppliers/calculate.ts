@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { orderItems, orders, supplierItems } from "@/lib/db/schema";
 import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import type { SupplierCalculationLine } from "@/lib/types";
+import { cdmxDayStart, cdmxDayEnd } from "@/lib/time";
 
 export interface SupplierBucket {
   supplierId: string;
@@ -33,8 +34,10 @@ export async function calculateSupplierTotals(params: {
 }): Promise<SupplierCalculationResult> {
   const { supplierId, dateFrom, dateTo } = params;
 
-  const from = new Date(`${dateFrom}T00:00:00`);
-  const to = new Date(`${dateTo}T23:59:59.999`);
+  // Días completos en hora de CDMX: sin zona, el servidor (UTC) cortaba el
+  // último día a las 5:59 pm y dejaba fuera la cena.
+  const from = cdmxDayStart(dateFrom);
+  const to = cdmxDayEnd(dateTo);
 
   const items = await db.query.supplierItems.findMany({
     where: supplierId

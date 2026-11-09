@@ -14,9 +14,9 @@ struct PaymentNumpadView: View {
     ]
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             ForEach(keys, id: \.self) { row in
-                HStack(spacing: 10) {
+                HStack(spacing: 14) {
                     ForEach(row, id: \.self) { key in
                         NumpadKey(
                             label: key,
@@ -39,7 +39,7 @@ struct PaymentNumpadView: View {
                 }
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 4)
     }
 }
 
@@ -59,20 +59,22 @@ private struct NumpadKey: View {
             Group {
                 if isDone {
                     Image(systemName: "checkmark")
-                        .font(.title2.weight(.bold))
+                        .font(.system(size: 26, weight: .bold))
                         .foregroundStyle(.white)
                 } else if isActionKey {
                     Image(systemName: label == "C" ? "xmark" : "delete.left")
-                        .font(.title2.weight(.semibold))
+                        .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(.gray)
                 } else {
                     Text(label)
-                        .font(.title2.weight(.medium))
+                        .font(.system(size: 32, weight: .medium, design: .rounded))
                         .foregroundStyle(.white)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 48)
+            // Tamaño fijo (no maxWidth): teclas grandes y juntas, fáciles de
+            // atinar con el dedo, en vez de círculos chicos repartidos.
+            .frame(width: 72, height: 72)
+            .contentShape(Circle())
             .background(
                 Circle()
                     .fill(isDone ? Color.green.opacity(0.3) : Color.white.opacity(0.06))

@@ -46,6 +46,7 @@ struct ComandasRootView: View {
         // propósito de trazabilidad de auditoría, ver SessionLockMonitor.swift.
         .sessionAutoLock(sessionLock, vm: vm) { [weak vm] in vm?.employeeId != nil }
         .onAppear { sessionLock.timeout = 180 }
+        .localBackendBadge()
         .onChange(of: scenePhase) { _, phase in
             // Se fue al Home del iPhone — al volver a abrir la app debe
             // pedir el PIN de nuevo, sin esperar los 3 min de inactividad.

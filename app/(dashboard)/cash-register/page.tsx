@@ -1,19 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useCallback, useEffect, useState } from "react";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -29,110 +22,130 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  CurrencyDollar,
-  LockOpen,
-  Lock,
-  Spinner,
-  Receipt,
-  ArrowUp,
-  ArrowDown,
-  Printer,
-  ClipboardText,
-} from "@phosphor-icons/react";
+import { LockSimpleOpen, Spinner } from "@phosphor-icons/react";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
 import type { CashRegister } from "@/lib/types";
-import { CashRegisterCloseModal } from "@/components/cash-register-close-modal";
-import { WithdrawModal } from "@/components/withdraw-modal";
-import { DepositModal } from "@/components/deposit-modal";
-import { EmployeePinModal } from "@/components/employee-pin-modal";
+import { PageHeader } from "@/components/page-header";
+import { cn } from "@/lib/utils";
+import { formatDateTime, formatTime } from "@/lib/time";
+import { CajaView, type CajaOrder } from "./_components/caja-view";
+import { CorteView } from "./_components/corte-view";
+import { ResumenView } from "./_components/resumen-view";
+import { CloseRegisterDialog } from "./_components/close-register-dialog";
+import { CashMovementDialog, type MovementKind } from "./_components/cash-movement-dialog";
+import { type CorteData, money, printServerUrl } from "./_components/shared";
 
+type Section = "caja" | "corte" | "resumen";
+const SECTIONS: [Section, string][] = [
+  ["caja", "Caja"],
+  ["corte", "Corte"],
+  ["resumen", "Resumen"],
+];
+
+// Mismo ritmo que el respaldo de la Caja del iPad: los cobros de los iPads
+// llegan sin recargar.
+const REFRESH_MS = 30_000;
+
+/**
+ * Caja del dashboard — igual a la del iPad: selector Caja · Corte · Resumen,
+ * y TODOS los números salen del Corte (`/api/cash-register/:id/corte`, espejo
+ * del que usa el POS), no de cálculos propios de la página.
+ */
 export default function CashRegisterPage() {
   const [register, setRegister] = useState<CashRegister | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [employeeNames, setEmployeeNames] = useState<Record<string, string>>({});
+  const [section, setSection] = useState<Section>("caja");
 
-  // Open dialog
+  const [corte, setCorte] = useState<CorteData | null>(null);
+  const [paidOrders, setPaidOrders] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Abrir caja
   const [openDialogVisible, setOpenDialogVisible] = useState(false);
   const [initialCash, setInitialCash] = useState("");
-  const [openingEmployeeId, setOpeningEmployeeId] = useState<string | null>(null);
-  const [pinModalForOpen, setPinModalForOpen] = useState(false);
-
-  // Advanced modals
-  const [closeModalOpen, setCloseModalOpen] = useState(false);
-  const [closeModalKey, setCloseModalKey] = useState(0);
-  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
-  const [depositModalOpen, setDepositModalOpen] = useState(false);
-
   const [submitting, setSubmitting] = useState(false);
-  
-  // Orders history modal
-  const [ordersHistoryOpen, setOrdersHistoryOpen] = useState(false);
-  const [paidOrders, setPaidOrders] = useState<any[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
-  const [actualTotalSales, setActualTotalSales] = useState<number>(0);
-  const [employeeNames, setEmployeeNames] = useState<Record<string, string>>({});
+
+  // Cierre y movimientos
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [movement, setMovement] = useState<MovementKind | null>(null);
 
   // Auditoría: quién comandó/cobró qué, a qué orden, y cuándo.
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditEntries, setAuditEntries] = useState<any[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
 
-  // Delete order modal
-  const [deleteOrderModalOpen, setDeleteOrderModalOpen] = useState(false);
+  // Eliminar orden
   const [orderToDelete, setOrderToDelete] = useState<any>(null);
   const [deleteReason, setDeleteReason] = useState("");
   const [deletingOrder, setDeletingOrder] = useState(false);
   const [reprintingOrderId, setReprintingOrderId] = useState<string | null>(null);
 
-  // Edit order payment details modal
-  const [editOrderOpen, setEditOrderOpen] = useState(false);
+  // Editar método de pago / propina
   const [editOrder, setEditOrder] = useState<any>(null);
   const [editPaymentMethod, setEditPaymentMethod] = useState("cash");
   const [editTip, setEditTip] = useState("0");
   const [editTipMethod, setEditTipMethod] = useState("cash");
   const [savingEdit, setSavingEdit] = useState(false);
-  const [printingSummary, setPrintingSummary] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     try {
-      // Cargar usuario primero
       const userRes = await fetch("/api/auth/me");
-      if (userRes.ok) {
-        const user = await userRes.json();
-        setCurrentUser(user);
-      }
+      if (userRes.ok) setCurrentUser(await userRes.json());
 
-      // Luego cargar registro
-      const registerRes = await fetch("/api/cash-register/current");
-      if (registerRes.ok) {
-        const data = await registerRes.json();
-        setRegister(data);
-      } else if (registerRes.status === 404) {
-        setRegister(null);
-      }
+      const registerRes = await fetch("/api/cash-register/current", { cache: "no-store" });
+      if (registerRes.ok) setRegister(await registerRes.json());
+      else if (registerRes.status === 404) setRegister(null);
 
-      // Trazabilidad: nombres de empleados para mostrar "quién" en el
-      // historial de órdenes (orders.userId solo trae el id).
+      // Trazabilidad: nombres para mostrar "quién" (orders.userId solo trae el id).
       const employeesRes = await fetch("/api/employees");
       if (employeesRes.ok) {
         const employees = await employeesRes.json();
-        setEmployeeNames(
-          Object.fromEntries(employees.map((e: any) => [e.id, e.name]))
-        );
+        setEmployeeNames(Object.fromEntries(employees.map((e: any) => [e.id, e.name])));
       }
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  const loadRegisterData = useCallback(async (registerId: string) => {
+    setRefreshing(true);
+    try {
+      const [corteRes, ordersRes] = await Promise.all([
+        fetch(`/api/cash-register/${registerId}/corte`, { cache: "no-store" }),
+        fetch(`/api/orders/history?registerId=${registerId}`, { cache: "no-store" }),
+      ]);
+      if (corteRes.ok) setCorte(await corteRes.json());
+      if (ordersRes.ok) setPaidOrders(await ordersRes.json());
+    } catch (error) {
+      console.error("Error loading register data:", error);
+      toast.error("Error cargando la caja");
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!register) return;
+    loadRegisterData(register.id);
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") loadRegisterData(register.id);
+    }, REFRESH_MS);
+    return () => clearInterval(id);
+  }, [register, loadRegisterData]);
+
+  const reload = useCallback(() => {
+    if (register) loadRegisterData(register.id);
+  }, [register, loadRegisterData]);
+
+  // MARK: - Abrir caja
 
   function initiateOpen() {
     const amount = parseFloat(initialCash);
@@ -140,38 +153,26 @@ export default function CashRegisterPage() {
       toast.error("Ingresa un monto inicial válido");
       return;
     }
-    
     if (!currentUser) {
       toast.error("No hay usuario autenticado");
       return;
     }
-    
-    // Usar usuario autenticado del dashboard
-    setOpeningEmployeeId(currentUser.id);
-    setOpenDialogVisible(false);
-    handleOpenPinSuccess(currentUser.id, currentUser.name);
+    // Usa el usuario autenticado del dashboard como quien abre.
+    handleOpen(currentUser.id);
   }
 
-  async function handleOpen() {
-    if (!openingEmployeeId) {
-      toast.error("Debes identificarte primero");
-      return;
-    }
+  async function handleOpen(employeeId: string) {
     setSubmitting(true);
     try {
       const res = await fetch("/api/cash-register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          initialCash: parseFloat(initialCash),
-          employeeId: openingEmployeeId,
-        }),
+        body: JSON.stringify({ initialCash: parseFloat(initialCash), employeeId }),
       });
       if (!res.ok) throw new Error();
       toast.success("Caja abierta");
       setOpenDialogVisible(false);
       setInitialCash("");
-      setOpeningEmployeeId(null);
       loadData();
     } catch {
       toast.error("Error abriendo caja");
@@ -180,64 +181,7 @@ export default function CashRegisterPage() {
     }
   }
 
-  function handleOpenPinSuccess(empId: string, empName: string) {
-    setOpeningEmployeeId(empId);
-    setPinModalForOpen(false);
-    toast.success(`Identificado: ${empName}`);
-    // Abrir caja después de autenticación
-    setTimeout(() => handleOpen(), 100);
-  }
-
-  async function handleCloseSuccess() {
-    toast.success("Caja cerrada exitosamente");
-    setCloseModalOpen(false);
-    await loadData();
-  }
-
-  function handleCloseModalOpen() {
-    // Force fresh state by incrementing key (forces re-mount)
-    setCloseModalKey(prev => prev + 1);
-    setCloseModalOpen(true);
-  }
-
-  function handleWithdrawSuccess() {
-    setWithdrawModalOpen(false);
-    loadData();
-  }
-
-  function handleDepositSuccess() {
-    setDepositModalOpen(false);
-    loadData();
-  }
-
-  async function loadPaidOrders() {
-    if (!register) return;
-    setLoadingOrders(true);
-    try {
-      // Fetch all paid orders scoped to this register (no date filter needed — registerId is the scope)
-      const res = await fetch(`/api/orders/history?registerId=${register.id}`);
-      if (res.ok) {
-        const allOrders = await res.json();
-        setPaidOrders(allOrders);
-        
-        // Calcular el total real de las órdenes
-        const total = allOrders.reduce((sum: number, order: any) => {
-          return sum + parseFloat(order.total || "0");
-        }, 0);
-        setActualTotalSales(total);
-      }
-    } catch (error) {
-      console.error("Error loading orders:", error);
-      toast.error("Error cargando órdenes");
-    } finally {
-      setLoadingOrders(false);
-    }
-  }
-
-  function handleShowOrders() {
-    setOrdersHistoryOpen(true);
-    loadPaidOrders();
-  }
+  // MARK: - Auditoría
 
   async function handleShowAudit() {
     setAuditOpen(true);
@@ -252,26 +196,14 @@ export default function CashRegisterPage() {
       setLoadingAudit(false);
     }
   }
-  
-  // Cargar órdenes al montar el componente para calcular el total real
-  useEffect(() => {
-    if (register) {
-      loadPaidOrders();
-    }
-  }, [register]);
 
-  function handleDeleteOrderClick(order: any) {
-    setOrderToDelete(order);
-    setDeleteReason("");
-    setDeleteOrderModalOpen(true);
-  }
+  // MARK: - Órdenes
 
   async function handleConfirmDelete() {
     if (!orderToDelete || !deleteReason.trim()) {
       toast.error("Debes ingresar un motivo");
       return;
     }
-    
     setDeletingOrder(true);
     try {
       const res = await fetch(`/api/orders/${orderToDelete.id}`, {
@@ -279,17 +211,11 @@ export default function CashRegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: deleteReason }),
       });
-      
       if (!res.ok) throw new Error("Error eliminando orden");
-      
       toast.success("Orden eliminada");
-      setDeleteOrderModalOpen(false);
       setOrderToDelete(null);
       setDeleteReason("");
-      
-      // Recargar órdenes y datos de caja
-      loadPaidOrders();
-      loadData();
+      reload();
     } catch (error) {
       console.error("Error deleting order:", error);
       toast.error("Error eliminando orden");
@@ -309,7 +235,6 @@ export default function CashRegisterPage() {
     setEditPaymentMethod(order.paymentMethod || "cash");
     setEditTip(String(parseFloat(order.tip || "0")));
     setEditTipMethod(order.tipPaymentMethod || order.paymentMethod || "cash");
-    setEditOrderOpen(true);
   }
 
   async function handleSaveOrderEdit() {
@@ -335,9 +260,8 @@ export default function CashRegisterPage() {
         throw new Error(err.error || "Error");
       }
       toast.success("Orden actualizada");
-      setEditOrderOpen(false);
       setEditOrder(null);
-      await loadPaidOrders();
+      reload();
     } catch (error: any) {
       toast.error(error.message || "Error al actualizar la orden");
     } finally {
@@ -348,44 +272,34 @@ export default function CashRegisterPage() {
   async function handleReprintOrder(order: any) {
     setReprintingOrderId(order.id);
     try {
-      // Preparar datos para reimprimir
-      const itemsBySeat: Record<string, Array<{ name: string; qty: number; total: number }>> = {};
-      
-      // Agrupar items (simplificado, todos juntos)
-      itemsBySeat["A1"] = (order.items || []).map((item: any) => ({
-        name: item.productName,
-        qty: item.quantity,
-        total: parseFloat(item.subtotal || "0")
-      }));
-
-      // Calcular descuento si hay
-      const discountData = order.discountAmount && parseFloat(order.discountAmount) > 0 ? {
-        name: order.discountName || "Descuento",
-        amount: Math.round(parseFloat(order.discountAmount))
-      } : undefined;
-
+      const discountData =
+        order.discountAmount && parseFloat(order.discountAmount) > 0
+          ? { name: order.discountName || "Descuento", amount: Math.round(parseFloat(order.discountAmount)) }
+          : undefined;
       const printData = {
         customerName: order.customerName || "",
         orderNumber: order.orderNumber?.toString() || "N/A",
-        items: itemsBySeat,
+        items: {
+          A1: (order.items || []).map((item: any) => ({
+            name: item.productName,
+            qty: item.quantity,
+            total: parseFloat(item.subtotal || "0"),
+          })),
+        },
         subtotal: parseFloat(order.subtotal || "0"),
         tip: parseFloat(order.tip || "0"),
         total: parseFloat(order.total || "0"),
         tableNumber: order.tableNumber || "",
         isDelivery: !order.tableId,
         paymentMethod: order.paymentMethod,
-        discount: discountData
+        discount: discountData,
       };
-
-      const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.160:3001";
-      const response = await fetch(`${printServerUrl}/print`, {
+      const response = await fetch(`${printServerUrl()}/print`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(printData)
+        body: JSON.stringify(printData),
       });
-
       if (!response.ok) throw new Error("Error al reimprimir");
-      
       toast.success("Ticket reimpreso");
     } catch (error) {
       console.error("Error reprinting:", error);
@@ -395,508 +309,232 @@ export default function CashRegisterPage() {
     }
   }
 
-  async function handlePrintSummary() {
-    if (!register) return;
-    setPrintingSummary(true);
-    try {
-      // Categoría de cada producto, para que el print-server agrupe el ticket.
-      const [productsRes, categoriesRes] = await Promise.all([
-        fetch("/api/products"),
-        fetch("/api/categories"),
-      ]);
-      const productList: any[] = productsRes.ok ? await productsRes.json() : [];
-      const categoryList: any[] = categoriesRes.ok ? await categoriesRes.json() : [];
-      const categoryById = new Map(categoryList.map((c) => [c.id, c]));
-      const categoryByProduct = new Map(
-        productList.map((p) => [p.id, categoryById.get(p.categoryId)])
-      );
-
-      // Mismas reglas que el iPad (CashRegisterViewModel.summaryItems): los
-      // anulados no cuentan; hijos de paquete y cortesías van en su sección.
-      const items: any[] = [];
-      const promotionSales: Record<string, { name: string; count: number }> = {};
-      for (const order of paidOrders) {
-        for (const item of order.items || []) {
-          if (item.voided) continue;
-          const quantity = Number(item.quantity) || 0;
-          const kind = item.parentItemId ? "package" : item.isGuest ? "guest" : "sold";
-          const category = categoryByProduct.get(item.productId);
-          items.push({
-            productId: item.productId,
-            name: item.productName,
-            qty: quantity,
-            kind,
-            ...(category ? { category: category.name, categorySort: category.sortOrder } : {}),
-            ...(item.promotionId != null ? { hasPromo: true } : {}),
-          });
-
-          if (kind === "sold" && item.promotionId != null) {
-            const promotionKey = String(item.promotionId);
-            const promotion = promotionSales[promotionKey] || {
-              name: item.promotionName || "Promoción",
-              count: 0
-            };
-            promotion.count += quantity;
-            promotionSales[promotionKey] = promotion;
-          }
-        }
-      }
-
-      const summaryData = {
-        openedAt: register.openedAt,
-        printedBy: currentUser?.name,
-        totalOrders: paidOrders.length,
-        tableCount: paidOrders.filter((o) => o.tableId).length,
-        takeoutCount: paidOrders.filter((o) => !o.tableId).length,
-        items,
-        promotionSummary: Object.values(promotionSales),
-      };
-
-      const printServerUrl = process.env.NEXT_PUBLIC_PRINT_SERVER_URL || "http://192.168.0.160:3001";
-      const response = await fetch(`${printServerUrl}/print-summary`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(summaryData)
-      });
-
-      if (!response.ok) throw new Error("Error al imprimir resumen");
-      
-      toast.success("Resumen de ventas impreso");
-    } catch (error) {
-      console.error("Error printing summary:", error);
-      toast.error("Error al imprimir resumen");
-    } finally {
-      setPrintingSummary(false);
-    }
-  }
-
-  const formatCurrency = (amount: string | number | null) => {
-    if (amount === null) return "$0.00";
-    return new Intl.NumberFormat("es-MX", {
-      style: "currency",
-      currency: "MXN",
-    }).format(typeof amount === "string" ? parseFloat(amount) : amount);
-  };
+  // MARK: - Render
 
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Spinner className="size-8 animate-spin" />
+        <Spinner className="size-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  // No register open
   if (!register) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">Caja Registradora</h1>
-        <Card className="mx-auto max-w-md">
-          <CardContent className="flex flex-col items-center justify-center p-12">
-            <LockOpen className="mb-4 size-16 text-muted-foreground" />
-            <h2 className="text-xl font-semibold">No hay caja abierta</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Abre la caja para comenzar a registrar ventas
-            </p>
-            <Button
-              className="mt-6"
-              size="lg"
-              onClick={() => setOpenDialogVisible(true)}
-            >
-              <LockOpen className="mr-2 size-4" />
-              Abrir Caja
-            </Button>
-          </CardContent>
+        <PageHeader title="Caja" description="No hay una caja abierta" />
+        <Card className="mx-auto flex max-w-md flex-col items-center gap-2 p-12 text-center">
+          <span className="mb-2 flex size-16 items-center justify-center rounded-full bg-muted">
+            <LockSimpleOpen className="size-8 text-muted-foreground" weight="fill" />
+          </span>
+          <h2 className="text-xl font-semibold">No hay caja abierta</h2>
+          <p className="text-sm text-muted-foreground">Ábrela para empezar a registrar ventas. Sin caja abierta los iPads no pueden mandar a cocina.</p>
+          <Button className="mt-4 rounded-full" size="lg" onClick={() => setOpenDialogVisible(true)}>
+            <LockSimpleOpen className="mr-2 size-4" weight="fill" />
+            Abrir caja
+          </Button>
         </Card>
 
-        {/* Open Dialog */}
         <Dialog open={openDialogVisible} onOpenChange={setOpenDialogVisible}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Abrir Caja</DialogTitle>
-              <DialogDescription>
-                Ingresa el monto inicial de efectivo en caja
-              </DialogDescription>
+              <DialogTitle>Abrir caja</DialogTitle>
+              <DialogDescription>¿Con cuánto efectivo arranca el cajón?</DialogDescription>
             </DialogHeader>
-            <div className="space-y-2">
-              <Label>Efectivo inicial</Label>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                initiateOpen();
+              }}
+              className="space-y-4"
+            >
               <Input
-                type="number"
-                step="0.01"
+                inputMode="decimal"
                 value={initialCash}
                 onChange={(e) => setInitialCash(e.target.value)}
-                placeholder="0.00"
-                className="text-xl"
+                placeholder="$0.00"
+                className="h-16 rounded-full px-6 text-3xl font-bold tabular-nums"
                 autoFocus
               />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setOpenDialogVisible(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={initiateOpen} disabled={submitting}>
-                {submitting ? "Abriendo..." : "Continuar"}
-              </Button>
-            </DialogFooter>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setOpenDialogVisible(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? "Abriendo…" : "Abrir caja"}
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       </div>
     );
   }
 
-  // Register is open
-  // Calculate actual sales from paid orders (same as summary)
-  const actualCashSales = paidOrders
-    .filter(o => o.paymentMethod === 'cash')
-    .reduce((sum, o) => sum + parseFloat(o.total || '0'), 0);
-  
-  const actualTerminalSales = paidOrders
-    .filter(o => o.paymentMethod === 'card' || o.paymentMethod === 'terminal_mercadopago')
-    .reduce((sum, o) => sum + parseFloat(o.total || '0'), 0);
-  
-  const actualTransferSales = paidOrders
-    .filter(o => o.paymentMethod === 'transfer')
-    .reduce((sum, o) => sum + parseFloat(o.total || '0'), 0);
-  
-  // expectedCash = initialCash + cashSales - withdrawals + deposits
-  const expectedCash =
-    parseFloat(register.initialCash) + 
-    actualCashSales - 
-    parseFloat(register.withdrawals || "0") + 
-    parseFloat(register.deposits || "0");
+  const openedBy = register.openedBy ? employeeNames[register.openedBy] : undefined;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Caja Registradora</h1>
-        <Badge variant="default" className="gap-1">
-          <LockOpen className="size-3" />
-          Abierta
-        </Badge>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-3">
+            Caja
+            <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-muted px-3 text-sm font-semibold">
+              <span className="size-2 rounded-full bg-emerald-500" />
+              Abierta
+            </span>
+          </span>
+        }
+        description={`Desde ${formatTime(register.openedAt)}${openedBy ? ` · abrió ${openedBy}` : ""}`}
+        actions={
+          <div className="inline-flex rounded-lg border bg-muted/40 p-1">
+            {SECTIONS.map(([key, text]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSection(key)}
+                className={cn(
+                  "min-w-24 rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
+                  section === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Efectivo Inicial</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {formatCurrency(register.initialCash)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover:bg-accent transition-colors" onClick={handleShowOrders}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Ventas Totales (Hoy)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {formatCurrency(actualTotalSales)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {paidOrders.length} órdenes completadas
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Efectivo Esperado</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {formatCurrency(expectedCash)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Abierta desde</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-lg font-medium">
-              {format(new Date(register.openedAt), "HH:mm", { locale: es })}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {format(new Date(register.openedAt), "dd MMM yyyy", { locale: es })}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex gap-3">
-        <Button
-          variant="outline"
-          onClick={() => setDepositModalOpen(true)}
-        >
-          <ArrowDown className="mr-1 size-4 text-green-600" />
-          Depósito
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => setWithdrawModalOpen(true)}
-        >
-          <ArrowUp className="mr-1 size-4 text-red-600" />
-          Sangría (Retiro)
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handlePrintSummary}
-          disabled={printingSummary || paidOrders.length === 0}
-        >
-          <Printer className="mr-1 size-4" />
-          {printingSummary ? "Imprimiendo..." : "Imprimir Resumen"}
-        </Button>
-        <Button variant="outline" onClick={handleShowAudit}>
-          <ClipboardText className="mr-1 size-4" />
-          Auditoría
-        </Button>
-        <div className="flex-1" />
-        <Button variant="destructive" onClick={handleCloseModalOpen}>
-          <Lock className="mr-1 size-4" />
-          Cerrar Caja / Corte
-        </Button>
-      </div>
-
-      {/* Advanced Modals */}
-      {register && (
-        <>
-          <CashRegisterCloseModal
-            key={closeModalKey}
-            open={closeModalOpen}
-            onClose={() => setCloseModalOpen(false)}
-            onSuccess={handleCloseSuccess}
-            registerId={register.id}
-            userRole={currentUser?.role || "cashier"}
-            summary={{
-              initialCash: parseFloat(register.initialCash),
-              expectedCash,
-              totalSales: actualTotalSales,
-              cashSales: actualCashSales,
-              terminalSales: actualTerminalSales,
-              transferSales: actualTransferSales,
-              withdrawals: parseFloat(register.withdrawals || "0"),
-              deposits: parseFloat(register.deposits || "0"),
-            }}
-          />
-          <WithdrawModal
-            open={withdrawModalOpen}
-            onClose={() => setWithdrawModalOpen(false)}
-            onSuccess={handleWithdrawSuccess}
-            registerId={register.id}
-          />
-          <DepositModal
-            open={depositModalOpen}
-            onClose={() => setDepositModalOpen(false)}
-            onSuccess={handleDepositSuccess}
-            registerId={register.id}
-          />
-        </>
+      {section === "caja" && (
+        <CajaView
+          corte={corte}
+          orders={paidOrders as CajaOrder[]}
+          employeeNames={employeeNames}
+          isEditable={isEditableOrder}
+          reprintingId={reprintingOrderId}
+          onGoToCorte={() => setSection("corte")}
+          onDeposit={() => setMovement("deposit")}
+          onWithdraw={() => setMovement("withdrawal")}
+          onAudit={handleShowAudit}
+          onEditPayment={handleEditOrderClick}
+          onReprint={handleReprintOrder}
+          onDelete={(o) => {
+            setOrderToDelete(o);
+            setDeleteReason("");
+          }}
+        />
       )}
 
-      {/* TODO: Implementar PIN Modal mejorado
-          - Usar PinPad directamente (sin email)
-          - Pedir número de empleado con numpad
-          - Luego pedir PIN con numpad
-          - Similar al flujo de PinPad actual pero con número de empleado primero
-      */}
+      {section === "corte" &&
+        (corte ? (
+          <CorteView
+            data={corte}
+            loading={refreshing}
+            onReload={reload}
+            employeeNames={employeeNames}
+            printedBy={currentUser?.name}
+            onCloseRegister={() => setCloseOpen(true)}
+          />
+        ) : (
+          <div className="flex h-64 items-center justify-center">
+            <Spinner className="size-8 animate-spin text-muted-foreground" />
+          </div>
+        ))}
 
-      {/* Orders History Modal */}
-      <Dialog open={ordersHistoryOpen} onOpenChange={setOrdersHistoryOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Historial de Órdenes Pagadas</DialogTitle>
-            <DialogDescription>
-              Órdenes registradas en esta caja
-            </DialogDescription>
-          </DialogHeader>
-          
-          {loadingOrders ? (
-            <div className="flex items-center justify-center py-8">
-              <Spinner className="size-8 animate-spin" />
-            </div>
-          ) : paidOrders.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No hay órdenes registradas
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {paidOrders.map((order) => (
-                <Card key={order.id} className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">#{order.orderNumber}</span>
-                        <Badge variant="outline">
-                          {order.paymentMethod === 'cash' ? 'Efectivo' : 
-                           order.paymentMethod === 'card' ? 'Tarjeta' : 
-                           order.paymentMethod === 'transfer' ? 'Transferencia' : 
-                           order.paymentMethod === 'terminal_mercadopago' ? 'Terminal' : 
-                           order.paymentMethod}
-                        </Badge>
-                      </div>
-                      <div className="text-sm text-muted-foreground mt-1">
-                        {order.tableId ? `Mesa ${order.tableNumber || ''}` : 'Para Llevar'}
-                        {order.customerName && ` - ${order.customerName}`}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {format(new Date(order.createdAt), "dd/MM/yyyy HH:mm", { locale: es })}
-                        {order.userId && employeeNames[order.userId] && (
-                          <> · {employeeNames[order.userId]}</>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {order.discountAmount && parseFloat(order.discountAmount) > 0 && (() => {
-                        const discountAmt = parseFloat(order.discountAmount);
-                        const subtotalAmt = parseFloat(order.subtotal || "0");
-                        const percentage = subtotalAmt > 0 ? Math.round((discountAmt / subtotalAmt) * 100) : 0;
-                        return (
-                          <Badge className="bg-yellow-500 text-black font-semibold">
-                            -{percentage}%
-                          </Badge>
-                        );
-                      })()}
-                      <div className="text-right">
-                        <div className="font-bold text-lg">
-                          {formatCurrency(order.total)}
-                        </div>
-                        {parseFloat(order.tip || '0') > 0 && (
-                          <div className="text-xs text-muted-foreground">
-                            Propina: {formatCurrency(order.tip)}
-                          </div>
-                        )}
-                      </div>
-                      {isEditableOrder(order) && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditOrderClick(order)}
-                        >
-                          Editar pago
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleReprintOrder(order)}
-                        disabled={reprintingOrderId === order.id}
-                      >
-                        <Printer className="size-4" />
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDeleteOrderClick(order)}
-                      >
-                        Eliminar
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {section === "resumen" && (
+        <ResumenView orders={paidOrders} openedAt={new Date(register.openedAt).toISOString()} printedBy={currentUser?.name} loading={refreshing} onReload={reload} />
+      )}
 
-      {/* Auditoría: quién comandó/cobró qué, a qué orden, y cuándo */}
+      <CloseRegisterDialog
+        open={closeOpen}
+        onOpenChange={setCloseOpen}
+        registerId={register.id}
+        corte={corte}
+        onClosed={() => {
+          setCloseOpen(false);
+          setSection("caja");
+          setCorte(null);
+          setPaidOrders([]);
+          loadData();
+        }}
+      />
+
+      {movement && (
+        <CashMovementDialog
+          kind={movement}
+          open={movement !== null}
+          onOpenChange={(open) => !open && setMovement(null)}
+          registerId={register.id}
+          onDone={() => {
+            setMovement(null);
+            reload();
+          }}
+        />
+      )}
+
+      {/* Auditoría */}
       <Dialog open={auditOpen} onOpenChange={setAuditOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-h-[80vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Auditoría</DialogTitle>
-            <DialogDescription>
-              Quién comandó y quién cobró, con hora y detalle — últimas 200 acciones
-            </DialogDescription>
+            <DialogDescription>Quién comandó y quién cobró, con hora y detalle — últimas 200 acciones</DialogDescription>
           </DialogHeader>
-
           {loadingAudit ? (
             <div className="flex items-center justify-center py-8">
               <Spinner className="size-8 animate-spin" />
             </div>
           ) : auditEntries.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No hay acciones registradas todavía
-            </div>
+            <div className="py-8 text-center text-muted-foreground">No hay acciones registradas todavía</div>
           ) : (
-            <div className="space-y-2">
+            <div className="divide-y rounded-xl border">
               {auditEntries.map((entry) => (
-                <Card key={entry.id} className="p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant={entry.action === "order.paid" ? "default" : "outline"}>
-                          {entry.action === "order.sent_to_kitchen" ? "Comandó" : entry.action === "order.paid" ? "Cobró" : entry.action}
-                        </Badge>
-                        <span className="font-medium">{entry.employeeName || "Empleado desconocido"}</span>
-                        {entry.details?.orderNumber && (
-                          <span className="text-sm text-muted-foreground">Orden #{entry.details.orderNumber}</span>
-                        )}
-                        {entry.details?.tableNumber && (
-                          <span className="text-sm text-muted-foreground">· Mesa {entry.details.tableNumber}</span>
-                        )}
+                <div key={entry.id} className="flex items-start justify-between gap-3 p-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={entry.action === "order.paid" ? "default" : "outline"}>
+                        {entry.action === "order.sent_to_kitchen" ? "Comandó" : entry.action === "order.paid" ? "Cobró" : entry.action}
+                      </Badge>
+                      <span className="font-medium">{entry.employeeName || "Empleado desconocido"}</span>
+                      {entry.details?.orderNumber && <span className="text-sm text-muted-foreground">Orden #{entry.details.orderNumber}</span>}
+                      {entry.details?.tableNumber && <span className="text-sm text-muted-foreground">· Mesa {entry.details.tableNumber}</span>}
+                    </div>
+                    {entry.details?.itemNames && <div className="mt-1 text-sm text-muted-foreground">{entry.details.itemNames.join(", ")}</div>}
+                    {entry.details?.paymentMethod && (
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        {entry.details.paymentMethod} · {money(entry.details.total || 0)}
                       </div>
-                      {entry.details?.itemNames && (
-                        <div className="text-sm text-muted-foreground mt-1">
-                          {entry.details.itemNames.join(", ")}
-                        </div>
-                      )}
-                      {entry.details?.paymentMethod && (
-                        <div className="text-sm text-muted-foreground mt-1">
-                          {entry.details.paymentMethod} · {formatCurrency(entry.details.total || 0)}
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-sm text-muted-foreground whitespace-nowrap">
-                      {format(new Date(entry.createdAt), "dd/MM HH:mm", { locale: es })}
-                    </div>
+                    )}
                   </div>
-                </Card>
+                  <div className="whitespace-nowrap text-sm text-muted-foreground">{formatDateTime(entry.createdAt)}</div>
+                </div>
               ))}
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Edit Order Payment Details Modal */}
-      <Dialog open={editOrderOpen} onOpenChange={setEditOrderOpen}>
+      {/* Editar método de pago y propina */}
+      <Dialog open={!!editOrder} onOpenChange={(open) => !open && setEditOrder(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              Editar pago — Orden #{editOrder?.orderNumber}
-            </DialogTitle>
-            <DialogDescription>
-              Corrige el método de pago y la propina. El total, el corte y el
-              efectivo esperado se recalculan solos.
-            </DialogDescription>
+            <DialogTitle>Editar pago — Orden #{editOrder?.orderNumber}</DialogTitle>
+            <DialogDescription>Corrige el método de pago y la propina. El total, el corte y el efectivo esperado se recalculan solos.</DialogDescription>
           </DialogHeader>
-
           {editOrder && (
             <div className="space-y-4">
               <div className="rounded-lg border bg-muted/40 p-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span>{formatCurrency(editOrder.subtotal || "0")}</span>
+                  <span>{money(parseFloat(editOrder.subtotal || "0"))}</span>
                 </div>
                 <div className="flex justify-between font-semibold">
                   <span>Total nuevo</span>
-                  <span>
-                    {formatCurrency(
-                      (
-                        parseFloat(editOrder.subtotal || "0") +
-                        (parseFloat(editTip || "0") || 0)
-                      ).toFixed(2)
-                    )}
-                  </span>
+                  <span>{money(parseFloat(editOrder.subtotal || "0") + (parseFloat(editTip || "0") || 0))}</span>
                 </div>
               </div>
-
               <div className="space-y-2">
                 <Label>Método de pago</Label>
-                <Select
-                  value={editPaymentMethod}
-                  onValueChange={setEditPaymentMethod}
-                >
+                <Select value={editPaymentMethod} onValueChange={setEditPaymentMethod}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -908,19 +546,10 @@ export default function CashRegisterPage() {
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="edit-tip">Propina</Label>
-                <Input
-                  id="edit-tip"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={editTip}
-                  onChange={(e) => setEditTip(e.target.value)}
-                />
+                <Input id="edit-tip" type="number" min="0" step="0.01" value={editTip} onChange={(e) => setEditTip(e.target.value)} />
               </div>
-
               {parseFloat(editTip || "0") > 0 && (
                 <div className="space-y-2">
                   <Label>Método de la propina</Label>
@@ -939,76 +568,51 @@ export default function CashRegisterPage() {
               )}
             </div>
           )}
-
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setEditOrderOpen(false)}
-              disabled={savingEdit}
-            >
+            <Button variant="outline" onClick={() => setEditOrder(null)} disabled={savingEdit}>
               Cancelar
             </Button>
             <Button onClick={handleSaveOrderEdit} disabled={savingEdit}>
-              {savingEdit ? "Guardando..." : "Guardar cambios"}
+              {savingEdit ? "Guardando…" : "Guardar cambios"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Order Confirmation Modal */}
-      <Dialog open={deleteOrderModalOpen} onOpenChange={setDeleteOrderModalOpen}>
+      {/* Eliminar orden */}
+      <Dialog open={!!orderToDelete} onOpenChange={(open) => !open && setOrderToDelete(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Eliminar Orden</DialogTitle>
-            <DialogDescription>
-              Esta acción no se puede deshacer. Debes proporcionar un motivo.
-            </DialogDescription>
+            <DialogTitle>Eliminar orden #{orderToDelete?.orderNumber}</DialogTitle>
+            <DialogDescription>Esta acción no se puede deshacer. Escribe el motivo.</DialogDescription>
           </DialogHeader>
-          
           {orderToDelete && (
             <div className="space-y-4">
-              <Card className="p-4 bg-muted">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold">#{orderToDelete.orderNumber}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {orderToDelete.tableId ? `Mesa ${orderToDelete.tableNumber || ''}` : 'Para Llevar'}
-                    </div>
-                  </div>
-                  <div className="font-bold text-lg">
-                    {formatCurrency(orderToDelete.total)}
-                  </div>
-                </div>
-              </Card>
-              
+              <div className="flex items-center justify-between rounded-lg border bg-muted/40 p-3">
+                <span className="text-sm text-muted-foreground">
+                  {orderToDelete.tableId ? `Mesa ${orderToDelete.tableNumber || ""}` : "Para llevar"} · {formatTime(orderToDelete.createdAt)}
+                </span>
+                <span className="text-lg font-bold tabular-nums">{money(parseFloat(orderToDelete.total || "0"))}</span>
+              </div>
               <div className="space-y-2">
-                <Label htmlFor="deleteReason">Motivo de eliminación *</Label>
+                <Label htmlFor="deleteReason">Motivo *</Label>
                 <Textarea
                   id="deleteReason"
                   value={deleteReason}
                   onChange={(e) => setDeleteReason(e.target.value)}
-                  placeholder="Ej: Error en el pedido, cliente canceló, etc."
+                  placeholder="Ej: Error en el pedido, cliente canceló…"
                   rows={3}
                   className="resize-none"
                 />
               </div>
             </div>
           )}
-          
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteOrderModalOpen(false)}
-              disabled={deletingOrder}
-            >
+            <Button variant="outline" onClick={() => setOrderToDelete(null)} disabled={deletingOrder}>
               Cancelar
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleConfirmDelete}
-              disabled={deletingOrder || !deleteReason.trim()}
-            >
-              {deletingOrder ? "Eliminando..." : "Confirmar Eliminación"}
+            <Button variant="destructive" onClick={handleConfirmDelete} disabled={deletingOrder || !deleteReason.trim()}>
+              {deletingOrder ? "Eliminando…" : "Eliminar orden"}
             </Button>
           </DialogFooter>
         </DialogContent>

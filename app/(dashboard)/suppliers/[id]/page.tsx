@@ -6,7 +6,6 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -34,6 +33,7 @@ import {
 } from "@phosphor-icons/react";
 import { PromotionProductPicker, type PromotionProductSelection } from "@/components/promotion-product-picker";
 import type { Supplier, SupplierItem, Product, Category, SupplierCalculationLine } from "@/lib/types";
+import { type Period, PeriodPicker, periodFromUrl, periodLabel, periodRange } from "../_components/period";
 
 interface SupplierDetail extends Supplier {
   items: (SupplierItem & { product: Product & { category: Category | null } })[];
@@ -48,8 +48,9 @@ export default function SupplierDetailPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // El periodo llega en el link desde la lista (?from&to); si no, esta semana.
+  const [period, setPeriod] = useState<Period>(() => periodFromUrl() ?? periodRange("week"));
+  const { dateFrom, dateTo } = period;
   const [calcLines, setCalcLines] = useState<SupplierCalculationLine[] | null>(null);
   const [calcTotal, setCalcTotal] = useState(0);
   const [calculating, setCalculating] = useState(false);
@@ -70,6 +71,26 @@ export default function SupplierDetailPage() {
       setLoading(false);
     }
   }, [supplierId]);
+
+  // Se recalcula solo al cambiar de periodo (después de editar costos, con "Recalcular").
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/suppliers/calculate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ supplierId, dateFrom: period.dateFrom, dateTo: period.dateTo }),
+    })
+      .then(async (r) => ({ ok: r.ok, data: await r.json() }))
+      .then(({ ok, data }) => {
+        if (cancelled || !ok) return;
+        setCalcLines(data.lines);
+        setCalcTotal(data.grandTotal);
+      })
+      .catch(() => !cancelled && toast.error("Error al calcular"));
+    return () => {
+      cancelled = true;
+    };
+  }, [supplierId, period.dateFrom, period.dateTo]);
 
   useEffect(() => {
     fetchSupplier();
@@ -313,20 +334,109 @@ export default function SupplierDetailPage() {
   );
 
   return (
-    <div className="p-6 space-y-6">
-      <Link href="/suppliers" className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-        <ArrowLeft className="size-4" />
-        Proveedores
-      </Link>
-
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{supplier.name}</h1>
-          <p className="text-sm text-muted-foreground">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0">
+          <Link href="/suppliers" className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="size-3.5" />
+            Proveedores
+          </Link>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">{supplier.name}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {[supplier.contactName, supplier.phone, supplier.email].filter(Boolean).join(" · ") || "Sin datos de contacto"}
           </p>
         </div>
+        <PeriodPicker value={period} onChange={setPeriod} />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Calculator className="size-4" />
+            Lo que se le debe
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Le debemos · <span className="font-medium text-foreground">{periodLabel(period)}</span>
+              </p>
+              <p className="mt-1 text-5xl font-semibold tracking-tight tabular-nums">
+                {calcLines === null ? "…" : calcTotal.toLocaleString("es-MX", { style: "currency", currency: "MXN" })}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleCalculate} disabled={calculating} className="gap-2">
+              <ArrowsClockwise className={calculating ? "size-4 animate-spin" : "size-4"} />
+              Recalcular
+            </Button>
+          </div>
+
+          {calcLines !== null && (
+            <>
+              {calcLines.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  No hay ventas de productos de este proveedor en el rango seleccionado.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Producto</TableHead>
+                      <TableHead className="text-right">Cant. vendida</TableHead>
+                      <TableHead className="text-right">Vendido</TableHead>
+                      <TableHead className="text-right">Reparto</TableHead>
+                      <TableHead className="text-right">Le corresponde</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {calcLines.map((l) => (
+                      <TableRow key={l.supplierItemId}>
+                        <TableCell>
+                          {l.productName}
+                          {l.variantName && <span className="text-muted-foreground"> — {l.variantName}</span>}
+                        </TableCell>
+                        <TableCell className="text-right">{l.quantitySold}</TableCell>
+                        <TableCell className="text-right">${l.revenue.toFixed(2)}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {l.pricingType === "percentage" && l.businessCutPercent !== null
+                            ? `Bruma ${l.businessCutPercent}% / Prov. ${(100 - l.businessCutPercent).toFixed(0)}%`
+                            : `$${l.costPrice.toFixed(2)} c/u`}
+                        </TableCell>
+                        <TableCell className="text-right">${l.lineTotal.toFixed(2)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+            <Select value={printScope} onValueChange={setPrintScope}>
+              <SelectTrigger className="w-56">
+                <SelectValue placeholder="Alcance" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="supplier">Este proveedor (todo)</SelectItem>
+                {printableCategories.map(([id, name]) => (
+                  <SelectItem key={id} value={id}>
+                    Categoría: {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" onClick={handlePrintTicket} disabled={printing}>
+              <Printer className="size-4 mr-2" />
+              Imprimir ticket
+            </Button>
+            <Button variant="outline" onClick={handleDownloadPdf} disabled={printing}>
+              <FilePdf className="size-4 mr-2" />
+              Descargar PDF
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -440,96 +550,6 @@ export default function SupplierDetailPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Calculator className="size-4" />
-            Calculadora
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <Label htmlFor="date-from">Desde</Label>
-              <Input id="date-from" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="date-to">Hasta</Label>
-              <Input id="date-to" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-            </div>
-            <Button onClick={handleCalculate} disabled={calculating}>
-              {calculating ? "Calculando..." : "Calcular"}
-            </Button>
-          </div>
-
-          {calcLines !== null && (
-            <>
-              {calcLines.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">
-                  No hay ventas de productos de este proveedor en el rango seleccionado.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Producto</TableHead>
-                      <TableHead className="text-right">Cant. vendida</TableHead>
-                      <TableHead className="text-right">Vendido</TableHead>
-                      <TableHead className="text-right">Reparto</TableHead>
-                      <TableHead className="text-right">Le corresponde</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {calcLines.map((l) => (
-                      <TableRow key={l.supplierItemId}>
-                        <TableCell>
-                          {l.productName}
-                          {l.variantName && <span className="text-muted-foreground"> — {l.variantName}</span>}
-                        </TableCell>
-                        <TableCell className="text-right">{l.quantitySold}</TableCell>
-                        <TableCell className="text-right">${l.revenue.toFixed(2)}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          {l.pricingType === "percentage" && l.businessCutPercent !== null
-                            ? `Bruma ${l.businessCutPercent}% / Prov. ${(100 - l.businessCutPercent).toFixed(0)}%`
-                            : `$${l.costPrice.toFixed(2)} c/u`}
-                        </TableCell>
-                        <TableCell className="text-right">${l.lineTotal.toFixed(2)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-              <div className="flex justify-end text-lg font-semibold">
-                Total a pagar: ${calcTotal.toFixed(2)}
-              </div>
-            </>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-            <Select value={printScope} onValueChange={setPrintScope}>
-              <SelectTrigger className="w-56">
-                <SelectValue placeholder="Alcance" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="supplier">Este proveedor (todo)</SelectItem>
-                {printableCategories.map(([id, name]) => (
-                  <SelectItem key={id} value={id}>
-                    Categoría: {name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" onClick={handlePrintTicket} disabled={printing}>
-              <Printer className="size-4 mr-2" />
-              Imprimir ticket
-            </Button>
-            <Button variant="outline" onClick={handleDownloadPdf} disabled={printing}>
-              <FilePdf className="size-4 mr-2" />
-              Descargar PDF
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
