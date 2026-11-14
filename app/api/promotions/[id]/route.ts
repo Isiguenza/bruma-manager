@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { promotions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { notifyPromotionsUpdated } from "@/lib/notify-promotions-updated";
+import { cleanupForType, promotionColumns, validatePromotion } from "@/lib/promotions/input";
 
 // GET /api/promotions/[id] - Get a single promotion
 export async function GET(
@@ -43,55 +44,27 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    const updateData: any = {
-      updatedAt: new Date(),
-    };
+    const [current] = await db.select().from(promotions).where(eq(promotions.id, id));
+    if (!current) {
+      return NextResponse.json({ error: "Promoción no encontrada" }, { status: 404 });
+    }
 
-    // Only update fields that are provided
-    if (body.name !== undefined) updateData.name = body.name;
-    if (body.description !== undefined) updateData.description = body.description;
-    if (body.type !== undefined) updateData.type = body.type;
-    if (body.buyQuantity !== undefined) updateData.buyQuantity = body.buyQuantity;
-    if (body.getQuantity !== undefined) updateData.getQuantity = body.getQuantity;
-    if (body.discountPercentage !== undefined) 
-      updateData.discountPercentage = body.discountPercentage ? body.discountPercentage.toString() : null;
-    if (body.discountAmount !== undefined) 
-      updateData.discountAmount = body.discountAmount ? body.discountAmount.toString() : null;
-    if (body.applyTo !== undefined) updateData.applyTo = body.applyTo;
-    if (body.productIds !== undefined) {
-      // If productIds is already a string, use it directly; otherwise stringify
-      if (typeof body.productIds === 'string') {
-        updateData.productIds = body.productIds || null;
-      } else {
-        updateData.productIds = body.productIds ? JSON.stringify(body.productIds) : null;
-      }
+    // Se valida la promoción ya mezclada: un cambio parcial (solo "activa",
+    // desde la lista) no debe chocar con validaciones de campos que no tocó.
+    const changes = promotionColumns(body);
+    const onlyToggle = Object.keys(changes).every((k) => k === "active");
+    const merged = onlyToggle ? { ...current, ...changes } : cleanupForType({ ...current, ...changes });
+    if (!onlyToggle) {
+      const error = validatePromotion(merged);
+      if (error) return NextResponse.json({ error }, { status: 400 });
     }
-    if (body.categoryId !== undefined) updateData.categoryId = body.categoryId || null;
-    if (body.active !== undefined) updateData.active = body.active;
-    if (body.startDate !== undefined) updateData.startDate = body.startDate;
-    if (body.endDate !== undefined) updateData.endDate = body.endDate;
-    if (body.daysOfWeek !== undefined) {
-      // If daysOfWeek is already a string, use it directly; otherwise stringify
-      if (typeof body.daysOfWeek === 'string') {
-        updateData.daysOfWeek = body.daysOfWeek || null;
-      } else {
-        updateData.daysOfWeek = body.daysOfWeek ? JSON.stringify(body.daysOfWeek) : null;
-      }
-    }
-    if (body.startTime !== undefined) updateData.startTime = body.startTime || null;
-    if (body.endTime !== undefined) updateData.endTime = body.endTime || null;
-    if (body.priority !== undefined) updateData.priority = body.priority;
-    if (body.comboRules !== undefined) {
-      if (typeof body.comboRules === 'string') {
-        updateData.comboRules = body.comboRules || null;
-      } else {
-        updateData.comboRules = body.comboRules ? JSON.stringify(body.comboRules) : null;
-      }
-    }
+    const updateData: Partial<typeof current> = { ...(merged as typeof current) };
+    delete updateData.id;
+    delete updateData.createdAt;
 
     const [updatedPromotion] = await db
       .update(promotions)
-      .set(updateData)
+      .set({ ...updateData, updatedAt: new Date() })
       .where(eq(promotions.id, id))
       .returning();
 
@@ -104,11 +77,10 @@ export async function PATCH(
 
     await notifyPromotionsUpdated();
     return NextResponse.json(updatedPromotion);
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error updating promotion:", error);
-    console.error("Error details:", error.message, error.stack);
     return NextResponse.json(
-      { error: "Error al actualizar promoción", details: error.message },
+      { error: "Error al actualizar promoción", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }

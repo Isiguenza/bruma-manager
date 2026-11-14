@@ -36,7 +36,7 @@ struct PromotionGroupView: View {
                 Spacer()
                 
                 // Total del grupo (con descuento aplicado)
-                let groupTotal = group.items.reduce(0) { $0 + ($1.item.unitPrice * Double($1.item.quantity)) } - group.totalSavings
+                let groupTotal = group.items.reduce(0) { $0 + $1.item.netTotal }
                 Text(vm.formatCurrency(groupTotal))
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)

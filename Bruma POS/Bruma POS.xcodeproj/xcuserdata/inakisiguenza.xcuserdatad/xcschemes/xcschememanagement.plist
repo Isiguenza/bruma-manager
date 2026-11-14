@@ -7,12 +7,25 @@
 		<key>Bruma POS Mobile.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>6</integer>
+			<integer>1</integer>
 		</dict>
 		<key>Bruma POS.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>5</integer>
+			<integer>0</integer>
+		</dict>
+	</dict>
+	<key>SuppressBuildableAutocreation</key>
+	<dict>
+		<key>160DE4552FA690AA00A3D140</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>166FD5A7303B847C001DD28F</key>
+		<dict>
+			<key>primary</key>
+			<true/>
 		</dict>
 	</dict>
 </dict>

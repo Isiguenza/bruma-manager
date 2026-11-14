@@ -291,6 +291,13 @@ function receiptItemsBlock(items) {
       out += receiptRow(isChild ? "      · " : "    · ", mod.name, "", modPrice);
     }
     if (item.isGuest) out += receiptRow("    · ", "Invitado");
+    // Qué platillo se llevó la promoción (el refresco gratis del combo, el
+    // segundo del 2x1). El resumen por promoción sigue en los totales.
+    if (!isChild && !item.isGuest && item.promotionName && item.promotionDiscount > 0) {
+      out += item.promotionFree
+        ? receiptRow("    · ", `GRATIS - ${item.promotionName}`, "", `-$${Math.round(item.promotionDiscount)}`)
+        : receiptRow("    · ", item.promotionName, "", `-$${Math.round(item.promotionDiscount)}`);
+    }
 
     // Solo para renglones que llegan fuera de orden (builds viejos del POS).
     if (isChild && item.parentName && !matchesPackageParent(lastParentName, item.parentName)) {

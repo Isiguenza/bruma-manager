@@ -76,61 +76,23 @@ router.get("/promotions/:id", async (req, res) => {
   }
 });
 
-// POST /api/promotions
-router.post("/promotions", async (req, res) => {
-  try {
-    const {
-      name,
-      description,
-      discountType,
-      discountValue,
-      applicableProducts,
-      minPurchaseAmount,
-      maxDiscountAmount,
-      startDate,
-      endDate,
-      active,
-    } = req.body;
-
-    if (!name || !discountType || !discountValue) {
-      return res.status(400).json({
-        error: "name, discountType y discountValue son requeridos",
-      });
-    }
-
-    const [newPromotion] = await db
-      .insert(schema.promotions)
-      .values({
-        name,
-        description: description || null,
-        discountType,
-        discountValue,
-        applicableProducts: applicableProducts || null,
-        minPurchaseAmount: minPurchaseAmount || null,
-        maxDiscountAmount: maxDiscountAmount || null,
-        startDate: startDate || null,
-        endDate: endDate || null,
-        active: active !== undefined ? active : true,
-      })
-      .returning();
-
-    emitPromotionsUpdated(newPromotion);
-    res.json(newPromotion);
-  } catch (error) {
-    console.error("Error creating promotion:", error);
-    res.status(500).json({ error: "Error al crear promoción" });
-  }
-});
-
+// Crear y editar promociones vive SOLO en el dashboard (rutas Next,
+// `lib/promotions/input.ts`). Las apps del POS solo pausan/activan: este PATCH
+// acepta únicamente `active`. Antes pasaba el body crudo a la fila y el editor
+// del iPad guardaba arreglos como `{id1,id2}` en columnas de texto JSON.
 // PATCH /api/promotions/:id
 router.patch("/promotions/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
+    if (typeof req.body?.active !== "boolean") {
+      return res.status(400).json({
+        error: "Solo se puede pausar o activar desde aquí; edita la promoción en el dashboard",
+      });
+    }
 
     const [updatedPromotion] = await db
       .update(schema.promotions)
-      .set(updates)
+      .set({ active: req.body.active, updatedAt: new Date() })
       .where(eq(schema.promotions.id, id))
       .returning();
 

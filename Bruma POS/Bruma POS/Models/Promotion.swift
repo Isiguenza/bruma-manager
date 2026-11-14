@@ -66,10 +66,17 @@ struct Promotion: Codable, Identifiable {
     }
     
     var parsedProductIds: [String] {
-        guard let productIds = productIds,
-              let data = productIds.data(using: .utf8),
-              let ids = try? JSONDecoder().decode([String].self, from: data) else { return [] }
-        return ids
+        guard let productIds = productIds else { return [] }
+        if let data = productIds.data(using: .utf8),
+           let ids = try? JSONDecoder().decode([String].self, from: data) {
+            return ids
+        }
+        // Filas viejas guardadas como arreglo de Postgres: `{id1,id2}`.
+        let trimmedValue = productIds.trimmingCharacters(in: .whitespaces)
+        guard trimmedValue.hasPrefix("{"), trimmedValue.hasSuffix("}") else { return [] }
+        return trimmedValue.dropFirst().dropLast().split(separator: ",")
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\" ")) }
+            .filter { !$0.isEmpty }
     }
     
     var parsedDaysOfWeek: [Int] {
@@ -79,11 +86,31 @@ struct Promotion: Codable, Identifiable {
         return days
     }
     
-    var parsedComboRules: [ComboRule] {
-        guard let comboRules = comboRules,
-              let data = comboRules.data(using: .utf8),
-              let rules = try? JSONDecoder().decode([ComboRule].self, from: data) else { return [] }
-        return rules
+    /// Combo ya normalizado. Acepta los dos formatos de `combo_rules`:
+    /// - v2 (editor nuevo del dashboard): objeto `{version:2, groups, reward, repeat}`,
+    ///   con premio por grupo ("el refresco gratis") o del combo completo.
+    /// - legacy: arreglo de reglas; el descuento vivía en `discountPercentage`
+    ///   (% al combo) o `discountAmount` ($ a CADA platillo — así funcionaba).
+    /// Un build viejo del POS no sabe leer el objeto v2 y simplemente no aplica
+    /// el combo (falla seguro, nunca cobra de menos).
+    var comboConfig: ComboConfig? {
+        guard type == "combo",
+              let comboRules,
+              let data = comboRules.data(using: .utf8) else { return nil }
+        if let v2 = try? JSONDecoder().decode(ComboConfig.self, from: data) {
+            return v2.groups.isEmpty ? nil : v2
+        }
+        guard let legacy = try? JSONDecoder().decode([ComboGroup].self, from: data), !legacy.isEmpty else { return nil }
+        let pct = discountPercentage ?? 0
+        let amt = discountAmount ?? 0
+        if pct > 0 {
+            return ComboConfig(groups: legacy, reward: ComboReward(type: "percent", value: pct), repeats: true)
+        }
+        if amt > 0 {
+            let groups = legacy.map { $0.withReward(ComboItemReward(type: "amount", value: amt, quantity: nil)) }
+            return ComboConfig(groups: groups, reward: ComboReward(type: "items", value: nil), repeats: true)
+        }
+        return nil
     }
 
     // MARK: - Live schedule state (Promociones tab, iPad)
@@ -177,43 +204,77 @@ struct PromotionScheduleInfo {
     let reason: String?
 }
 
-struct ComboRule: Codable {
-    let productId: String?         // legacy single product
-    let productIds: [String]?      // multiple product options (OR)
-    let categoryId: String?        // legacy single category
-    let categoryIds: [String]?      // multiple category options (OR)
+/// Configuración de un combo (ver `Promotion.comboConfig`). Espejo de
+/// `lib/promotions/engine.ts`; los vectores `lib/promotions/fixtures/engine-vectors.json`
+/// fijan que los dos motores den lo mismo.
+struct ComboConfig: Decodable {
+    let groups: [ComboGroup]
+    /// `items` = cada grupo trae su propio premio; `percent`/`amount` = descuento
+    /// al total del combo; `price` = el combo completo cuesta `value`.
+    let reward: ComboReward
+    /// Se aplica cuantas veces alcance en la orden (4 empanadas + 2 refrescos = 2 combos).
+    let repeats: Bool
+
+    init(groups: [ComboGroup], reward: ComboReward, repeats: Bool) {
+        self.groups = groups
+        self.reward = reward
+        self.repeats = repeats
+    }
+
+    private enum CodingKeys: String, CodingKey { case version, groups, reward, `repeat` }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Sin `version` es otra cosa (o el arreglo legacy): que falle el decode.
+        _ = try c.decode(Int.self, forKey: .version)
+        groups = try c.decode([ComboGroup].self, forKey: .groups)
+        reward = try c.decodeIfPresent(ComboReward.self, forKey: .reward) ?? ComboReward(type: "items", value: nil)
+        repeats = try c.decodeIfPresent(Bool.self, forKey: .repeat) ?? true
+    }
+}
+
+struct ComboReward: Codable {
+    let type: String
+    let value: Double?
+}
+
+/// Premio de los platillos de un grupo: `none` (se paga completo), `free`,
+/// `percent` (% de descuento), `amount` ($ menos por pieza) o `price` (cada
+/// pieza cuesta `value`). `quantity` = a cuántas piezas del grupo aplica
+/// (las más baratas); nil = a todas.
+struct ComboItemReward: Codable {
+    let type: String
+    let value: Double?
+    let quantity: Int?
+}
+
+struct ComboGroup: Codable {
+    let label: String?
     let quantity: Int
-    let variantNames: [String]?    // specific variant names to match (optional)
-    
-    /// All product IDs to check for this rule (legacy + array combined)
+    let productId: String?         // legacy single product
+    let productIds: [String]?      // "<productId>" o "<productId>::<variante>"
+    let categoryId: String?        // legacy single category
+    let categoryIds: [String]?
+    let variantNames: [String]?    // legacy: filtra las variantes de `productIds`
+    let reward: ComboItemReward?
+
+    func withReward(_ reward: ComboItemReward) -> ComboGroup {
+        ComboGroup(label: label, quantity: quantity, productId: productId, productIds: productIds,
+                   categoryId: categoryId, categoryIds: categoryIds, variantNames: variantNames, reward: reward)
+    }
+
     var allProductIds: [String] {
         var ids: [String] = []
-        if let productId = productId { ids.append(productId) }
-        if let productIds = productIds { ids.append(contentsOf: productIds) }
+        if let productId { ids.append(productId) }
+        if let productIds { ids.append(contentsOf: productIds) }
         return ids
     }
-    
-    /// All category IDs to check for this rule (legacy + array combined)
+
     var allCategoryIds: [String] {
         var ids: [String] = []
-        if let categoryId = categoryId { ids.append(categoryId) }
-        if let categoryIds = categoryIds { ids.append(contentsOf: categoryIds) }
+        if let categoryId { ids.append(categoryId) }
+        if let categoryIds { ids.append(contentsOf: categoryIds) }
         return ids
-    }
-    
-    /// Check if a cart item matches this rule considering variant names
-    func matchesItem(_ item: CartItem) -> Bool {
-        // Check product ID match
-        if !allProductIds.isEmpty {
-            guard allProductIds.contains(item.productId) else { return false }
-            // If variant names specified, item must have a matching variant
-            if let variantNames = variantNames, !variantNames.isEmpty {
-                guard let itemVariant = item.variantName else { return false }
-                return variantNames.contains(itemVariant)
-            }
-            return true
-        }
-        return false
     }
 }
 

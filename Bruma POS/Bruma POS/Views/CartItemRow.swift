@@ -49,11 +49,12 @@ struct CartItemRow: View {
         adminAction == .reward && !isPackageChild && (item.isGuest || !vm.isLoyaltyEligible(item))
     }
 
-    // When inside a promotion group, show original price (discount is shown at group level)
-    private var itemTotal: Double {
-        isInsidePromotionGroup
-            ? item.unitPrice * Double(item.quantity)
-            : item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
+    // Neto del renglón también dentro de la tarjeta de promo: así se ve cuál
+    // platillo salió gratis o con descuento (el ahorro total va en el encabezado).
+    private var itemTotal: Double { item.netTotal }
+
+    private var isPromoFree: Bool {
+        (item.promotionDiscount ?? 0) > 0 && item.netTotal < 0.005
     }
 
     var body: some View {
@@ -419,7 +420,7 @@ struct CartItemRow: View {
                         Text(vm.formatCurrency(0))
                             .font(.subheadline.weight(.semibold))
                             .foregroundColor(.gray)
-                    } else if !isInsidePromotionGroup, let origPrice = item.originalPrice, (item.promotionDiscount ?? 0) > 0 {
+                    } else if let origPrice = item.originalPrice, (item.promotionDiscount ?? 0) > 0 {
                         Text(vm.formatCurrency(origPrice * Double(item.quantity)))
                             .font(.caption2)
                             .foregroundColor(Color(white: 0.4))
@@ -683,7 +684,7 @@ struct CartItemRow: View {
         let text: String
         let color: Color
         
-        if item.unitPrice == 0 {
+        if isPromoFree {
             text = "GRATIS"
             color = .green
         } else if let discount = item.promotionDiscount, discount > 0 {
@@ -704,7 +705,7 @@ struct CartItemRow: View {
     }
     
     private var promoColor: Color {
-        if item.unitPrice == 0 {
+        if isPromoFree {
             return .green
         } else if let discount = item.promotionDiscount, discount > 0 {
             return .blue
@@ -716,7 +717,7 @@ struct CartItemRow: View {
         if item.isGuest {
             return .gray
         }
-        if item.unitPrice == 0 {
+        if isPromoFree {
             return .green
         }
         return .white

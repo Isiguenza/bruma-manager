@@ -549,7 +549,7 @@ class POSViewModel: ObservableObject {
     /// en el encabezado de cada asiento en el carrito para anticipar el split.
     func seatSubtotal(_ seat: String) -> Double {
         cart.filter { $0.seat == seat && !$0.isGuest }
-            .reduce(0.0) { $0 + $1.total }
+            .reduce(0.0) { $0 + $1.netTotal }
     }
 
     /// ¿Ese Tiempo tiene items sin enviar a cocina? (para el disparo por tiempo)
@@ -3195,14 +3195,30 @@ class POSViewModel: ObservableObject {
         // Catálogo que viene de red: un id repetido no puede tumbar la app en
         // pleno servicio (mismo trap que ya costó crashes en restorePackageLinks).
         let productCategoryMap = Dictionary(products.map { ($0.id, $0.categoryId) }, uniquingKeysWith: { first, _ in first })
-        // Only items the user hasn't opted out of participate in the engine;
-        // excluded items stay at full price and are merged back untouched.
-        let eligibleIndices = cart.indices.filter { !excludedPromoItemIds.contains(cart[$0].id) }
-        guard !eligibleIndices.isEmpty else { return }
-        let eligibleItems = eligibleIndices.map { cart[$0] }
-        let updated = PromotionEngine.applyPromotions(cartItems: eligibleItems, promotions: activePromotions, productCategoryMap: productCategoryMap)
-        for (position, cartIndex) in eligibleIndices.enumerated() {
-            cart[cartIndex] = updated[position]
+        // Fuera del motor: lo que el mesero quitó de la promo, invitados e
+        // incluidos de paquete ($0 — si no, un refresco incluido "llenaba" el
+        // grupo del refresco gratis de un combo y el descuento salía en $0).
+        let lines = cart.map { item in
+            PromoLine(
+                productId: item.productId,
+                variantName: item.variantName,
+                categoryId: productCategoryMap[item.productId] ?? nil,
+                unitPrice: item.unitPrice,
+                quantity: item.quantity,
+                eligible: !excludedPromoItemIds.contains(item.id) && !item.isGuest && item.parentLocalId == nil
+            )
+        }
+        let results = PromotionEngine.evaluate(lines: lines, promotions: activePromotions)
+        for (i, result) in results.enumerated() where result.promotionId != nil {
+            cart[i].promotionId = result.promotionId
+            cart[i].promotionName = result.promotionName
+            // Un platillo que solo "completa" el combo (las empanadas de
+            // "2 empanadas + refresco gratis") va dentro de la tarjeta del
+            // combo pero sin descuento propio.
+            guard result.discount > 0 else { continue }
+            cart[i].originalPrice = cart[i].unitPrice
+            cart[i].promotionDiscount = result.discount
+            if let newPrice = result.newUnitPrice { cart[i].unitPrice = newPrice }
         }
     }
 
@@ -4343,7 +4359,13 @@ class POSViewModel: ObservableObject {
                 "total": baseTotal
             ]
             if let pn = item.promotionName { dict["promotionName"] = pn }
-            if let pd = item.promotionDiscount, pd > 0 { dict["promotionDiscount"] = pd }
+            if let pd = item.promotionDiscount, pd > 0 {
+                dict["promotionDiscount"] = pd
+                // El print-server marca el renglón "GRATIS" en vez de "-$35".
+                if !isGuestItem, pd + 0.005 >= (item.originalPrice ?? item.price) * Double(item.qty) {
+                    dict["promotionFree"] = true
+                }
+            }
             if isGuestItem { dict["isGuest"] = true }
             if !mods.isEmpty { dict["modifiers"] = mods }
             if let parentName = parentNames[key] {

@@ -7,8 +7,6 @@ struct PromotionsView: View {
     @ObservedObject var vm: POSViewModel
     @State private var promotions: [Promotion] = []
     @State private var isLoading = true
-    @State private var isShowingEditor = false
-    @State private var editingPromotion: Promotion?
     @State private var errorMessage: String?
 
     @State private var searchText = ""
@@ -91,24 +89,6 @@ struct PromotionsView: View {
             }
         }
         .task { await loadPromotions() }
-        // Sin `.id()` a propósito, mismo motivo que ProductAddDialog en
-        // MainPOSView: la vista se queda siempre montada (misma identidad) y
-        // se resiembra con `.onChange(of: promotion?.id)` adentro — un `.id()`
-        // que cambia justo al abrir fuerza un remount, que no anima.
-        .bottomSheet(isPresented: isShowingEditor, onDismiss: { isShowingEditor = false }) {
-            // 600, no 680: `BottomSheetOverlay` la esconde con un offset fijo
-            // de 700pt — con 680 casi no quedaba margen y se asomaba una
-            // rebaba de la tarjeta abajo de la pantalla (mismo bug detectado
-            // en el form de Reservas).
-            BottomSheetCard(maxHeight: 600, onDismiss: { isShowingEditor = false }) {
-                PromotionEditorContent(
-                    vm: vm,
-                    promotion: editingPromotion,
-                    onSaved: { saved in replace(saved) },
-                    onCancel: { isShowingEditor = false }
-                )
-            }
-        }
         .alert("No se pudo completar la acción", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -129,13 +109,6 @@ struct PromotionsView: View {
                     vm: vm,
                     promotion: selectedPromotion,
                     onToggle: { if let p = selectedPromotion { toggle(p) } },
-                    onEdit: {
-                        if let p = selectedPromotion {
-                            isShowingDetail = false
-                            editingPromotion = p
-                            isShowingEditor = true
-                        }
-                    },
                     onDelete: {
                         if let p = selectedPromotion {
                             isShowingDetail = false
@@ -161,7 +134,6 @@ struct PromotionsView: View {
             Spacer(minLength: 12)
             HStack(spacing: 10) {
                 searchField
-                newPromotionButton
             }
         }
     }
@@ -198,21 +170,6 @@ struct PromotionsView: View {
             Capsule().fill(Color.white.opacity(0.045))
                 .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
         )
-    }
-
-    private var newPromotionButton: some View {
-        Button {
-            editingPromotion = nil
-            isShowingEditor = true
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "plus").font(.system(size: 13, weight: .heavy))
-                Text("Nueva promoción").font(.system(size: 14.5, weight: .bold))
-            }
-            .padding(.horizontal, 18)
-            .frame(height: 44)
-        }
-        .buttonStyle(.flatCapsule(.blue))
     }
 
     // MARK: - Stats
@@ -342,10 +299,6 @@ struct PromotionsView: View {
                                         isShowingDetail = true
                                     },
                                     onToggle: { toggle(promotion) },
-                                    onEdit: {
-                                        editingPromotion = promotion
-                                        isShowingEditor = true
-                                    },
                                     onDelete: { delete(promotion) }
                                 )
                             }
@@ -546,7 +499,6 @@ private struct PromoCard: View {
     let promotion: Promotion
     let onTap: () -> Void
     let onToggle: () -> Void
-    let onEdit: () -> Void
     let onDelete: () -> Void
 
     private var meta: PromoTypeMeta { typeMeta(for: promotion) }
@@ -747,13 +699,6 @@ private struct PromoCard: View {
             }
             Spacer()
             HStack(spacing: 6) {
-                Button(action: onEdit) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.flatCircleNeutral)
-
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .font(.system(size: 13, weight: .semibold))
@@ -776,13 +721,12 @@ private struct PromotionDetailContent: View {
     @ObservedObject var vm: POSViewModel
     let promotion: Promotion?
     let onToggle: () -> Void
-    let onEdit: () -> Void
     let onDelete: () -> Void
     let onClose: () -> Void
 
     var body: some View {
         if let promotion {
-            PromotionDetailBody(vm: vm, promotion: promotion, onToggle: onToggle, onEdit: onEdit, onDelete: onDelete, onClose: onClose)
+            PromotionDetailBody(vm: vm, promotion: promotion, onToggle: onToggle, onDelete: onDelete, onClose: onClose)
         } else {
             Color.clear.frame(height: 1)
         }
@@ -793,7 +737,6 @@ private struct PromotionDetailBody: View {
     @ObservedObject var vm: POSViewModel
     let promotion: Promotion
     let onToggle: () -> Void
-    let onEdit: () -> Void
     let onDelete: () -> Void
     let onClose: () -> Void
 
@@ -1044,14 +987,6 @@ private struct PromotionDetailBody: View {
             }
             .buttonStyle(.flatCapsuleNeutral)
 
-            Button(action: onEdit) {
-                Text("Editar")
-                    .font(.system(size: 14.5, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-            }
-            .buttonStyle(.flatCapsule(.blue))
-
             Button(action: onDelete) {
                 Image(systemName: "trash").font(.system(size: 15, weight: .semibold))
             }
@@ -1108,455 +1043,6 @@ private struct FlowLayout: Layout {
             subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: .unspecified)
             x += size.width + spacing
             lineHeight = max(lineHeight, size.height)
-        }
-    }
-}
-
-/// Mismo `BottomSheetCard` que el resto de la app (Pago/Notas/Detalle de
-/// promoción) en vez de un `.sheet` nativo con `Form` — antes se veía como
-/// una pantalla completamente distinta al resto del rediseño, tanto para
-/// crear como para editar.
-private struct PromotionEditorContent: View {
-    @ObservedObject var vm: POSViewModel
-    let promotion: Promotion?
-    let onSaved: (Promotion) -> Void
-    let onCancel: () -> Void
-
-    @State private var name: String
-    @State private var description: String
-    @State private var type: String
-    @State private var buyQuantity: Int
-    @State private var getQuantity: Int
-    @State private var discountPercentage: Double
-    @State private var discountAmount: Double
-    @State private var applyTo: String
-    @State private var productIds: Set<String>
-    @State private var categoryId: String
-    @State private var active: Bool
-    @State private var hasStartDate: Bool
-    @State private var startDate: Date
-    @State private var hasEndDate: Bool
-    @State private var endDate: Date
-    @State private var daysOfWeek: Set<Int>
-    @State private var hasStartTime: Bool
-    @State private var startTime: String
-    @State private var hasEndTime: Bool
-    @State private var endTime: String
-    @State private var priority: Int
-    @State private var isSaving = false
-    @State private var errorMessage: String?
-    @State private var showingProductPicker = false
-
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    init(vm: POSViewModel, promotion: Promotion?, onSaved: @escaping (Promotion) -> Void, onCancel: @escaping () -> Void) {
-        self.vm = vm
-        self.promotion = promotion
-        self.onSaved = onSaved
-        self.onCancel = onCancel
-        _name = State(initialValue: promotion?.name ?? "")
-        _description = State(initialValue: promotion?.description ?? "")
-        _type = State(initialValue: promotion?.type ?? "buy_x_get_y")
-        _buyQuantity = State(initialValue: promotion?.buyQuantity ?? 2)
-        _getQuantity = State(initialValue: promotion?.getQuantity ?? 1)
-        _discountPercentage = State(initialValue: promotion?.discountPercentage ?? 10)
-        _discountAmount = State(initialValue: promotion?.discountAmount ?? 10)
-        _applyTo = State(initialValue: promotion?.applyTo ?? "all_products")
-        _productIds = State(initialValue: Set(promotion?.parsedProductIds ?? []))
-        _categoryId = State(initialValue: promotion?.categoryId ?? "")
-        _active = State(initialValue: promotion?.active ?? true)
-        _hasStartDate = State(initialValue: promotion?.startDate != nil)
-        _startDate = State(initialValue: promotion.flatMap { Self.dateFormatter.date(from: $0.startDate ?? "") } ?? Date())
-        _hasEndDate = State(initialValue: promotion?.endDate != nil)
-        _endDate = State(initialValue: promotion.flatMap { Self.dateFormatter.date(from: $0.endDate ?? "") } ?? Date())
-        _daysOfWeek = State(initialValue: Set(promotion?.parsedDaysOfWeek ?? []))
-        _hasStartTime = State(initialValue: promotion?.startTime != nil)
-        _startTime = State(initialValue: promotion?.startTime ?? "09:00")
-        _hasEndTime = State(initialValue: promotion?.endTime != nil)
-        _endTime = State(initialValue: promotion?.endTime ?? "18:00")
-        _priority = State(initialValue: promotion?.priority ?? 0)
-    }
-
-    /// Resiembra todos los campos cuando cambia la promoción a editar —
-    /// necesario porque, al no usar `.id()`, esta vista se queda montada de
-    /// forma permanente y `init()` no vuelve a correr.
-    private func reseed(_ promotion: Promotion?) {
-        name = promotion?.name ?? ""
-        description = promotion?.description ?? ""
-        type = promotion?.type ?? "buy_x_get_y"
-        buyQuantity = promotion?.buyQuantity ?? 2
-        getQuantity = promotion?.getQuantity ?? 1
-        discountPercentage = promotion?.discountPercentage ?? 10
-        discountAmount = promotion?.discountAmount ?? 10
-        applyTo = promotion?.applyTo ?? "all_products"
-        productIds = Set(promotion?.parsedProductIds ?? [])
-        categoryId = promotion?.categoryId ?? ""
-        active = promotion?.active ?? true
-        hasStartDate = promotion?.startDate != nil
-        startDate = promotion.flatMap { Self.dateFormatter.date(from: $0.startDate ?? "") } ?? Date()
-        hasEndDate = promotion?.endDate != nil
-        endDate = promotion.flatMap { Self.dateFormatter.date(from: $0.endDate ?? "") } ?? Date()
-        daysOfWeek = Set(promotion?.parsedDaysOfWeek ?? [])
-        hasStartTime = promotion?.startTime != nil
-        startTime = promotion?.startTime ?? "09:00"
-        hasEndTime = promotion?.endTime != nil
-        endTime = promotion?.endTime ?? "18:00"
-        priority = promotion?.priority ?? 0
-        showingProductPicker = false
-        errorMessage = nil
-    }
-
-    var body: some View {
-        Group {
-            if showingProductPicker {
-                productPickerContent
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                        removal: .move(edge: .trailing).combined(with: .opacity)
-                    ))
-            } else {
-                formContent
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .leading).combined(with: .opacity),
-                        removal: .move(edge: .leading).combined(with: .opacity)
-                    ))
-            }
-        }
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showingProductPicker)
-        .onChange(of: promotion?.id) { _, _ in reseed(promotion) }
-        .alert("Revisa la promoción", isPresented: Binding(
-            get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-        )) { Button("Aceptar", role: .cancel) { errorMessage = nil } } message: {
-            Text(errorMessage ?? "")
-        }
-    }
-
-    private var productPickerContent: some View {
-        VStack(spacing: 14) {
-            HStack {
-                Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showingProductPicker = false }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left").font(.system(size: 13, weight: .bold))
-                        Text("Productos").font(.system(size: 17, weight: .heavy))
-                    }
-                    .foregroundStyle(.white)
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                Text("\(productIds.count) seleccionados")
-                    .font(.system(size: 12.5, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.45))
-            }
-            PromotionProductPicker(products: vm.products, selectedIds: $productIds)
-        }
-    }
-
-    private var formContent: some View {
-        VStack(spacing: 0) {
-            header
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
-                    infoPanel
-                    typePanel
-                    applyPanel
-                    vigenciaPanel
-                }
-                .padding(.top, 6)
-                .padding(.bottom, 4)
-            }
-            actions
-        }
-    }
-
-    // MARK: - Header/footer (mismo look que el detalle de promoción)
-
-    private var header: some View {
-        HStack {
-            Text(promotion == nil ? "Nueva promoción" : "Editar promoción")
-                .font(.system(size: 19, weight: .heavy))
-                .foregroundStyle(.white)
-            Spacer()
-            Button(action: onCancel) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .frame(width: 30, height: 30)
-            }
-            .buttonStyle(.flatCircleNeutral)
-        }
-        .padding(.bottom, 2)
-    }
-
-    private var actions: some View {
-        HStack(spacing: 10) {
-            Button(action: onCancel) {
-                Text("Cancelar")
-                    .font(.system(size: 14.5, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-            }
-            .buttonStyle(.flatCapsuleNeutral)
-
-            Button(action: save) {
-                Text(isSaving ? "Guardando…" : "Guardar")
-                    .font(.system(size: 14.5, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-            }
-            .buttonStyle(.flatCapsule(.blue))
-            .disabled(isSaving)
-        }
-        .padding(.top, 12)
-    }
-
-    // MARK: - Sections
-
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11.5, weight: .heavy))
-            .tracking(0.8)
-            .foregroundStyle(Color.white.opacity(0.45))
-    }
-
-    private func panel<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel(title)
-            VStack(alignment: .leading, spacing: 14, content: content)
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.035)))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
-        }
-    }
-
-    private func styledField(_ placeholder: String, text: Binding<String>, axis: Axis = .horizontal) -> some View {
-        TextField(placeholder, text: text, axis: axis)
-            .foregroundStyle(.white)
-            .font(.system(size: 14))
-            .padding(.horizontal, 12)
-            .frame(minHeight: 40)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.05)))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
-    }
-
-    private var infoPanel: some View {
-        panel("Información") {
-            styledField("Nombre", text: $name)
-            styledField("Descripción (opcional)", text: $description, axis: .vertical)
-            Toggle("Activa", isOn: $active).tint(.green)
-            Stepper("Prioridad: \(priority)", value: $priority, in: 0...100)
-        }
-    }
-
-    private var typePanel: some View {
-        panel("Tipo de promoción") {
-            Picker("Tipo", selection: $type) {
-                Text("Compra X lleva Y").tag("buy_x_get_y")
-                Text("Descuento porcentual").tag("percentage_discount")
-                Text("Descuento fijo").tag("fixed_discount")
-            }
-            .pickerStyle(.menu)
-            .tint(.white)
-
-            if type == "buy_x_get_y" {
-                Stepper("Compra: \(buyQuantity)", value: $buyQuantity, in: 1...50)
-                Stepper("Lleva: \(getQuantity)", value: $getQuantity, in: 1...50)
-            } else if type == "percentage_discount" {
-                Stepper("Descuento: \(String(format: "%.0f", discountPercentage))%", value: $discountPercentage, in: 1...100, step: 1)
-            } else {
-                Stepper("Descuento: $\(String(format: "%.2f", discountAmount))", value: $discountAmount, in: 1...10_000, step: 5)
-            }
-        }
-    }
-
-    private var applyPanel: some View {
-        panel("Aplica a") {
-            Picker("Alcance", selection: $applyTo) {
-                Text("Todos los productos").tag("all_products")
-                Text("Productos específicos").tag("specific_products")
-                Text("Categoría").tag("category")
-            }
-            .pickerStyle(.menu)
-            .tint(.white)
-
-            if applyTo == "specific_products" {
-                Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showingProductPicker = true }
-                } label: {
-                    HStack {
-                        Text("Productos seleccionados: \(productIds.count)")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.white)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.3))
-                    }
-                }
-                .buttonStyle(.plain)
-            } else if applyTo == "category" {
-                Picker("Categoría", selection: $categoryId) {
-                    Text("Selecciona una categoría").tag("")
-                    ForEach(vm.categories) { category in
-                        Text(category.name).tag(category.id)
-                    }
-                }
-                .tint(.white)
-            }
-        }
-    }
-
-    private var vigenciaPanel: some View {
-        panel("Vigencia") {
-            Toggle("Fecha de inicio", isOn: $hasStartDate).tint(.green)
-            if hasStartDate { DatePicker("Inicia", selection: $startDate, displayedComponents: .date) }
-            Toggle("Fecha de fin", isOn: $hasEndDate).tint(.green)
-            if hasEndDate { DatePicker("Termina", selection: $endDate, displayedComponents: .date) }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Días de la semana (vacío = todos)")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.6))
-                HStack {
-                    ForEach(0...6, id: \.self) { day in
-                        Button(["D", "L", "M", "M", "J", "V", "S"][day]) { toggleDay(day) }
-                            .font(.caption.weight(.bold))
-                            .frame(width: 30, height: 30)
-                            .modifier(FlatPill(isSelected: daysOfWeek.contains(day), color: .blue))
-                            .buttonStyle(.plain)
-                    }
-                }
-            }
-            Toggle("Hora de inicio", isOn: $hasStartTime).tint(.green)
-            if hasStartTime { styledField("HH:mm", text: $startTime).keyboardType(.numbersAndPunctuation) }
-            Toggle("Hora de fin", isOn: $hasEndTime).tint(.green)
-            if hasEndTime { styledField("HH:mm", text: $endTime).keyboardType(.numbersAndPunctuation) }
-        }
-    }
-
-    private func toggleDay(_ day: Int) {
-        if daysOfWeek.contains(day) { daysOfWeek.remove(day) } else { daysOfWeek.insert(day) }
-    }
-
-    private func save() {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { errorMessage = "Escribe un nombre para la promoción"; return }
-        guard applyTo != "specific_products" || !productIds.isEmpty else { errorMessage = "Selecciona al menos un producto"; return }
-        guard applyTo != "category" || !categoryId.isEmpty else { errorMessage = "Selecciona una categoría"; return }
-
-        isSaving = true
-        Task {
-            defer { isSaving = false }
-            do {
-                let payload = payload(name: trimmedName)
-                let saved: Promotion
-                if let promotion {
-                    saved = try await APIService.shared.updatePromotion(id: promotion.id, body: payload)
-                } else {
-                    saved = try await APIService.shared.createPromotion(body: payload)
-                }
-                onSaved(saved)
-                vm.showToast(promotion == nil ? "Promoción creada" : "Promoción actualizada")
-                onCancel()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func payload(name: String) -> [String: Any] {
-        [
-            "name": name,
-            "description": description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? NSNull() : description,
-            "type": type,
-            "buyQuantity": type == "buy_x_get_y" ? buyQuantity : NSNull(),
-            "getQuantity": type == "buy_x_get_y" ? getQuantity : NSNull(),
-            "discountPercentage": type == "percentage_discount" ? discountPercentage : NSNull(),
-            "discountAmount": type == "fixed_discount" ? discountAmount : NSNull(),
-            "applyTo": applyTo,
-            "productIds": applyTo == "specific_products" ? Array(productIds).sorted() : NSNull(),
-            "categoryId": applyTo == "category" ? categoryId : NSNull(),
-            "active": active,
-            "startDate": hasStartDate ? Self.dateFormatter.string(from: startDate) : NSNull(),
-            "endDate": hasEndDate ? Self.dateFormatter.string(from: endDate) : NSNull(),
-            "daysOfWeek": daysOfWeek.isEmpty ? NSNull() : daysOfWeek.sorted(),
-            "startTime": hasStartTime ? startTime : NSNull(),
-            "endTime": hasEndTime ? endTime : NSNull(),
-            "priority": priority,
-            "comboRules": NSNull(),
-        ]
-    }
-}
-
-/// Sin `List`/`NavigationStack`/`.searchable` a propósito: ambos pintan su
-/// propio fondo opaco de sistema (negro en modo oscuro), una capa aparte del
-/// fondo de `BottomSheetCard` — mismo problema que tenía el `NavigationLink`
-/// que envolvía esta vista. Búsqueda + filas con el mismo estilo flat que el
-/// resto de la hoja.
-private struct PromotionProductPicker: View {
-    let products: [Product]
-    @Binding var selectedIds: Set<String>
-    @State private var searchText = ""
-
-    private var filteredProducts: [Product] {
-        guard !searchText.isEmpty else { return products }
-        return products.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.4))
-                TextField("", text: $searchText, prompt: Text("Buscar producto…").foregroundStyle(Color.white.opacity(0.3)))
-                    .foregroundStyle(.white)
-                    .font(.system(size: 14))
-                    .textFieldStyle(.plain)
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 40)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.05)))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
-
-            ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 8) {
-                    ForEach(filteredProducts) { product in
-                        let isSelected = selectedIds.contains(product.id)
-                        Button {
-                            if isSelected { selectedIds.remove(product.id) } else { selectedIds.insert(product.id) }
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(product.name)
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                    if let category = product.category?.name {
-                                        Text(category)
-                                            .font(.system(size: 11.5))
-                                            .foregroundStyle(Color.white.opacity(0.45))
-                                    }
-                                }
-                                Spacer()
-                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 17))
-                                    .foregroundStyle(isSelected ? Color.blue : Color.white.opacity(0.25))
-                            }
-                            .padding(12)
-                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.035)))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.bottom, 4)
-            }
         }
     }
 }

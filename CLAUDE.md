@@ -975,6 +975,34 @@ el formato heredado `${productId}-variant-${idx}` se convierte una vez con
 `npx tsx scripts/migrate-promotion-variant-ids.ts --apply` contra la DB real
 (sin `--apply` solo muestra el plan).
 
+**Quién calcula el descuento: el POS, no el servidor.** `PromotionEngine.swift`
+(compartido iPad/Mobile) decide qué pieza sale gratis y manda
+`promotionId/promotionName/originalPrice/promotionDiscount` por renglón; el
+api-server solo lo guarda. Cambiar una regla de promo = recompilar las apps.
+Espejo TS en `lib/promotions/engine.ts` (lo usa el simulador "Pruébala" del
+editor del dashboard); los dos se fijan con
+`lib/promotions/fixtures/engine-vectors.json` (TS: `npx tsx
+lib/promotions/__tests__/engine.test.ts`; Swift: primera línea de
+`Bruma POS/PromotionEngineVectorVerification.swift`). Reglas: cada PIEZA cuenta
+una vez, combos antes que 2x1/%/$, toda la orden (no por asiento), lo gratis es
+lo más barato; incluidos de paquete e invitados no participan.
+**`combo_rules` tiene dos formatos:** v2 = objeto `{version:2, groups, reward,
+repeat}` (premio por grupo "refresco gratis" o al combo: %/$/precio especial;
+`promotions.discount_*` va en null) y legacy = arreglo de reglas con el
+descuento en `discountPercentage` (% al combo) o `discountAmount` (¡$ a CADA
+platillo!, el bug original — se conserva tal cual para filas viejas; el editor
+las pasa a v2 al guardar). Un build viejo del POS no decodifica v2 y no aplica
+el combo (falla seguro, nunca cobra de menos).
+**`unitPrice` puede venir ya rebajado** (cuando todas las piezas del renglón
+llevan el mismo descuento) o no (descuento parcial): el neto del renglón es
+siempre `CartItem.netTotal` = `(originalPrice ?? unitPrice) * qty −
+promotionDiscount`. Restar `promotionDiscount` a `unitPrice * qty` lo descontaba
+dos veces (pasaba en la tarjeta de promo del carrito).
+**Crear/editar promos = solo dashboard** (`/promotions` → `/promotions/[id]`,
+validación en `lib/promotions/input.ts`). Las apps solo pausan/eliminan; el
+`PATCH /api/promotions/:id` del api-server acepta únicamente `active` (antes
+pasaba el body crudo y el editor del iPad guardaba `{id1,id2}` en vez de JSON).
+
 **Tiempo real de promociones:** el CRUD del dashboard vive en rutas Next.js y
 Socket.IO vive en el proceso `api-server`, por lo que las rutas Next notifican
 `POST /internal/promotions/notify` y esperan a que termine antes de responder

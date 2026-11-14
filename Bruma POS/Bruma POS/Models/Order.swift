@@ -248,6 +248,14 @@ struct CartItem: Identifiable, Codable {
     var total: Double {
         unitPrice * Double(quantity)
     }
+
+    /// Lo que se cobra del renglón ya con promoción. `unitPrice` puede venir
+    /// ya rebajado (2x1, %, gratis) o no (descuento parcial del combo), así
+    /// que se parte siempre del precio original — restar `promotionDiscount`
+    /// a `total` lo descontaba dos veces.
+    var netTotal: Double {
+        (originalPrice ?? unitPrice) * Double(quantity) - (promotionDiscount ?? 0)
+    }
     
     var modifierSummary: String {
         var parts: [String] = []

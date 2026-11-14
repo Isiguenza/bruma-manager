@@ -1,0 +1,976 @@
+[
+  {
+    "name": "combo: 2 empanadas + refresco gratis (solo el refresco)",
+    "promotions": [
+      {
+        "id": "c1",
+        "name": "c1",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"label\": \"Empanadas\", \"quantity\": 2, \"categoryIds\": [\"cat-emp\"], \"reward\": {\"type\": \"none\"}}, {\"label\": \"Refresco\", \"quantity\": 1, \"productIds\": [\"boing::Uva\", \"boing::Mango\"], \"reward\": {\"type\": \"free\"}}], \"reward\": {\"type\": \"items\"}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "emp-b",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 50,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "boing",
+        "variantName": "Uva",
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c1",
+        "discount": 0,
+        "newUnitPrice": null
+      },
+      {
+        "promotionId": "c1",
+        "discount": 0,
+        "newUnitPrice": null
+      },
+      {
+        "promotionId": "c1",
+        "discount": 35,
+        "newUnitPrice": 0
+      }
+    ]
+  },
+  {
+    "name": "combo: se repite (4 empanadas + 2 refrescos = 2 combos)",
+    "promotions": [
+      {
+        "id": "c1",
+        "name": "c1",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"label\": \"Empanadas\", \"quantity\": 2, \"categoryIds\": [\"cat-emp\"], \"reward\": {\"type\": \"none\"}}, {\"label\": \"Refresco\", \"quantity\": 1, \"productIds\": [\"boing::Uva\", \"boing::Mango\"], \"reward\": {\"type\": \"free\"}}], \"reward\": {\"type\": \"items\"}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 4,
+        "eligible": true
+      },
+      {
+        "productId": "boing",
+        "variantName": "Mango",
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 2,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c1",
+        "discount": 0,
+        "newUnitPrice": null
+      },
+      {
+        "promotionId": "c1",
+        "discount": 70,
+        "newUnitPrice": 0
+      }
+    ]
+  },
+  {
+    "name": "combo: sin repetir aplica una vez",
+    "promotions": [
+      {
+        "id": "c1",
+        "name": "c1",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"label\": \"Empanadas\", \"quantity\": 2, \"categoryIds\": [\"cat-emp\"], \"reward\": {\"type\": \"none\"}}, {\"label\": \"Refresco\", \"quantity\": 1, \"productIds\": [\"boing::Uva\", \"boing::Mango\"], \"reward\": {\"type\": \"free\"}}], \"reward\": {\"type\": \"items\"}, \"repeat\": false}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 4,
+        "eligible": true
+      },
+      {
+        "productId": "boing",
+        "variantName": "Mango",
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 2,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c1",
+        "discount": 0,
+        "newUnitPrice": null
+      },
+      {
+        "promotionId": "c1",
+        "discount": 35,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "combo: incompleto no aplica",
+    "promotions": [
+      {
+        "id": "c1",
+        "name": "c1",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"label\": \"Empanadas\", \"quantity\": 2, \"categoryIds\": [\"cat-emp\"], \"reward\": {\"type\": \"none\"}}, {\"label\": \"Refresco\", \"quantity\": 1, \"productIds\": [\"boing::Uva\", \"boing::Mango\"], \"reward\": {\"type\": \"free\"}}], \"reward\": {\"type\": \"items\"}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "boing",
+        "variantName": "Uva",
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": null,
+        "discount": 0,
+        "newUnitPrice": null
+      },
+      {
+        "promotionId": null,
+        "discount": 0,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "combo: variante no incluida no cuenta",
+    "promotions": [
+      {
+        "id": "c1",
+        "name": "c1",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"label\": \"Empanadas\", \"quantity\": 2, \"categoryIds\": [\"cat-emp\"], \"reward\": {\"type\": \"none\"}}, {\"label\": \"Refresco\", \"quantity\": 1, \"productIds\": [\"boing::Uva\", \"boing::Mango\"], \"reward\": {\"type\": \"free\"}}], \"reward\": {\"type\": \"items\"}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 2,
+        "eligible": true
+      },
+      {
+        "productId": "boing",
+        "variantName": "Fresa",
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": null,
+        "discount": 0,
+        "newUnitPrice": null
+      },
+      {
+        "promotionId": null,
+        "discount": 0,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "combo: precio especial reparte proporcional y cuadra al centavo",
+    "promotions": [
+      {
+        "id": "c2",
+        "name": "c2",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"quantity\": 1, \"productIds\": [\"burger\"]}, {\"quantity\": 1, \"categoryIds\": [\"cat-beb\"]}], \"reward\": {\"type\": \"price\", \"value\": 130}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "burger",
+        "variantName": null,
+        "categoryId": "cat-food",
+        "unitPrice": 120,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "refresco",
+        "variantName": null,
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c2",
+        "discount": 19.36,
+        "newUnitPrice": 100.64
+      },
+      {
+        "promotionId": "c2",
+        "discount": 5.64,
+        "newUnitPrice": 29.36
+      }
+    ]
+  },
+  {
+    "name": "combo: $ al total del combo (no a cada platillo)",
+    "promotions": [
+      {
+        "id": "c3",
+        "name": "c3",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"quantity\": 2, \"categoryIds\": [\"cat-emp\"]}, {\"quantity\": 1, \"productIds\": [\"boing\"]}], \"reward\": {\"type\": \"amount\", \"value\": 35}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 2,
+        "eligible": true
+      },
+      {
+        "productId": "boing",
+        "variantName": "Uva",
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c3",
+        "discount": 25.2,
+        "newUnitPrice": 32.4
+      },
+      {
+        "promotionId": "c3",
+        "discount": 9.8,
+        "newUnitPrice": 25.2
+      }
+    ]
+  },
+  {
+    "name": "combo legacy: % al combo",
+    "promotions": [
+      {
+        "id": "c4",
+        "name": "c4",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "discountPercentage": "20.00",
+        "comboRules": "[{\"quantity\": 1, \"type\": \"category\", \"categoryIds\": [\"cat-emp\"]}, {\"quantity\": 1, \"type\": \"product\", \"productIds\": [\"refresco\"], \"variantNames\": [\"Normal\"]}]"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "refresco",
+        "variantName": "Normal",
+        "categoryId": "cat-beb",
+        "unitPrice": 30,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c4",
+        "discount": 9,
+        "newUnitPrice": 36
+      },
+      {
+        "promotionId": "c4",
+        "discount": 6,
+        "newUnitPrice": 24
+      }
+    ]
+  },
+  {
+    "name": "combo legacy: $ a cada platillo (comportamiento viejo, se conserva)",
+    "promotions": [
+      {
+        "id": "c5",
+        "name": "c5",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "discountAmount": "35.00",
+        "comboRules": "[{\"quantity\": 2, \"type\": \"category\", \"categoryIds\": [\"cat-emp\"]}, {\"quantity\": 1, \"type\": \"product\", \"productIds\": [\"boing\"], \"variantNames\": [\"Uva\", \"Fresa\"]}]"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 2,
+        "eligible": true
+      },
+      {
+        "productId": "boing",
+        "variantName": "Uva",
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c5",
+        "discount": 70,
+        "newUnitPrice": 10
+      },
+      {
+        "promotionId": "c5",
+        "discount": 35,
+        "newUnitPrice": 0
+      }
+    ]
+  },
+  {
+    "name": "combo legacy: variante con espacio al final",
+    "promotions": [
+      {
+        "id": "c6",
+        "name": "c6",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "discountPercentage": "10",
+        "comboRules": "[{\"quantity\": 1, \"productIds\": [\"quesadilla\"], \"variantNames\": [\"Orden \"]}, {\"quantity\": 1, \"productIds\": [\"refresco\"]}]"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "quesadilla",
+        "variantName": "Orden",
+        "categoryId": null,
+        "unitPrice": 80,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "refresco",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 20,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c6",
+        "discount": 8,
+        "newUnitPrice": 72
+      },
+      {
+        "promotionId": "c6",
+        "discount": 2,
+        "newUnitPrice": 18
+      }
+    ]
+  },
+  {
+    "name": "combo: el grupo con menos opciones se llena primero",
+    "promotions": [
+      {
+        "id": "c7",
+        "name": "c7",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"quantity\": 1, \"categoryIds\": [\"cat-emp\", \"cat-beb\"], \"reward\": {\"type\": \"none\"}}, {\"quantity\": 1, \"productIds\": [\"boing\"], \"reward\": {\"type\": \"free\"}}], \"reward\": {\"type\": \"items\"}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "boing",
+        "variantName": null,
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c7",
+        "discount": 35,
+        "newUnitPrice": 0
+      },
+      {
+        "promotionId": "c7",
+        "discount": 0,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "combo: premio a N piezas del grupo (3 tacos, 1 gratis)",
+    "promotions": [
+      {
+        "id": "c8",
+        "name": "c8",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"quantity\": 3, \"productIds\": [\"taco\"], \"reward\": {\"type\": \"free\", \"quantity\": 1}}], \"reward\": {\"type\": \"items\"}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "taco",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 30,
+        "quantity": 3,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c8",
+        "discount": 30,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "combo: refresco a mitad de precio",
+    "promotions": [
+      {
+        "id": "c9",
+        "name": "c9",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"quantity\": 1, \"productIds\": [\"burger\"]}, {\"quantity\": 1, \"productIds\": [\"refresco\"], \"reward\": {\"type\": \"percent\", \"value\": 50}}], \"reward\": {\"type\": \"items\"}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "burger",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 120,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "refresco",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 35,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c9",
+        "discount": 0,
+        "newUnitPrice": null
+      },
+      {
+        "promotionId": "c9",
+        "discount": 17.5,
+        "newUnitPrice": 17.5
+      }
+    ]
+  },
+  {
+    "name": "combo: hijos de paquete / excluidos no cuentan",
+    "promotions": [
+      {
+        "id": "c1",
+        "name": "c1",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"label\": \"Empanadas\", \"quantity\": 2, \"categoryIds\": [\"cat-emp\"], \"reward\": {\"type\": \"none\"}}, {\"label\": \"Refresco\", \"quantity\": 1, \"productIds\": [\"boing::Uva\", \"boing::Mango\"], \"reward\": {\"type\": \"free\"}}], \"reward\": {\"type\": \"items\"}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 2,
+        "eligible": true
+      },
+      {
+        "productId": "boing",
+        "variantName": "Uva",
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 1,
+        "eligible": false
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": null,
+        "discount": 0,
+        "newUnitPrice": null
+      },
+      {
+        "promotionId": null,
+        "discount": 0,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "combo primero; la pieza que ya tomó no entra al 2x1",
+    "promotions": [
+      {
+        "id": "x1",
+        "name": "x1",
+        "type": "buy_x_get_y",
+        "applyTo": "category",
+        "active": true,
+        "priority": 10,
+        "categoryId": "cat-emp",
+        "buyQuantity": 2,
+        "getQuantity": 1
+      },
+      {
+        "id": "c1",
+        "name": "c1",
+        "type": "combo",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "comboRules": "{\"version\": 2, \"groups\": [{\"label\": \"Empanadas\", \"quantity\": 2, \"categoryIds\": [\"cat-emp\"], \"reward\": {\"type\": \"none\"}}, {\"label\": \"Refresco\", \"quantity\": 1, \"productIds\": [\"boing::Uva\", \"boing::Mango\"], \"reward\": {\"type\": \"free\"}}], \"reward\": {\"type\": \"items\"}, \"repeat\": true}"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 3,
+        "eligible": true
+      },
+      {
+        "productId": "boing",
+        "variantName": "Uva",
+        "categoryId": "cat-beb",
+        "unitPrice": 35,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "c1",
+        "discount": 0,
+        "newUnitPrice": null
+      },
+      {
+        "promotionId": "c1",
+        "discount": 35,
+        "newUnitPrice": 0
+      }
+    ]
+  },
+  {
+    "name": "2x1 mezcla productos de la promo; gratis el más barato",
+    "promotions": [
+      {
+        "id": "x2",
+        "name": "x2",
+        "type": "buy_x_get_y",
+        "applyTo": "specific_products",
+        "active": true,
+        "priority": 0,
+        "productIds": "[\"a\", \"b\"]",
+        "buyQuantity": 2,
+        "getQuantity": 1
+      }
+    ],
+    "lines": [
+      {
+        "productId": "a",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 100,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "b",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 80,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "a",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 100,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": null,
+        "discount": 0,
+        "newUnitPrice": null
+      },
+      {
+        "promotionId": "x2",
+        "discount": 80,
+        "newUnitPrice": 0
+      },
+      {
+        "promotionId": "x2",
+        "discount": 0,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "2x1 dentro de un mismo renglón",
+    "promotions": [
+      {
+        "id": "x3",
+        "name": "x3",
+        "type": "buy_x_get_y",
+        "applyTo": "specific_products",
+        "active": true,
+        "priority": 0,
+        "productIds": "[\"a\"]",
+        "buyQuantity": 2,
+        "getQuantity": 1
+      }
+    ],
+    "lines": [
+      {
+        "productId": "a",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 100,
+        "quantity": 2,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "x3",
+        "discount": 100,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "2x1 con productIds en formato de arreglo de Postgres",
+    "promotions": [
+      {
+        "id": "x4",
+        "name": "x4",
+        "type": "buy_x_get_y",
+        "applyTo": "specific_products",
+        "active": true,
+        "priority": 0,
+        "productIds": "{a,b}",
+        "buyQuantity": 2,
+        "getQuantity": 1
+      }
+    ],
+    "lines": [
+      {
+        "productId": "a",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 20,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "b",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 20,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "x4",
+        "discount": 20,
+        "newUnitPrice": 0
+      },
+      {
+        "promotionId": "x4",
+        "discount": 0,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "3x2: set de 3, 1 gratis",
+    "promotions": [
+      {
+        "id": "x5",
+        "name": "x5",
+        "type": "buy_x_get_y",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 0,
+        "buyQuantity": 3,
+        "getQuantity": 1
+      }
+    ],
+    "lines": [
+      {
+        "productId": "a",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 50,
+        "quantity": 4,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "x5",
+        "discount": 50,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "% a una variante específica (id::variante)",
+    "promotions": [
+      {
+        "id": "p1",
+        "name": "p1",
+        "type": "percentage_discount",
+        "applyTo": "specific_products",
+        "active": true,
+        "priority": 0,
+        "productIds": "[\"cafe::Grande \"]",
+        "discountPercentage": "10.00"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "cafe",
+        "variantName": "Grande",
+        "categoryId": null,
+        "unitPrice": 60,
+        "quantity": 1,
+        "eligible": true
+      },
+      {
+        "productId": "cafe",
+        "variantName": "Chico",
+        "categoryId": null,
+        "unitPrice": 50,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "p1",
+        "discount": 6,
+        "newUnitPrice": 54
+      },
+      {
+        "promotionId": null,
+        "discount": 0,
+        "newUnitPrice": null
+      }
+    ]
+  },
+  {
+    "name": "$ fijo por categoría, nunca negativo",
+    "promotions": [
+      {
+        "id": "f1",
+        "name": "f1",
+        "type": "fixed_discount",
+        "applyTo": "category",
+        "active": true,
+        "priority": 0,
+        "categoryId": "cat-emp",
+        "discountAmount": "15.00"
+      }
+    ],
+    "lines": [
+      {
+        "productId": "emp-a",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 45,
+        "quantity": 2,
+        "eligible": true
+      },
+      {
+        "productId": "emp-mini",
+        "variantName": null,
+        "categoryId": "cat-emp",
+        "unitPrice": 10,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "f1",
+        "discount": 30,
+        "newUnitPrice": 30
+      },
+      {
+        "promotionId": "f1",
+        "discount": 10,
+        "newUnitPrice": 0
+      }
+    ]
+  },
+  {
+    "name": "prioridad: gana la mayor entre % y $",
+    "promotions": [
+      {
+        "id": "p2",
+        "name": "p2",
+        "type": "percentage_discount",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 1,
+        "discountPercentage": 10
+      },
+      {
+        "id": "f2",
+        "name": "f2",
+        "type": "fixed_discount",
+        "applyTo": "all_products",
+        "active": true,
+        "priority": 5,
+        "discountAmount": 20
+      }
+    ],
+    "lines": [
+      {
+        "productId": "a",
+        "variantName": null,
+        "categoryId": null,
+        "unitPrice": 100,
+        "quantity": 1,
+        "eligible": true
+      }
+    ],
+    "expected": [
+      {
+        "promotionId": "f2",
+        "discount": 20,
+        "newUnitPrice": 80
+      }
+    ]
+  }
+]

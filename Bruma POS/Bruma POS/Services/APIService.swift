@@ -669,11 +669,6 @@ class APIService {
         return try await request(url)
     }
 
-    func createPromotion(body: [String: Any]) async throws -> Promotion {
-        let url = URL(string: "\(baseURL)/api/promotions")!
-        return try await request(url, method: "POST", body: body)
-    }
-
     func updatePromotion(id: String, body: [String: Any]) async throws -> Promotion {
         let url = URL(string: "\(baseURL)/api/promotions/\(id)")!
         return try await request(url, method: "PATCH", body: body)

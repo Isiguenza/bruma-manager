@@ -413,9 +413,7 @@ private struct ComandasCartItemRow: View {
         return lines
     }
 
-    private var itemTotal: Double {
-        item.unitPrice * Double(item.quantity) - (item.promotionDiscount ?? 0)
-    }
+    private var itemTotal: Double { item.netTotal }
 
     private var cardBackground: Color {
         if item.parentLocalId != nil { return Color.orange.opacity(0.06) }
