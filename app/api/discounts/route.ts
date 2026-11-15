@@ -9,13 +9,10 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const activeOnly = searchParams.get("active") === "true";
 
-    let query = db.select().from(discounts);
-
-    if (activeOnly) {
-      query = query.where(eq(discounts.active, true)) as any;
-    }
-
-    const allDiscounts = await query;
+    const allDiscounts = await db
+      .select()
+      .from(discounts)
+      .where(activeOnly ? eq(discounts.active, true) : undefined);
 
     return NextResponse.json(allDiscounts);
   } catch (error) {

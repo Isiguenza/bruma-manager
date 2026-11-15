@@ -1,20 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  differenceInCalendarDays,
-  eachDayOfInterval,
-  eachHourOfInterval,
-  endOfDay,
-  format,
-  formatDistanceToNow,
-  isSameDay,
-  startOfDay,
-  startOfHour,
-  startOfMonth,
-  subDays,
-  subMonths,
-} from "date-fns";
+import * as dfns from "date-fns";
+import { tz } from "@date-fns/tz";
 import { es } from "date-fns/locale";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
@@ -24,19 +12,37 @@ import {
   ForkKnife,
   HandHeart,
   Lightning,
+  MagnifyingGlass,
   MinusCircle,
   Sparkle,
   Star,
   Tag,
   TrendDown,
   TrendUp,
+  X,
   XCircle,
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PageHeader } from "@/components/page-header";
 import { cn } from "@/lib/utils";
+import { BRUMA_TZ } from "@/lib/time";
+
+// Todo en hora de CDMX, sin importar la zona del navegador (mismo patrón que /expenses).
+const IN = { in: tz(BRUMA_TZ) };
+const subDays = (d: Date, n: number) => dfns.subDays(d, n, IN);
+const subMonths = (d: Date, n: number) => dfns.subMonths(d, n, IN);
+const startOfDay = (d: Date) => dfns.startOfDay(d, IN);
+const endOfDay = (d: Date) => dfns.endOfDay(d, IN);
+const startOfHour = (d: Date) => dfns.startOfHour(d, IN);
+const startOfMonth = (d: Date) => dfns.startOfMonth(d, IN);
+const differenceInCalendarDays = (a: Date, b: Date) => dfns.differenceInCalendarDays(a, b, IN);
+const eachDayOfInterval = (i: dfns.Interval) => dfns.eachDayOfInterval(i, IN);
+const eachHourOfInterval = (i: dfns.Interval) => dfns.eachHourOfInterval(i, IN);
+const isSameDay = (a: Date, b: Date) => dfns.isSameDay(a, b, IN);
+const format = (d: Date, f: string, o?: { locale?: dfns.Locale }) => dfns.format(d, f, { ...o, ...IN });
+const formatDistanceToNow = dfns.formatDistanceToNow;
 
 // Respuestas de la encuesta pública (cocinabruma.com.mx/encuesta, QR del
 // ticket de cuenta). Se guardan desde el api-server; aquí solo se leen.
@@ -56,6 +62,9 @@ interface SurveyResponse {
   wouldReturn: "si" | "no" | "tal_vez" | null;
   dish: string | null;
   createdAt: string;
+  waiterId: string | null;
+  waiterName: string | null;
+  tableNumber: string | null;
 }
 
 interface Previous {
@@ -115,10 +124,18 @@ const RETURN_LABELS = { si: "Sí", tal_vez: "Tal vez", no: "No" } as const;
 
 type FeedFilter = "comments" | "low" | "all";
 
-const FEED_PAGE = 6;
+const FEED_PAGE = 8;
 
 const avg = (values: number[]) => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : null);
 const pct = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : null);
+
+interface Filters {
+  rating: number | null;
+  aspect: BestAspect | null;
+  waiterId: string | null;
+}
+
+const NO_FILTERS: Filters = { rating: null, aspect: null, waiterId: null };
 
 export default function SurveysPage() {
   const [range, setRange] = useState<RangeKey>("30d");
@@ -126,9 +143,11 @@ export default function SurveysPage() {
   const [previous, setPrevious] = useState<Previous | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [feedFilter, setFeedFilter] = useState<FeedFilter>("comments");
+  const [feedFilter, setFeedFilter] = useState<FeedFilter>("all");
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [search, setSearch] = useState("");
   const [feedLimit, setFeedLimit] = useState(FEED_PAGE);
-  const [selected, setSelected] = useState<SurveyResponse | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const load = useCallback(async (key: RangeKey) => {
     setLoading(true);
@@ -149,6 +168,8 @@ export default function SurveysPage() {
 
   useEffect(() => {
     load(range);
+    setFilters(NO_FILTERS);
+    setFeedLimit(FEED_PAGE);
   }, [range, load]);
 
   const bounds = rangeBounds(range);
@@ -176,6 +197,23 @@ export default function SurveysPage() {
         count: responses.filter((r) => r.bestAspects?.includes(a.key)).length,
       })).sort((a, b) => b.count - a.count),
     };
+  }, [responses]);
+
+  // Calificación por mesero (la orden del QR trae quién la atendió).
+  const waiters = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; list: SurveyResponse[] }>();
+    for (const r of responses) {
+      if (!r.waiterId) continue;
+      if (!map.has(r.waiterId)) map.set(r.waiterId, { id: r.waiterId, name: r.waiterName ?? "Sin nombre", list: [] });
+      map.get(r.waiterId)!.list.push(r);
+    }
+    return [...map.values()]
+      .map((w) => {
+        const staff = w.list.flatMap((r) => (r.staffRating ? [r.staffRating] : []));
+        const comments = w.list.filter((r) => r.improvement).length;
+        return { id: w.id, name: w.name, count: w.list.length, overall: avg(w.list.map((r) => r.overallRating)), staff: avg(staff), comments };
+      })
+      .sort((a, b) => b.count - a.count || (b.staff ?? 0) - (a.staff ?? 0));
   }, [responses]);
 
   // Hoy: promedio por hora. Varios días: promedio móvil de los últimos 7 días
@@ -212,58 +250,86 @@ export default function SurveysPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [responses, range]);
 
+  const q = search.trim().toLowerCase();
   const feed = useMemo(() => {
-    if (feedFilter === "low") return responses.filter((r) => r.overallRating <= 2 || (r.staffRating ?? 5) <= 2 || r.orderAsExpected === "no");
-    if (feedFilter === "comments") return responses.filter((r) => r.improvement || r.dish);
-    return responses;
-  }, [responses, feedFilter]);
+    return responses.filter((r) => {
+      if (feedFilter === "low" && !(r.overallRating <= 2 || (r.staffRating ?? 5) <= 2 || r.orderAsExpected === "no")) return false;
+      if (feedFilter === "comments" && !(r.improvement || r.dish)) return false;
+      if (filters.rating !== null && r.overallRating !== filters.rating) return false;
+      if (filters.aspect && !r.bestAspects?.includes(filters.aspect)) return false;
+      if (filters.waiterId && r.waiterId !== filters.waiterId) return false;
+      if (q && ![r.improvement, r.dish, r.waiterName, r.orderNumber && `#${r.orderNumber}`].some((t) => t && String(t).toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [responses, feedFilter, filters, q]);
+
+  const selected = feed.find((r) => r.id === selectedId) ?? feed[0] ?? null;
+  const lowCount = responses.filter((r) => r.overallRating <= 2 || (r.staffRating ?? 5) <= 2 || r.orderAsExpected === "no").length;
+  const activeChips = [
+    filters.rating !== null && { key: "rating", label: `${FACES[filters.rating - 1]} ${FACE_LABELS[filters.rating - 1]}`, clear: () => setFilters((f) => ({ ...f, rating: null })) },
+    filters.aspect && { key: "aspect", label: `♥ ${ASPECTS.find((a) => a.key === filters.aspect)?.label}`, clear: () => setFilters((f) => ({ ...f, aspect: null })) },
+    filters.waiterId && { key: "waiter", label: waiters.find((w) => w.id === filters.waiterId)?.name ?? "Mesero", clear: () => setFilters((f) => ({ ...f, waiterId: null })) },
+  ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
+
+  /** Un clic en una gráfica filtra los comentarios y baja a verlos. */
+  function filterBy(patch: Partial<Filters>) {
+    setFilters((f) => {
+      const next = { ...f };
+      for (const [k, v] of Object.entries(patch) as [keyof Filters, never][]) next[k] = f[k] === v ? null as never : v;
+      return next;
+    });
+    setFeedFilter("all");
+    setFeedLimit(FEED_PAGE);
+    setSelectedId(null);
+    document.getElementById("survey-feed")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   const showTrend = differenceInCalendarDays(bounds.end, bounds.from) >= 1 || range === "today";
 
   return (
     <div
       className={cn(
-        "mx-auto max-w-6xl space-y-6",
+        "space-y-6",
         // NPS: paleta divergente validada (dataviz) — naranja / gris / azul.
         "[--nps-detractor:#e0712f] [--nps-passive:#9aa0a6] [--nps-promoter:#1d6fe8]",
         "dark:[--nps-detractor:#d97030] dark:[--nps-passive:#8b9096] dark:[--nps-promoter:#4a8df5]"
       )}
     >
-      {/* Encabezado */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">QR del ticket de cuenta</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Encuestas</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {periodLabel(bounds.from, bounds.end)}
+      <PageHeader
+        title="Encuestas"
+        description={
+          <>
+            QR del ticket de cuenta · {periodLabel(bounds.from, bounds.end)}
             {!loading && ` · ${stats.count} respuesta${stats.count === 1 ? "" : "s"}`}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border bg-muted/40 p-1">
-            {RANGES.map((r) => (
-              <button
-                key={r.key}
-                onClick={() => setRange(r.key)}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                  range === r.key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-          <a
-            href="https://cocinabruma.com.mx/encuesta"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Ver encuesta <ArrowSquareOut className="size-4" />
-          </a>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <div className="inline-flex max-w-full overflow-x-auto rounded-lg border bg-muted/40 p-1">
+              {RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => setRange(r.key)}
+                  className={cn(
+                    "shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    range === r.key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            <a
+              href="https://cocinabruma.com.mx/encuesta"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Ver encuesta <ArrowSquareOut className="size-4" />
+            </a>
+          </>
+        }
+      />
 
       {error ? (
         <Card>
@@ -286,7 +352,7 @@ export default function SurveysPage() {
                 {loading ? (
                   <Skeleton className="h-24 w-full" />
                 ) : (
-                  <div className="flex items-end justify-between gap-6">
+                  <div className="flex flex-wrap items-end justify-between gap-6">
                     <div>
                       <p className="text-5xl font-semibold tracking-tight tabular-nums">
                         {stats.overallAvg?.toFixed(1) ?? "—"}
@@ -299,7 +365,7 @@ export default function SurveysPage() {
                         format={(d) => `${Math.abs(d).toFixed(1)} pts`}
                       />
                     </div>
-                    <Distribution counts={stats.distribution} />
+                    <Distribution counts={stats.distribution} selected={filters.rating} onSelect={(rating) => filterBy({ rating })} />
                   </div>
                 )}
               </div>
@@ -349,7 +415,7 @@ export default function SurveysPage() {
 
           {/* Tendencia + lo mejor */}
           <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            <Card>
+            <Card className="min-w-0">
               <CardContent>
                 <p className="mb-4 text-sm font-medium">
                   {range === "today" ? "Calificación por hora" : "Calificación promedio"}
@@ -368,21 +434,8 @@ export default function SurveysPage() {
                           </linearGradient>
                         </defs>
                         <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
-                        <XAxis
-                          dataKey="label"
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
-                          minTickGap={24}
-                        />
-                        <YAxis
-                          domain={[1, 5]}
-                          ticks={[1, 2, 3, 4, 5]}
-                          tickLine={false}
-                          axisLine={false}
-                          width={40}
-                          tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
-                        />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} minTickGap={24} />
+                        <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} tickLine={false} axisLine={false} width={40} tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
                         <Tooltip
                           cursor={{ stroke: "var(--muted-foreground)", strokeWidth: 1, strokeDasharray: "4 4" }}
                           content={({ active, payload }) => {
@@ -415,7 +468,7 @@ export default function SurveysPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="min-w-0">
               <CardContent>
                 <p className="mb-4 text-sm font-medium">Lo mejor de su visita</p>
                 {loading ? (
@@ -425,27 +478,29 @@ export default function SurveysPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="space-y-3.5">
+                  <div className="space-y-1">
                     {stats.aspects.map(({ key, label, icon: AspectIcon, count }) => {
                       const share = pct(count, stats.count) ?? 0;
+                      const on = filters.aspect === key;
                       return (
-                        <div key={key} className="group" title={`${count} de ${stats.count} respuestas`}>
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => filterBy({ aspect: key })}
+                          className={cn("group block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/60", on && "bg-primary/10")}
+                          title={`${count} de ${stats.count} respuestas · toca para ver sus comentarios`}
+                        >
                           <div className="mb-1.5 flex items-center justify-between text-sm">
                             <span className="flex items-center gap-2">
-                              <AspectIcon className="size-4 text-muted-foreground" />
+                              <AspectIcon className={cn("size-4", on ? "text-primary" : "text-muted-foreground")} />
                               {label}
                             </span>
-                            <span className="tabular-nums text-muted-foreground group-hover:text-foreground">
-                              {share}%
-                            </span>
+                            <span className="tabular-nums text-muted-foreground group-hover:text-foreground">{share}%</span>
                           </div>
                           <div className="h-2 overflow-hidden rounded-full bg-muted">
-                            <div
-                              className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out"
-                              style={{ width: `${share}%` }}
-                            />
+                            <div className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out" style={{ width: `${share}%` }} />
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -454,37 +509,116 @@ export default function SurveysPage() {
             </Card>
           </div>
 
-          {/* Lo que nos dicen */}
-          <div className="space-y-4">
+          {/* Por mesero */}
+          {!loading && waiters.length > 0 && (
+            <Card className="py-0">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+                  <p className="text-sm font-medium">
+                    Por mesero <span className="ml-1 text-xs font-normal text-muted-foreground">quién atendió la orden del QR · toca para ver sus encuestas</span>
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[520px]">
+                    <div className="grid grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,1fr))] gap-3 border-y bg-muted/30 px-5 py-2 text-xs text-muted-foreground">
+                      <span>Mesero</span>
+                      <span className="text-right">Encuestas</span>
+                      <span className="text-right">Experiencia</span>
+                      <span className="text-right">Atención</span>
+                      <span className="text-right">Comentarios</span>
+                    </div>
+                    {waiters.map((w) => (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => filterBy({ waiterId: w.id })}
+                        className={cn(
+                          "grid w-full grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,1fr))] items-center gap-3 border-b px-5 py-2.5 text-left text-sm transition-colors last:border-b-0 hover:bg-muted/40",
+                          filters.waiterId === w.id && "bg-primary/10"
+                        )}
+                      >
+                        <span className="flex min-w-0 items-center gap-2.5">
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                            {w.name.split(" ").map((p) => p[0]).slice(0, 2).join("")}
+                          </span>
+                          <span className="truncate font-medium">{w.name}</span>
+                        </span>
+                        <span className="text-right tabular-nums">{w.count}</span>
+                        <span className="text-right tabular-nums">{w.overall?.toFixed(1) ?? "—"}</span>
+                        <span className="flex items-center justify-end gap-1 tabular-nums">
+                          {w.staff !== null && <Star className="size-3.5 text-amber-500" weight="fill" />}
+                          {w.staff?.toFixed(1) ?? "—"}
+                        </span>
+                        <span className="text-right tabular-nums text-muted-foreground">{w.comments}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Lo que nos dicen: lista + detalle */}
+          <div id="survey-feed" className="scroll-mt-20 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="flex items-center gap-2 text-lg font-semibold">
                 <ChatCircleText className="size-5" />
                 Lo que nos dicen
               </h2>
-              <div className="inline-flex rounded-lg border bg-muted/40 p-1">
-                {(
-                  [
-                    ["comments", "Con comentario"],
-                    ["low", "Para atender"],
-                    ["all", "Todas"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    onClick={() => {
-                      setFeedFilter(key);
-                      setFeedLimit(FEED_PAGE);
-                    }}
-                    className={cn(
-                      "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                      feedFilter === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-lg border bg-muted/40 p-1">
+                  {(
+                    [
+                      ["all", "Todas", stats.count],
+                      ["comments", "Con comentario", responses.filter((r) => r.improvement || r.dish).length],
+                      ["low", "Para atender", lowCount],
+                    ] as const
+                  ).map(([key, label, count]) => (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        setFeedFilter(key);
+                        setFeedLimit(FEED_PAGE);
+                        setSelectedId(null);
+                      }}
+                      className={cn(
+                        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                        feedFilter === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {label}
+                      <span className={cn("ml-1.5 text-xs tabular-nums", key === "low" && count > 0 ? "text-[color:var(--nps-detractor)]" : "opacity-60")}>{count}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="relative">
+                  <MagnifyingGlass className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar en comentarios…"
+                    className="h-9 w-48 rounded-lg border bg-background pr-2 pl-8 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+                  />
+                </div>
               </div>
             </div>
+
+            {activeChips.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Filtrado por</span>
+                {activeChips.map((c) => (
+                  <span key={c.key} className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-0.5 pr-1 pl-2.5 text-xs font-medium text-primary">
+                    {c.label}
+                    <button type="button" onClick={c.clear} className="flex size-4 items-center justify-center rounded-full hover:bg-primary/15" aria-label={`Quitar ${c.label}`}>
+                      <X className="size-2.5" weight="bold" />
+                    </button>
+                  </span>
+                ))}
+                <button type="button" onClick={() => setFilters(NO_FILTERS)} className="px-1 text-xs text-muted-foreground hover:text-foreground">
+                  Quitar filtros
+                </button>
+              </div>
+            )}
 
             {loading ? (
               <div className="grid gap-3 md:grid-cols-2">
@@ -494,32 +628,29 @@ export default function SurveysPage() {
               </div>
             ) : feed.length === 0 ? (
               <p className="rounded-xl border border-dashed py-10 text-center text-sm text-muted-foreground">
-                {feedFilter === "low" ? "Nada que atender en este periodo 🎉" : "Sin comentarios en este periodo"}
+                {feedFilter === "low" && activeChips.length === 0 && !q ? "Nada que atender en este periodo 🎉" : "Ninguna encuesta con estos filtros"}
               </p>
             ) : (
-              <>
-                <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+                <div className="min-w-0 space-y-2">
                   {feed.slice(0, feedLimit).map((r) => (
-                    <FeedCard key={r.id} response={r} onOpen={() => setSelected(r)} />
+                    <FeedRow key={r.id} response={r} selected={selected?.id === r.id} onOpen={() => setSelectedId(r.id)} />
                   ))}
-                </div>
-                {feed.length > feedLimit && (
-                  <div className="flex justify-center">
+                  {feed.length > feedLimit && (
                     <button
                       onClick={() => setFeedLimit((n) => n + FEED_PAGE * 2)}
-                      className="rounded-full border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      className="w-full rounded-xl border py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
                     >
                       Ver más ({feed.length - feedLimit})
                     </button>
-                  </div>
-                )}
-              </>
+                  )}
+                </div>
+                <div className="min-w-0 lg:sticky lg:top-20 lg:self-start">{selected && <ResponseDetail response={selected} />}</div>
+              </div>
             )}
           </div>
         </>
       )}
-
-      <ResponseDialog response={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }
@@ -562,24 +693,34 @@ function Delta({
   );
 }
 
-/** Histograma mini: cuántos eligieron cada carita. */
-function Distribution({ counts }: { counts: number[] }) {
+/** Histograma mini: cuántos eligieron cada carita. Tocar una barra filtra los comentarios. */
+function Distribution({ counts, selected, onSelect }: { counts: number[]; selected: number | null; onSelect: (rating: number) => void }) {
   const max = Math.max(...counts, 1);
   return (
     <div className="flex h-24 items-end gap-1.5" aria-label="Distribución de calificaciones">
       {counts.map((count, i) => (
-        <div key={i} className="group flex w-8 flex-col items-center gap-1" title={`${FACE_LABELS[i]}: ${count}`}>
-          <span className="text-[11px] tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+        <button
+          key={i}
+          type="button"
+          onClick={() => count > 0 && onSelect(i + 1)}
+          disabled={count === 0}
+          className={cn(
+            "group flex w-8 flex-col items-center gap-1 rounded-md transition-opacity disabled:cursor-default",
+            selected !== null && selected !== i + 1 && "opacity-40"
+          )}
+          title={`${FACE_LABELS[i]}: ${count}${count ? " · toca para ver sus comentarios" : ""}`}
+        >
+          <span className={cn("text-[11px] tabular-nums text-muted-foreground transition-opacity", selected === i + 1 ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
             {count}
           </span>
           <div className="flex h-14 w-full items-end">
             <div
-              className={cn("w-full rounded-t", i >= 3 ? "bg-primary" : "bg-primary/35")}
+              className={cn("w-full rounded-t transition-colors", i >= 3 ? "bg-primary" : "bg-primary/35", count > 0 && "group-hover:bg-primary/80")}
               style={{ height: `${Math.max((count / max) * 100, count ? 8 : 3)}%` }}
             />
           </div>
           <span className="text-base leading-none">{FACES[i]}</span>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -690,117 +831,112 @@ function MiniStat({
   );
 }
 
-function FeedCard({ response: r, onOpen }: { response: SurveyResponse; onOpen: () => void }) {
+function FeedRow({ response: r, selected, onOpen }: { response: SurveyResponse; selected: boolean; onOpen: () => void }) {
   const low = r.overallRating <= 2 || r.orderAsExpected === "no";
   return (
     <button
       onClick={onOpen}
       className={cn(
-        "flex w-full flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/40",
-        low && "border-[color:var(--nps-detractor)]/40"
+        "flex w-full items-start gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/40",
+        low && "border-l-4 border-l-[color:var(--nps-detractor)]",
+        selected && "ring-2 ring-primary/40"
       )}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl leading-none">{FACES[r.overallRating - 1]}</span>
-          <div>
-            <p className="text-sm font-medium">{FACE_LABELS[r.overallRating - 1]}</p>
-            <p className="text-xs text-muted-foreground">
-              {formatDistanceToNow(new Date(r.createdAt), { locale: es, addSuffix: true })}
-              {r.orderNumber && ` · Orden #${r.orderNumber}`}
-            </p>
-          </div>
+      <span className="text-2xl leading-none">{FACES[r.overallRating - 1]}</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-sm font-medium">
+            {FACE_LABELS[r.overallRating - 1]}
+            {r.waiterName && <span className="font-normal text-muted-foreground"> · {r.waiterName.split(" ")[0]}</span>}
+          </p>
+          <span className="shrink-0 text-xs text-muted-foreground">{formatDistanceToNow(new Date(r.createdAt), { locale: es, addSuffix: true })}</span>
         </div>
-        {r.nps !== null && (
-          <span
-            className="rounded-full px-2 py-0.5 text-xs font-medium tabular-nums text-white"
-            style={{
-              background: r.nps >= 9 ? "var(--nps-promoter)" : r.nps <= 6 ? "var(--nps-detractor)" : "var(--nps-passive)",
-            }}
-            title="¿Nos recomendaría? (0–10)"
-          >
-            {r.nps}/10
-          </span>
+        {r.improvement ? (
+          <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">“{r.improvement}”</p>
+        ) : r.dish ? (
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            <ForkKnife className="mr-1 inline size-3" />
+            {r.dish}
+          </p>
+        ) : (
+          <p className="mt-0.5 text-xs text-muted-foreground/70">Sin comentario</p>
         )}
       </div>
-      {r.improvement && <p className="line-clamp-3 text-sm">“{r.improvement}”</p>}
-      {(r.dish || (r.bestAspects?.length ?? 0) > 0) && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {r.dish && (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-              <ForkKnife className="mr-1 inline size-3" />
-              {r.dish}
-            </span>
-          )}
-          {r.bestAspects?.map((a) => (
-            <span key={a} className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-              ♥ {ASPECTS.find((x) => x.key === a)?.label ?? a}
-            </span>
-          ))}
-        </div>
+      {r.nps !== null && (
+        <span
+          className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums text-white"
+          style={{ background: r.nps >= 9 ? "var(--nps-promoter)" : r.nps <= 6 ? "var(--nps-detractor)" : "var(--nps-passive)" }}
+          title="¿Nos recomendaría? (0–10)"
+        >
+          {r.nps}
+        </span>
       )}
     </button>
   );
 }
 
-function ResponseDialog({ response: r, onClose }: { response: SurveyResponse | null; onClose: () => void }) {
+function ResponseDetail({ response: r }: { response: SurveyResponse }) {
   return (
-    <Dialog open={!!r} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        {r && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <span className="text-2xl">{FACES[r.overallRating - 1]}</span>
-                {FACE_LABELS[r.overallRating - 1]}
-              </DialogTitle>
-              <DialogDescription>
-                {format(new Date(r.createdAt), "EEEE d 'de' MMMM, HH:mm", { locale: es })}
-                {r.orderNumber && ` · Orden #${r.orderNumber}`}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="divide-y rounded-lg border text-sm">
-              <Row label="Experiencia general">
-                <Stars value={r.overallRating} size="size-4" />
-              </Row>
-              <Row label="Atención del personal">
-                {r.staffRating ? <Stars value={r.staffRating} size="size-4" /> : "—"}
-              </Row>
-              <Row label="Lo mejor">
-                {r.bestAspects?.length
-                  ? r.bestAspects.map((a) => ASPECTS.find((x) => x.key === a)?.label ?? a).join(", ")
-                  : "—"}
-              </Row>
-              <Row label="Pedido como lo esperaba">
-                {r.orderAsExpected ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    {r.orderAsExpected === "si" ? (
-                      <CheckCircle className="size-4 text-primary" weight="fill" />
-                    ) : r.orderAsExpected === "parcialmente" ? (
-                      <MinusCircle className="size-4 text-muted-foreground" weight="fill" />
-                    ) : (
-                      <XCircle className="size-4" style={{ color: "var(--nps-detractor)" }} weight="fill" />
-                    )}
-                    {ORDER_LABELS[r.orderAsExpected]}
-                  </span>
-                ) : (
-                  "—"
-                )}
-              </Row>
-              <Row label="¿Nos recomendaría?">{r.nps !== null ? `${r.nps} / 10` : "—"}</Row>
-              <Row label="¿Volvería?">{r.wouldReturn ? RETURN_LABELS[r.wouldReturn] : "—"}</Row>
-              <Row label="Pidió">{r.dish || "—"}</Row>
-            </div>
-            {r.improvement && (
-              <div className="rounded-lg bg-muted/50 p-3">
-                <p className="mb-1 text-xs font-medium text-muted-foreground">Qué podríamos mejorar</p>
-                <p className="text-sm">{r.improvement}</p>
-              </div>
-            )}
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+    <div className="space-y-4 rounded-2xl border bg-card p-5">
+      <div className="flex items-start gap-3">
+        <span className="text-4xl leading-none">{FACES[r.overallRating - 1]}</span>
+        <div className="min-w-0">
+          <p className="text-lg font-semibold">{FACE_LABELS[r.overallRating - 1]}</p>
+          <p className="text-sm capitalize text-muted-foreground">
+            {format(new Date(r.createdAt), "EEEE d 'de' MMMM, HH:mm", { locale: es })}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {[r.orderNumber && `Orden #${r.orderNumber}`, r.tableNumber && `Mesa ${r.tableNumber}`, r.waiterName && `Atendió ${r.waiterName}`]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        </div>
+      </div>
+      {r.improvement && (
+        <blockquote className="rounded-xl bg-muted/50 p-4">
+          <p className="mb-1 text-xs font-medium text-muted-foreground">Qué podríamos mejorar</p>
+          <p className="text-[15px] leading-relaxed">“{r.improvement}”</p>
+        </blockquote>
+      )}
+      <div className="divide-y rounded-xl border text-sm">
+        <Row label="Experiencia general">
+          <Stars value={r.overallRating} size="size-4" />
+        </Row>
+        <Row label="Atención del personal">{r.staffRating ? <Stars value={r.staffRating} size="size-4" /> : "—"}</Row>
+        <Row label="Lo mejor">
+          {r.bestAspects?.length ? (
+            <span className="flex flex-wrap justify-end gap-1">
+              {r.bestAspects.map((a) => (
+                <span key={a} className="rounded-full border px-2 py-0.5 text-xs">
+                  {ASPECTS.find((x) => x.key === a)?.label ?? a}
+                </span>
+              ))}
+            </span>
+          ) : (
+            "—"
+          )}
+        </Row>
+        <Row label="Pedido como lo esperaba">
+          {r.orderAsExpected ? (
+            <span className="inline-flex items-center gap-1.5">
+              {r.orderAsExpected === "si" ? (
+                <CheckCircle className="size-4 text-primary" weight="fill" />
+              ) : r.orderAsExpected === "parcialmente" ? (
+                <MinusCircle className="size-4 text-muted-foreground" weight="fill" />
+              ) : (
+                <XCircle className="size-4" style={{ color: "var(--nps-detractor)" }} weight="fill" />
+              )}
+              {ORDER_LABELS[r.orderAsExpected]}
+            </span>
+          ) : (
+            "—"
+          )}
+        </Row>
+        <Row label="¿Nos recomendaría?">{r.nps !== null ? `${r.nps} / 10` : "—"}</Row>
+        <Row label="¿Volvería?">{r.wouldReturn ? RETURN_LABELS[r.wouldReturn] : "—"}</Row>
+        <Row label="Pidió">{r.dish || "—"}</Row>
+      </div>
+    </div>
   );
 }
 

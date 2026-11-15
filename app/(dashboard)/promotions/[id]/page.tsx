@@ -44,7 +44,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Category, Product, Promotion } from "@/lib/types";
 import type { ComboItemRewardType, ComboRewardType } from "@/lib/promotions/combo";
-import { CatalogPicker } from "../_components/catalog-picker";
+import { CatalogPicker } from "@/components/catalog-picker";
 import { PromotionSimulator } from "../_components/simulator";
 import { TypeIcon } from "../_components/type-icon";
 import {

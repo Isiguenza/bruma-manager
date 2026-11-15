@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { surveyResponses } from "@/lib/db/schema";
-import { and, desc, gte, lt, sql } from "drizzle-orm";
+import { orders, surveyResponses, tables, userProfiles } from "@/lib/db/schema";
+import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
 // GET /api/surveys?from=ISO&to=ISO — respuestas de la encuesta pública del
 // rango [from, to) y un resumen del periodo inmediato anterior de la misma
@@ -40,8 +40,28 @@ export async function GET(request: NextRequest) {
         .where(and(gte(surveyResponses.createdAt, prevFrom), lt(surveyResponses.createdAt, from))),
     ]);
 
+    // Mesero y mesa de la orden del QR: para ver la calificación por mesero.
+    const orderIds = [...new Set(rows.flatMap((r) => (r.orderId ? [r.orderId] : [])))];
+    const orderInfo = orderIds.length
+      ? await db
+          .select({ id: orders.id, waiterId: orders.userId, waiterName: userProfiles.name, tableNumber: tables.number })
+          .from(orders)
+          .leftJoin(userProfiles, eq(userProfiles.id, orders.userId))
+          .leftJoin(tables, eq(tables.id, orders.tableId))
+          .where(inArray(orders.id, orderIds))
+      : [];
+    const infoById = new Map(orderInfo.map((o) => [o.id, o]));
+
     return NextResponse.json({
-      responses: rows,
+      responses: rows.map((r) => {
+        const info = r.orderId ? infoById.get(r.orderId) : undefined;
+        return {
+          ...r,
+          waiterId: info?.waiterId ?? null,
+          waiterName: info?.waiterName ?? null,
+          tableNumber: info?.tableNumber ?? null,
+        };
+      }),
       previous: {
         count: prev?.count ?? 0,
         overallAvg: prev?.overallAvg != null ? Number(prev.overallAvg) : null,

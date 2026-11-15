@@ -10,15 +10,12 @@ import {
 } from "@/lib/promotions/combo";
 import { parseProductIds } from "@/lib/promotions/engine";
 import { BRUMA_TZ } from "@/lib/time";
+import { expandSelection } from "@/components/catalog-picker";
 
 export type PromoType = Promotion["type"];
 
-/** Selección del picker: categorías completas (incluye platillos futuros) + refs sueltos. */
-export interface Selection {
-  categoryIds: string[];
-  /** `"<productId>"` o `"<productId>::<variante>"`. */
-  refs: string[];
-}
+import type { Selection } from "@/components/catalog-picker";
+export type { Selection };
 
 export interface DraftGroup {
   key: string;
@@ -179,11 +176,6 @@ function dedupe(ids: string[]) {
   return [...new Set(ids)];
 }
 
-/** Expande categorías completas a ids de producto (para promos que no son combo). */
-function expandSelection(sel: Selection, products: Product[]): string[] {
-  const fromCats = products.filter((p) => p.categoryId && sel.categoryIds.includes(p.categoryId)).map((p) => p.id);
-  return dedupe([...fromCats, ...sel.refs]);
-}
 
 export function comboConfigFromDraft(d: Draft): ComboConfig {
   const perItem = d.comboReward.type === "items";

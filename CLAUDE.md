@@ -396,6 +396,17 @@ más lo consume), panel "Auditoría" en `/cash-register`.
   de flujos (`/flows*`, `…/flow`) van a todo lo ancho. Las páginas NO ponen su
   propio `max-w`/padding de página (excepto vistas angostas a propósito, como
   el detalle de orden con `max-w-5xl`).
+- **Tablas anchas:** `SidebarInset` y `<main>` del layout llevan `min-w-0`. Sin
+  eso el inset (hijo flex) crecía al ancho de su contenido: una tabla ancha
+  sacaba toda la página de la pantalla y al hacer scroll se metía bajo la
+  sidebar. Una `<table>` cruda va dentro de un `div.overflow-x-auto` (el
+  `Table` de `components/ui/table.tsx` ya lo trae); nunca dentro de un
+  contenedor con `overflow-hidden` solo, que la recorta.
+- Selector de platillos en línea: `components/catalog-picker.tsx` (Promociones y
+  Notas rápidas). Guarda refs `productId` / `productId::variante` + categorías
+  completas; quien solo guarda refs (notas rápidas) pasa por `expandSelection`.
+- Un descuento ya usado no se puede borrar (`orders.discount_id` sin ON DELETE):
+  `DELETE /api/discounts/:id` responde 409 y la UI ofrece apagarlo.
 - Logos: `components/bruma-logo.tsx` (`horizontal` / `isotipo` / `full`). Los SVG de
   `public/logos` son blancos: se pintan como máscara con `bg-current`, así que el
   color sale de `text-*` (no uses `<img>` o desaparecen en tema claro). Favicon =

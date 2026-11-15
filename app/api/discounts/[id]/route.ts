@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { discounts } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { discounts, orders } from "@/lib/db/schema";
+import { eq, sql } from "drizzle-orm";
 
 // GET /api/discounts/[id] - Get a single discount
 export async function GET(
@@ -42,7 +42,7 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       updatedAt: new Date(),
     };
 
@@ -93,6 +93,19 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+
+    // `orders.discount_id` apunta aquí sin ON DELETE: un descuento ya usado no
+    // se puede borrar (antes reventaba con un 500 genérico). Se desactiva.
+    const [{ used }] = await db
+      .select({ used: sql<number>`count(*)::int` })
+      .from(orders)
+      .where(eq(orders.discountId, id));
+    if (used > 0) {
+      return NextResponse.json(
+        { error: `Ya se usó en ${used} ${used === 1 ? "orden" : "órdenes"}: desactívalo en vez de eliminarlo`, used },
+        { status: 409 }
+      );
+    }
 
     const [deletedDiscount] = await db
       .delete(discounts)

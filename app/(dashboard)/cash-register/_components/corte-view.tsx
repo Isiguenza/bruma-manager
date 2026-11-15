@@ -124,6 +124,7 @@ export function CorteView({
               ))}
           </div>
 
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -171,6 +172,7 @@ export function CorteView({
               </tr>
             </tfoot>
           </table>
+            </div>
           {data.sales.platformDelivery > 0 && (
             <p className="mt-3 text-xs text-muted-foreground">Plataformas se liquidan aparte y no suman al neto.</p>
           )}

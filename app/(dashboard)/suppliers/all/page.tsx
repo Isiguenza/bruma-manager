@@ -139,6 +139,7 @@ export default function AllSuppliersPage() {
                 <ArrowRight className="size-4" />
               </Link>
             </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -166,6 +167,7 @@ export default function AllSuppliersPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </Card>
         ))}
       </div>

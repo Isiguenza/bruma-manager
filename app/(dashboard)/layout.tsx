@@ -20,9 +20,13 @@ export default function DashboardLayout({
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
+      {/* `min-w-0`: sin él, el inset (hijo flex) crece al ancho de su contenido
+          y una tabla ancha empujaba toda la página fuera de la pantalla y,
+          al hacer scroll horizontal, se metía debajo de la sidebar fija. Las
+          tablas anchas hacen scroll DENTRO de su propia caja (`overflow-x-auto`). */}
+      <SidebarInset className="min-w-0">
         <AppHeader />
-        <main className="flex-1 overflow-auto p-4 lg:p-6">
+        <main className="min-w-0 flex-1 overflow-auto p-4 lg:p-6">
           <div className={cn("mx-auto w-full", !fullWidth && "max-w-7xl")}>{children}</div>
         </main>
       </SidebarInset>

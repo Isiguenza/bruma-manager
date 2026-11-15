@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { quickNotes } from "@/lib/db/schema";
-import { asc } from "drizzle-orm";
+import { asc, sql } from "drizzle-orm";
 
 export async function GET() {
   try {
@@ -18,16 +18,23 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { label, productIds } = body;
+    const { label, productIds, active } = body;
 
     if (!label) {
       return NextResponse.json({ error: "Label required" }, { status: 400 });
     }
 
+    // Al final de la lista: la pantalla la agrega abajo y el POS ordena por sortOrder.
+    const [{ next }] = await db
+      .select({ next: sql<number>`coalesce(max(${quickNotes.sortOrder}), -1)::int + 1` })
+      .from(quickNotes);
+
     const [quickNote] = await db
       .insert(quickNotes)
       .values({
         label,
+        sortOrder: next,
+        active: active !== false,
         productIds: Array.isArray(productIds) && productIds.length > 0
           ? JSON.stringify(productIds)
           : null,

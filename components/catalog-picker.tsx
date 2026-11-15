@@ -5,7 +5,27 @@ import { CaretRight, Check, MagnifyingGlass, Minus, Tag, X } from "@phosphor-ico
 import { cn } from "@/lib/utils";
 import type { Category, Product } from "@/lib/types";
 import { parseVariants } from "@/components/product-picker-utils";
-import { type Selection, money, refLabel } from "./shared";
+
+/** Categorías completas (incluye platillos futuros) + refs sueltos `"<productId>"` / `"<productId>::<variante>"`. */
+export interface Selection {
+  categoryIds: string[];
+  refs: string[];
+}
+
+const money = (n: number) =>
+  `$${n.toLocaleString("es-MX", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
+
+function refLabel(ref: string, products: Product[]) {
+  const [pid, variant] = ref.split("::");
+  const name = products.find((p) => p.id === pid)?.name ?? "Platillo";
+  return variant ? `${name} ${variant.trim()}` : name;
+}
+
+/** Para dueños que solo guardan refs (notas rápidas): categorías → sus platillos de hoy. */
+export function expandSelection(sel: Selection, products: Product[]): string[] {
+  const fromCats = products.filter((p) => p.categoryId && sel.categoryIds.includes(p.categoryId)).map((p) => p.id);
+  return [...new Set([...fromCats, ...sel.refs])];
+}
 
 type CheckState = "checked" | "partial" | "unchecked";
 
@@ -31,7 +51,7 @@ interface Group {
 }
 
 /**
- * Selector de platillos en línea. "Toda la categoría" guarda la categoría
+ * Selector de platillos en línea (Promociones, Notas rápidas). "Toda la categoría" guarda la categoría
  * (los platillos que se agreguen después entran solos); destildar un
  * platillo de una categoría completa la convierte en lista con esa excepción.
  * Las variantes son chips: "Boing" completo o solo "Boing Uva".
